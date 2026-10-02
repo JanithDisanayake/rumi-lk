@@ -21,6 +21,7 @@ const { handleTextMessage } = require('./shared/handlers/text-message.handler');
 const { handleVoiceMessage } = require('./shared/handlers/voice-message.handler');
 const { handleImageMessage } = require('./shared/handlers/image-message.handler');
 const ExamCheckerHandler = require('./shared/handlers/exam-checker.handler');
+const { routeTestPaperSelection, routeTestPaperDocument } = require('./shared/handlers/testpaper-trigger');
 
 // Import Utils
 const { logToFile, LOGS_DIR } = require('./shared/utils/logger');
@@ -479,6 +480,8 @@ async function handleWebhookPost(req, res) {
       // "No"/"Done" move the coaching session on to the lesson-plan step.
       const { handleCoachingFlowButton } = require('./shared/services/coaching/coaching-flow-buttons');
       if (await handleCoachingFlowButton(buttonId, from, user)) return;
+      // Test papers (tp_ ids): Edit / New paper / My papers after a delivery.
+      if (await routeTestPaperSelection({ user, from, id: buttonId })) return;
 
       // Coaching confirmation buttons
       if (buttonId.startsWith('coaching_confirm_')) {
@@ -1196,6 +1199,9 @@ async function handleWebhookPost(req, res) {
       const listId = listReply.id;
       logToFile('📋 Interactive list item selected', { listId, from });
 
+      // Test papers (tp_ ids): source, chapter, size, language, my papers.
+      if (await routeTestPaperSelection({ user, from, id: listId })) return;
+
       // Video-quiz answers arrive as list_reply whenever the question has 4
       // options or a title too long for a 20-char button. Same `vq_` ids as
       // the button path — routed here too, or a four-option question would
@@ -1540,6 +1546,9 @@ async function handleDocumentMessage(message, from, user) {
   }
 
   try {
+    // A chapter the teacher was asked to send for a test paper.
+    if (await routeTestPaperDocument({ user, from, message })) return;
+
     const documentId = message.document.id;
     const mimeType = message.document.mime_type || '';
 
