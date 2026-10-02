@@ -462,8 +462,9 @@ async function buildAndSend(shareCodeId, sc, teacher, { reason, isFollowUp, stam
     .from('quiz_sessions')
     .select('id, user_id, student_id, student_name, student_class, parent_phone, status, '
             + 'total_questions_answered, correct_answers, mastery_percentage, completed_at, created_at')
-    .eq('share_code_id', shareCodeId)
-    .is('invited_by_student_id', null);   // a friend's session is not this teacher's class
+    // Every child who took this quiz, a friend's invite included: the invite
+    // files the friend under this teacher's code (video-quiz-invite.service.js).
+    .eq('share_code_id', shareCodeId);
 
   // The teacher's own test run of this class link must never read
   // as a pupil in that same report: not in the roster, not in the average, not in
@@ -921,8 +922,7 @@ async function sendLateClassCards(shareCodeId) {
     supabase.from('quiz_sessions')
       .select('id, user_id, student_id, student_name, student_class, parent_phone, status, '
               + 'total_questions_answered, correct_answers, mastery_percentage, completed_at, created_at')
-      .eq('share_code_id', shareCodeId)
-      .is('invited_by_student_id', null),
+      .eq('share_code_id', shareCodeId),
     supabase.from('quizzes').select('quiz_source, meta, language, subject, grade').eq('id', sc.quiz_id).maybeSingle(),
   ]);
   const all = oneAttemptPerChild(excludeSelfTests(sessions || [], sc.teacher_user_id));
@@ -1355,7 +1355,6 @@ async function hardestQuestions(shareCodeId, limit = 3, sessionIds = null) {
   if (!ids) {
     const { data: sessions } = await supabase
       .from('quiz_sessions').select('id').eq('share_code_id', shareCodeId)
-      .is('invited_by_student_id', null)   // a friend's session is not this teacher's class
       // Within a share code, user_id IS NOT NULL means the
       // teacher's own self-test; practice answers never decide the hardest.
       .is('user_id', null);
