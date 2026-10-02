@@ -27,9 +27,11 @@ jest.mock('../../bot/shared/services/whatsapp.service', () => ({
   sendTemplate: jest.fn(async () => true),
 }));
 jest.mock('../../bot/shared/services/coaching/coaching-job-queue.service', () => ({}));
-const mockLock = { granted: true };
+const mockLock = { granted: true, ready: true };
+// Like the real service: no lock until the connection is ready.
 jest.mock('../../bot/shared/services/cache/railway-redis.service', () => ({
-  acquireLock: jest.fn(async () => mockLock.granted),
+  isAvailable: () => mockLock.ready,
+  acquireLock: jest.fn(async () => mockLock.ready && mockLock.granted),
   releaseLock: jest.fn(async () => true),
 }));
 
@@ -116,7 +118,7 @@ describe('executors', () => {
 
 describe('the sweeps in the stale-session worker', () => {
   beforeEach(() => {
-    jest.clearAllMocks(); seed(); mockLock.granted = true;
+    jest.clearAllMocks(); seed(); mockLock.granted = true; mockLock.ready = true;
     delete process.env.OBSERVE_UNTAPPED_SWEEP_OFF; delete process.env.OBSERVE_UNDELIVERED_SWEEP_OFF;
   });
 
@@ -127,6 +129,14 @@ describe('the sweeps in the stale-session worker', () => {
     expect((await Worker.runUntappedSweep(NOW)).disabled).toBe(true);
     expect((await Worker.runUndeliveredSweep(NOW)).disabled).toBe(true);
     expect(mockDb.calls.filter((c) => c.table === 'coaching_sessions')).toHaveLength(0);
+  });
+
+  test('a cron run that starts before Redis has connected still sweeps (found on the E2E rig: every run skipped)', async () => {
+    mockLock.ready = false;
+    setTimeout(() => { mockLock.ready = true; }, 300);
+    const untapped = await Worker.runUntappedSweep(NOW);
+    expect(untapped.skippedLocked).toBeUndefined();
+    expect(untapped).toMatchObject({ nudged: 1 });
   });
 
   test('no lock, no sweep (another replica has it)', async () => {

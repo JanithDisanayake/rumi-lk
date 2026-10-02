@@ -414,9 +414,18 @@ const perTickCap = (name, dflt) => {
   return Number.isFinite(n) && n > 0 ? n : dflt;
 };
 
+const REDIS_READY_WAIT_MS = 5000;
+
 async function withSweepLock(lockName, tally, fn) {
   // Lazy: requiring this worker as a library must not touch Redis.
   const RedisService = require('../shared/services/cache/railway-redis.service');
+  // This worker runs as a one-shot cron: the sweeps start moments after the
+  // process does, before the Redis connection is ready, and acquireLock fails
+  // closed on a not-ready client — so without this wait every run skipped.
+  const readyBy = Date.now() + REDIS_READY_WAIT_MS;
+  while (typeof RedisService.isAvailable === 'function' && !RedisService.isAvailable() && Date.now() < readyBy) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
   const lockId = `${process.pid}-${Date.now()}`;
   const gotLock = await RedisService.acquireLock(lockName, lockId, OBSERVE_SWEEP_LOCK_TTL_SECONDS);
   if (!gotLock) {
