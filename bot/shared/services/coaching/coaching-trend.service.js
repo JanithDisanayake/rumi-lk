@@ -81,6 +81,8 @@ async function loadTrendData(userId, opts = {}) {
       .select('id, created_at, analysis_data')
       .eq('user_id', userId)
       .eq('status', 'completed')
+      // never a coach's observation of this teacher: its score is the coach's rating
+      .is('observation_type', null)
       .order('created_at', { ascending: false })
       .limit(limit);
 

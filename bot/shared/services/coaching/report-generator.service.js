@@ -429,6 +429,7 @@ class ReportGeneratorService {
         .select('id, created_at, analysis_data')
         .eq('user_id', userId)
         .eq('status', 'completed')
+        .is('observation_type', null) // never a coach's observation of this teacher: it is not their own session
         .neq('id', currentSessionId)
         .order('created_at', { ascending: false });
 
@@ -508,6 +509,7 @@ class ReportGeneratorService {
         .select('id, created_at, analysis_data')
         .eq('user_id', userId)
         .eq('status', 'completed')
+        .is('observation_type', null) // never a coach's observation of this teacher: it is not their own session
         .neq('id', currentSessionId)
         .order('created_at', { ascending: false })
         .limit(1)
@@ -593,6 +595,7 @@ class ReportGeneratorService {
         .select('id', { count: 'exact', head: true })
         .eq('user_id', session.user_id)
         .eq('status', 'completed')
+        .is('observation_type', null) // never a coach's observation of this teacher: it is not their own session
         .neq('id', session.id);
       if (!countError) hasPriorSessions = (count || 0) > 0;
     } catch (e) {
@@ -870,6 +873,7 @@ class ReportGeneratorService {
       .select('id', { count: 'exact', head: true })
       .eq('user_id', session.user_id)
       .eq('status', 'completed')
+      .is('observation_type', null) // never a coach's observation of this teacher: it is not their own session
       .neq('id', session.id);
 
     if (countError) {

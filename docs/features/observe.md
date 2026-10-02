@@ -55,8 +55,10 @@ without it the audio is not archived, and the reports are kept on local disk.
 **Existing deployments:** apply `infrastructure/supabase/migrations/V2.6.0__observe_coach_assistant.sql`
 (additive: four columns on `coaching_sessions`, `users.role` and `users.school_id`, and the `schools`,
 `leader_schools`, `observation_schedules` and `coach_directory` tables). Fresh installs get it from
-`00_complete-schema.sql`. Apply it before deploying the dashboard: the teacher portal now filters coaches'
-observations out of a teacher's own pages, and reads the new column to do it.
+`00_complete-schema.sql`. Apply it before deploying the bot and the dashboard, even with Observe off: a
+teacher's own coaching (their score trend, prior feedback, chat context, `/status`, the teacher portal) now
+filters coaches' observations out, and reads the new column to do it. The Morning Brief checks for the
+column and works either way.
 
 ### Set up your coaches
 

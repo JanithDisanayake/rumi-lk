@@ -39,6 +39,8 @@ async function generateCoachingExcel() {
       status
     `)
     .eq('status', 'completed')
+    // a coach's observation of a teacher is the coach's session, not one of the teacher's
+    .is('observation_type', null)
     .order('created_at', { ascending: false });
 
   if (error) {

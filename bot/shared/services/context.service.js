@@ -153,6 +153,7 @@ class ContextService {
             : 'status, analysis_data, created_at')
           .eq('user_id', userId)
           .eq('status', 'completed')
+          .is('observation_type', null) // never a coach's observation of this teacher: its score is the coach's rating
           .order('created_at', { ascending: false })
           .limit(2);
 

@@ -196,6 +196,7 @@ async function checkUserActivity(userId) {
     .from('coaching_sessions')
     .select('id, status')
     .eq('user_id', userId)
+    .is('observation_type', null) // never a coach's observation of this teacher: it is not their own session
     .in('status', ['transcribing', 'analyzing', 'awaiting_lesson_plan', 'generating_report'])
     .limit(1)
     .single();
