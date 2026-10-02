@@ -41,6 +41,43 @@ async function waitForPlanText(session, pollMs) {
 }
 
 /**
+ * A plan Rumi made is taught again and again, and every lesson taught from it must be graded against the SAME move
+ * list: re-extracting at each grading lets the denominator drift. The first extraction is kept on the plan's own row
+ * (lesson_plans.content.fidelity_moves, keyed by the hash of the plan text it came from) and reused; edited plan text
+ * (a new hash) is extracted afresh. A failed read or write only costs a fresh extraction.
+ */
+function cachedLinkedExtractor(lessonPlanId, extract) {
+  return async (text, extractOpts) => {
+    const { planTextHash } = require('./fidelity-orchestrator');
+    const supabase = require('../../../config/supabase');
+    const hash = planTextHash(text);
+    let content = null;
+    try {
+      const { data } = await supabase.from('lesson_plans').select('content').eq('id', lessonPlanId).maybeSingle();
+      content = data && data.content && typeof data.content === 'object' ? data.content : null;
+    } catch (_) { /* extract afresh */ }
+    const kept = content && content.fidelity_moves;
+    if (kept && kept.plan_hash === hash && Array.isArray(kept.moves) && kept.moves.length) {
+      return { goal: kept.goal || null, moves: kept.moves, model: kept.model || null, cached: true };
+    }
+    const fresh = await extract(text, extractOpts);
+    if (fresh && Array.isArray(fresh.moves) && fresh.moves.length) {
+      try {
+        await supabase.from('lesson_plans').update({
+          content: {
+            ...(content || {}),
+            fidelity_moves: { plan_hash: hash, goal: fresh.goal || null, moves: fresh.moves, model: fresh.model || null, extracted_at: new Date().toISOString() },
+          },
+        }).eq('id', lessonPlanId);
+      } catch (e) {
+        log('[lp-fidelity] could not keep the plan\'s moves (next grading re-extracts)', { lessonPlanId, error: e.message });
+      }
+    }
+    return fresh;
+  };
+}
+
+/**
  * @param {object} session coaching_sessions row (transcript_text, audio_duration_seconds, lesson_plan_text,
  *                         lesson_plan_link_method, linked_lesson_plan_id)
  * @param {{runs?:number, deps?:object, waitForPlan?:boolean, pollMs?:number, renderLinkedPlanText?:Function,
@@ -63,6 +100,11 @@ async function computeFidelityForSession(session, opts = {}) {
     linkedPlanText = rendered ? rendered.text : null;
   }
   const { planText, source, lessonPlanId } = resolveFidelitySources(s, { linkedPlanText });
+  let deps = opts.deps || {};
+  if (source === 'linked' && lessonPlanId) {
+    const extract = deps.extractPlanMoves || require('./lp-upload-extractor').extractUploadedLp;
+    deps = { ...deps, extractPlanMoves: cachedLinkedExtractor(lessonPlanId, extract) };
+  }
   const result = await compute({
     planText,
     source,
@@ -70,7 +112,7 @@ async function computeFidelityForSession(session, opts = {}) {
     transcript: s.transcript_text,
     audioDurationSeconds: s.audio_duration_seconds,
     ...(opts.runs != null ? { runs: opts.runs } : {}),
-  }, opts.deps || {});
+  }, deps);
   if (!result) return null;
   return { ...result, graded_at: new Date().toISOString() };
 }

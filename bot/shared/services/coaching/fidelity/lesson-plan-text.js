@@ -48,7 +48,8 @@ function planTextFromRow(row) {
   if (typeof c === 'string') body = c;
   else if (typeof c.plan_text === 'string') body = c.plan_text;
   else if (typeof c === 'object') {
-    const { plan_text: _ignored, ...rest } = c;
+    // fidelity_moves is fidelity's own cache of the moves, not plan text.
+    const { plan_text: _ignored, fidelity_moves: _moves, ...rest } = c;
     body = flatten(rest).join('\n');
   }
   if (!body || body.trim().length < MIN_CHARS) return null;
