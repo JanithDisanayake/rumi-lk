@@ -13,6 +13,7 @@ This is **not** the chat app. Teachers talk to Rumi in the messenger — see [Yo
 |---|---|---|
 | JDK | **21** | Capacitor 8's `capacitor-android` requires Java 21. JDK 17 fails with `invalid source release: 21`. |
 | Android SDK | platform **36**, build-tools, platform-tools | Command-line tools are enough. `sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"` |
+| Node | **22+** | The Capacitor 8 CLI (`cap sync`) refuses older Node. |
 | Node deps | `npm ci` in `portal/` | |
 
 ```bash

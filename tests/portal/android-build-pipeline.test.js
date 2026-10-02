@@ -96,6 +96,12 @@ describe('CI builds a debug APK for portal changes', () => {
     expect(wf).toMatch(/java-version:\s*['"]?21/);
   });
 
+  it('runs Node 22 or newer (the Capacitor 8 CLI refuses older Node)', () => {
+    const m = wf.match(/node-version:\s*['"]?(\d+)/);
+    expect(m).not.toBeNull();
+    expect(Number(m[1])).toBeGreaterThanOrEqual(22);
+  });
+
   it('uses no secrets — a debug build can run on any branch', () => {
     expect(wf).not.toMatch(/secrets\./);
   });
