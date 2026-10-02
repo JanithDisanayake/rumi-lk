@@ -111,3 +111,32 @@ describe('lastActivityFor', () => {
     expect(map.get('c')).toBe(H(3));
   });
 });
+
+describe('the stored reply identifier', () => {
+  // A background send must deliver back to the identifier the teacher actually wrote
+  // from, never re-derive it from (channel, channel_user_id): a channel's wire identity
+  // can differ from "<prefix>:<id>" (a short alias form, a re-encoded id).
+  it('is used when it routes to that row\'s channel', async () => {
+    slackOn();
+    supabase.reset({
+      users: [{ id: USER, phone_number: null, last_message_at: null }],
+      user_channels: [{
+        user_id: USER, channel: 'slack', channel_user_id: 'legacy-id', reply_identifier: 'slack:U0REAL',
+        is_primary: true, last_message_at: H(5),
+      }],
+    });
+    expect((await addressForUser(USER)).to).toBe('slack:U0REAL');
+  });
+
+  it('is ignored when it would route somewhere else, and the row is addressed the old way', async () => {
+    slackOn();
+    supabase.reset({
+      users: [{ id: USER, phone_number: null, last_message_at: null }],
+      user_channels: [{
+        user_id: USER, channel: 'slack', channel_user_id: 'U0OLD', reply_identifier: '15550001111',
+        is_primary: true, last_message_at: H(5),
+      }],
+    });
+    expect((await addressForUser(USER)).to).toBe('slack:U0OLD');
+  });
+});

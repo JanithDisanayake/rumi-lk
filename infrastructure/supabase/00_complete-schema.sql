@@ -4051,6 +4051,12 @@ ALTER TABLE users ALTER COLUMN phone_number DROP NOT NULL;
 -- for a Slack-only teacher with no phone number at all). See bot/workers/
 -- coaching-session.service.js#initiateSession, exam-session.service.js#_createSession,
 -- video-orchestrator.service.js#startGeneration for where each is populated.
+-- user_channels.reply_identifier: the same rule for PROACTIVE sends (a teacher
+-- nudge, which no inbound message originated). The exact identifier the
+-- teacher last wrote from on that channel, stamped on every inbound by
+-- bot-helpers.getOrCreateUserByChannel; nudges/address.js delivers back to it
+-- rather than re-deriving "<prefix>:<channel_user_id>".
+ALTER TABLE user_channels ADD COLUMN IF NOT EXISTS reply_identifier VARCHAR(255);
 ALTER TABLE coaching_sessions ADD COLUMN IF NOT EXISTS recipient_identifier VARCHAR(255);
 ALTER TABLE exam_check_sessions ADD COLUMN IF NOT EXISTS recipient_identifier VARCHAR(255);
 ALTER TABLE video_requests ADD COLUMN IF NOT EXISTS recipient_identifier VARCHAR(255);

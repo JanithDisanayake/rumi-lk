@@ -49,4 +49,8 @@ ALTER TABLE teacher_nudges ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "service_role_teacher_nudges" ON teacher_nudges;
 CREATE POLICY "service_role_teacher_nudges" ON teacher_nudges FOR ALL USING (auth.role() = 'service_role');
 
+-- Where a proactive send goes: the exact identifier the teacher last wrote from
+-- on each channel, stamped on every inbound (bot-helpers.getOrCreateUserByChannel).
+ALTER TABLE user_channels ADD COLUMN IF NOT EXISTS reply_identifier VARCHAR(255);
+
 NOTIFY pgrst, 'reload schema';

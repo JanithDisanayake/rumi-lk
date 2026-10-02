@@ -434,7 +434,7 @@ async function handleWebhookPost(req, res) {
     try {
       const channelIdentity = resolveChannelIdentity(from);
       user = channelIdentity
-        ? await getOrCreateUserByChannel(channelIdentity.channel, channelIdentity.channelUserId)
+        ? await getOrCreateUserByChannel(channelIdentity.channel, channelIdentity.channelUserId, { replyIdentifier: from })
         : await getOrCreateUser(from);
       logToFile('User retrieved/created', { userId: user.id, phoneNumber: from });
     } catch (error) {

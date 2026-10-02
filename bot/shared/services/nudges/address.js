@@ -21,7 +21,7 @@
 
 const supabase = require('../../config/supabase');
 const { logToFile } = require('../../utils/logger');
-const { prefixFor } = require('../messaging/channel-registry');
+const { prefixFor, driverForIdentifier } = require('../messaging/channel-registry');
 const { resolveActiveChannels } = require('../../config/feature-availability');
 
 const WHATSAPP = 'whatsapp';
@@ -40,8 +40,19 @@ const latest = (...values) => {
   return best ? new Date(best.t).toISOString() : null;
 };
 
-/** The facade identifier for a channel row, or null when this deployment cannot send there. */
-function identifierFor(channel, channelUserId, activeChannels) {
+/**
+ * The facade identifier for a channel row, or null when this deployment cannot send there.
+ *
+ * The row's stored `reply_identifier` — the exact identifier the teacher last wrote
+ * from — wins whenever it routes back to that same channel: a channel's wire identity
+ * need not be "<prefix>:<channel_user_id>" (a short alias form, a re-encoded id), and
+ * a background send must deliver back to what came in, not re-derive it.
+ */
+function identifierFor(channel, channelUserId, activeChannels, replyIdentifier = null) {
+  if (replyIdentifier && channel !== WHATSAPP && activeChannels.includes(channel)
+    && driverForIdentifier(replyIdentifier) === channel) {
+    return String(replyIdentifier);
+  }
   if (!channelUserId) return null;
   if (channel === WHATSAPP) return String(channelUserId);
   const prefix = prefixFor(channel);
@@ -73,7 +84,7 @@ async function addressForUser(userId, { user = null } = {}) {
   if (!person) return null;
 
   const { data: channels, error } = await supabase.from('user_channels')
-    .select('channel, channel_user_id, is_primary, last_message_at')
+    .select('channel, channel_user_id, reply_identifier, is_primary, last_message_at')
     .eq('user_id', userId);
   if (error) {
     logToFile('❌ nudges address: user_channels read failed', { userId, error: error.message });
@@ -83,7 +94,7 @@ async function addressForUser(userId, { user = null } = {}) {
   const active = resolveActiveChannels(process.env);
   const candidates = [];
   for (const row of channels || []) {
-    const to = identifierFor(row.channel, row.channel_user_id, active);
+    const to = identifierFor(row.channel, row.channel_user_id, active, row.reply_identifier);
     if (!to) continue;
     const lastMessageAt = row.channel === WHATSAPP
       ? latest(row.last_message_at, person.last_message_at)
