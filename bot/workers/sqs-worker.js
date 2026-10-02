@@ -928,6 +928,74 @@ logToFile('🚀 Starting SQS Coaching Worker', {
   sqsQueueUrl: process.env.SQS_QUEUE_URL
 });
 
+// ============================================================================
+// TEACHER NUDGES
+// ============================================================================
+
+const TEACHER_NUDGES_FIRST_RUN_MS = 90 * 1000;
+const TEACHER_NUDGES_DEFAULT_SWEEP_MINUTES = 5;
+
+/**
+ * TEACHER_NUDGES_SWEEP_MINUTES as milliseconds. Fractional minutes are allowed
+ * (0.5 = every 30 s, for testing); anything below 0.1 minute, or not a number,
+ * is refused rather than clamped, and the 5-minute default stands.
+ */
+function teacherNudgesSweepMs(raw = process.env.TEACHER_NUDGES_SWEEP_MINUTES) {
+  const minutes = Number(raw);
+  if (raw === undefined || raw === '' || !Number.isFinite(minutes) || minutes < 0.1) {
+    return TEACHER_NUDGES_DEFAULT_SWEEP_MINUTES * 60 * 1000;
+  }
+  return Math.round(minutes * 60 * 1000);
+}
+
+/**
+ * Arm the teacher-nudge sweep (see docs/features/teacher-nudges.md).
+ *
+ * GATED ON THE FLAG AT BOOT as well as inside runSweep: with
+ * TEACHER_NUDGES_ENABLED off this registers nothing and arms nothing. Turning
+ * the flag OFF takes effect on the very next tick (runSweep re-reads it);
+ * turning it ON needs a restart. Several replicas each arming this is safe —
+ * the sweep's claim is single-flight.
+ *
+ * First run 90 s after boot, then every TEACHER_NUDGES_SWEEP_MINUTES: a
+ * deployment that restarts often resets the interval each time, so an interval
+ * alone might never fire. Ticks are skipped while the worker shuts down.
+ */
+function armTeacherNudges() {
+  const sweeper = require('../shared/services/nudges/teacher-nudges.sweeper');
+  if (!sweeper.isEnabled()) {
+    logToFile('Teacher-nudge sweep not enabled on this worker', { reason: 'TEACHER_NUDGES_ENABLED is off' });
+    return false;
+  }
+
+  const { registerAllKinds } = require('../shared/services/nudges/kinds');
+  const kinds = registerAllKinds(sweeper);
+  const everyMs = teacherNudgesSweepMs();
+
+  const runTeacherNudgesSweep = async () => {
+    if (worker.isShuttingDown) return;
+    try {
+      await sweeper.runSweep({});
+    } catch (error) {
+      // runSweep never throws by contract; wrapped anyway, because an error
+      // escaping here would surface as an unhandled rejection every tick.
+      logToFile('Error in teacher-nudge sweep (non-fatal)', { error: error.message });
+    }
+  };
+
+  setTimeout(() => {
+    runTeacherNudgesSweep();
+    setInterval(runTeacherNudgesSweep, everyMs);
+  }, TEACHER_NUDGES_FIRST_RUN_MS);
+
+  logToFile('Teacher-nudge sweep enabled', {
+    kinds,
+    firstRunSeconds: TEACHER_NUDGES_FIRST_RUN_MS / 1000,
+    everyMinutes: everyMs / 60000,
+  });
+  return true;
+}
+
 // Recover stale requests before starting worker. Gated behind
 // require.main === module so the file can be required as a library without
 // firing the recovery sweep + worker start.
@@ -960,6 +1028,9 @@ function startWorker() {
     }, STALE_CHECK_INTERVAL_MS);
 
     logToFile('Periodic stale job recovery enabled (every 5 minutes)');
+
+    // Scheduled teacher nudges — a no-op unless TEACHER_NUDGES_ENABLED is on.
+    armTeacherNudges();
   });
 }
 
@@ -968,4 +1039,4 @@ if (require.main === module) {
 }
 
 // Export for testing
-module.exports = { SQSCoachingWorker, WORKER_ID, startWorker, recoverStaleVideoRequests };
+module.exports = { SQSCoachingWorker, WORKER_ID, startWorker, recoverStaleVideoRequests, worker, teacherNudgesSweepMs };
