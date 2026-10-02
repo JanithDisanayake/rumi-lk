@@ -20,6 +20,8 @@ const CoachingSessionService = require('./coaching-session.service');
 const { PEDAGOGICAL_ANALYSIS_MEDIA_ID } = require('../../utils/constants');
 const { selectFramework } = require('./frameworks/framework-selector');
 const { getCoachingMessage } = require('../../config/coaching-messages');
+const { isFidelityEnabled } = require('./fidelity/fidelity-orchestrator');
+const { computeFidelityForSession, applyFrameworkFidelity } = require('./fidelity/fidelity-session');
 
 /**
  * Look up the teacher's preferred language for a coaching session.
@@ -119,12 +121,12 @@ class AnalysisProcessorService {
       const framework = await selectFramework(session.user_id);
       logToFile('Framework resolved', { userId: session.user_id, framework: framework.name });
 
-      // The pedagogy analysis and the v12 reflective corpus extraction run CONCURRENTLY.
-      // allSettled (NOT all) keeps the corpus extraction NON-BLOCKING — if it rejects, the
-      // critical-path analysis persist still proceeds and the report falls back gracefully
-      // (the rest of the coaching flow doesn't depend on the corpus being present).
+      // The pedagogy analysis, the v12 reflective corpus extraction and lesson-plan fidelity
+      // (LP_FIDELITY_ENABLED) run CONCURRENTLY. allSettled (NOT all) keeps the corpus and
+      // fidelity tasks NON-BLOCKING — if either rejects, the critical-path analysis persist
+      // still proceeds and the report falls back gracefully.
       const langCode = session.transcript_language || metadata.language || 'en';
-      const [analysisSettled, corpusSettled] = await Promise.allSettled([
+      const [analysisSettled, corpusSettled, fidelitySettled] = await Promise.allSettled([
         GPT5MiniService.analyzePedagogy(
           session.transcript_text,
           metadata,
@@ -132,6 +134,7 @@ class AnalysisProcessorService {
           framework,
         ),
         GPT5MiniService.extractReflectiveCorpus(session.transcript_text, langCode),
+        isFidelityEnabled() ? computeFidelityForSession(session) : Promise.resolve(null),
       ]);
       if (analysisSettled.status === 'rejected') throw analysisSettled.reason;
       const analysisResult = analysisSettled.value;
@@ -150,6 +153,24 @@ class AnalysisProcessorService {
         });
       }
 
+      // Lesson-plan fidelity: every outcome is persisted (lp_absent, lp_unparseable, fidelity_unavailable, not
+      // assessed, scored) so "never ran" stays distinguishable from each way it fell short.
+      let lpFidelity = null;
+      if (fidelitySettled.status === 'fulfilled') {
+        lpFidelity = fidelitySettled.value;
+      } else {
+        lpFidelity = { status: 'fidelity_unavailable', error: fidelitySettled.reason && fidelitySettled.reason.message, graded_at: new Date().toISOString() };
+      }
+      if (lpFidelity) {
+        logToFile('[lp-fidelity] graded', {
+          coachingSessionId,
+          status: lpFidelity.status,
+          source: lpFidelity.source || null,
+          fidelity_pct: lpFidelity.fidelity_pct ?? null,
+          unusable_guard: lpFidelity.unusable_guard || null,
+        });
+      }
+
       logToFile('Analysis completed', {
         coachingSessionId,
         inputTokens: analysisResult.usage.input_tokens,
@@ -159,13 +180,18 @@ class AnalysisProcessorService {
         hasReflectiveCorpus: !!reflectiveCorpus,
       });
 
-      // Update database — merge reflective_corpus into analysis_data when present.
+      // Update database — merge reflective_corpus and lp_fidelity into analysis_data when present,
+      // and let the framework map a measured fidelity onto its own indicator (optional hook).
+      let analysisData = reflectiveCorpus
+        ? { ...analysisResult.analysis, reflective_corpus: reflectiveCorpus }
+        : analysisResult.analysis;
+      if (lpFidelity) {
+        analysisData = applyFrameworkFidelity(framework, { ...analysisData, lp_fidelity: lpFidelity }, lpFidelity);
+      }
       await supabase
         .from('coaching_sessions')
         .update({
-          analysis_data: reflectiveCorpus
-            ? { ...analysisResult.analysis, reflective_corpus: reflectiveCorpus }
-            : analysisResult.analysis,
+          analysis_data: analysisData,
           status: 'analysis_complete',
           analysis_completed_at: new Date().toISOString(),
           analysis_cost: analysisResult.usage.cost,

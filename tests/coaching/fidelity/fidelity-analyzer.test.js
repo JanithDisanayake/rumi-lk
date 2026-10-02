@@ -66,7 +66,7 @@ describe('fidelity-analyzer (LLM mocked)', () => {
     expect(p.response_format).toEqual({ type: 'json_object' });
     expect(p.messages[0]).toEqual({ role: 'system', content: GRADER_BRIEF });
     expect(p.messages[1]).toEqual({ role: 'user', content: buildUserPrompt(META, MOVES, TRANSCRIPT) });
-    expect(p.max_completion_tokens).toBe(4000);
+    expect(p.max_completion_tokens).toBe(16000);
   });
 
   test('the grader is NOT shown the bucket tag (it drives the denominator; hiding it means no gaming the score)', () => {
@@ -145,11 +145,11 @@ describe('fidelity-analyzer (LLM mocked)', () => {
 
   test('LP_FIDELITY_REASONING_EFFORT and LP_FIDELITY_MAX_TOKENS shape the request; junk is ignored', async () => {
     process.env.LP_FIDELITY_REASONING_EFFORT = 'medium';
-    process.env.LP_FIDELITY_MAX_TOKENS = '16000';
+    process.env.LP_FIDELITY_MAX_TOKENS = '8000';
     const client = fakeClient(GOOD);
     const out = await analyzeFidelity(MOVES, TRANSCRIPT, META, { client });
     expect(client.calls[0].reasoning).toEqual({ effort: 'medium' });
-    expect(client.calls[0].max_completion_tokens).toBe(16000);
+    expect(client.calls[0].max_completion_tokens).toBe(8000);
     expect(out.reasoning_effort).toBe('medium');
 
     process.env.LP_FIDELITY_REASONING_EFFORT = 'loud';

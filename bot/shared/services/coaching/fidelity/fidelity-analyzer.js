@@ -16,7 +16,8 @@
  *   LP_FIDELITY_EMPTY_RETRY_EFFORT effort for the one retry after an EMPTY answer; unset = retry at the same
  *                                  configuration (a hard-coded low effort silently re-grades on a configuration
  *                                  nobody chose).
- *   LP_FIDELITY_MAX_TOKENS         completion cap, default 4000, at most 32000.
+ *   LP_FIDELITY_MAX_TOKENS         completion cap, default 16000, at most 32000. The default grader thinks before it
+ *                                  answers, and at 4000 a 12-move grading is regularly cut off and has to be retried.
  * And whatever the variables say:
  *   - a grading cut off by the token cap (finish_reason length) with a prescribed move unjudged, or one whose verdicts
  *     name no prescribed move, is retried once and then reported, never scored: the scorer reads an unjudged move as
@@ -38,7 +39,7 @@ const DEFAULT_FIDELITY_MODEL = 'google/gemini-3.8-flash';
 function fidelityModel() {
   return process.env.LP_FIDELITY_MODEL || DEFAULT_FIDELITY_MODEL;
 }
-const DEFAULT_MAX_TOKENS = 4000;
+const DEFAULT_MAX_TOKENS = 16000;
 const MAX_TOKENS_CEILING = 32000;
 const EFFORTS = new Set(['minimal', 'low', 'medium', 'high']);
 

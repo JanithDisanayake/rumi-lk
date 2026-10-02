@@ -1063,10 +1063,14 @@ Rules:
         return analysisData;
       }
 
+      // The lesson-plan fidelity blob is code-owned (a deterministic score with quoted evidence): it never goes
+      // through this rewrite, and is re-attached verbatim below.
+      const { lp_fidelity: lpFidelity, ...analysisForPrompt } = analysisData || {};
+
       const prompt = `You are enhancing a classroom observation report with the teacher's reflective responses.
 
 ORIGINAL ANALYSIS (from classroom observation):
-${JSON.stringify(analysisData, null, 2)}
+${JSON.stringify(analysisForPrompt, null, 2)}
 
 CLASSROOM TRANSCRIPT:
 ${transcript}
@@ -1208,6 +1212,13 @@ GUIDELINES:
       // must be re-attached here. Regression-tested.
       if (analysisData?.reflective_corpus && !enhancedAnalysis.reflective_corpus) {
         enhancedAnalysis.reflective_corpus = analysisData.reflective_corpus;
+      }
+      // Same landmine for lesson-plan fidelity, with one difference: the measured blob always wins, even over an
+      // lp_fidelity the rewrite invented.
+      if (lpFidelity) {
+        enhancedAnalysis.lp_fidelity = lpFidelity;
+      } else {
+        delete enhancedAnalysis.lp_fidelity;
       }
 
       // Compute marks for Debrief & Reflection section
