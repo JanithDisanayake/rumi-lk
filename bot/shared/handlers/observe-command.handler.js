@@ -81,6 +81,11 @@ async function handleObserveText(user, from, text) {
   const trimmed = String(text || '').trim();
   if (OBSERVE_TRIGGER_RX.test(trimmed)) return handleObserveCommand(user, from, trimmed);
   if (!isObserveEnabled() || !isSchoolLeader(user)) return false;
+
+  // The stepwise rating form (S1).
+  const ObserveForm = require('../services/observe/observe-form.service');
+  if (await ObserveForm.handleText(user, from, trimmed)) return true;
+
   return false;
 }
 

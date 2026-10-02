@@ -46,6 +46,17 @@ const EN = {
   flow_button: 'Open the form',
   submitted_ack: '✅ Thank you! Your {fw} observation is saved, with your edits.',
   flow_terminal_refused: 'This observation was cancelled, so the form can no longer be submitted.',
+  // The stepwise chat form (every channel; the Flow's stand-in).
+  form_domain_header: '📝 *{fw} — {domain}* ({n} of {total})',
+  form_teacher_line: 'Teacher: {name}',
+  form_changed_mark: '(changed)',
+  form_reply_hint:
+    'Reply *ok* to keep these, or the number and a new rating ({min} to {max}) — e.g. *{example}*. You can change several at once: *1 3, 2 4*.',
+  form_bad_indicator: 'That number is not on this list — pick an indicator from 1 to {count}.',
+  form_bad_rating: 'Ratings go from {min} to {max}. Try again, e.g. *1 {max}*.',
+  form_changes_count: 'You changed {count} rating(s) — the report uses yours.',
+  form_ready_later: '📝 The ratings for your other observation are ready. Finish this debrief first, then type /observe and pick it from the list.',
+  form_already_saved: '✅ Your ratings for this observation are already saved.',
 
   // ── Debrief entry points ──────────────────────────────────────────────────
   debrief_choice_body:

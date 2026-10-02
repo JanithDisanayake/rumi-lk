@@ -11,6 +11,7 @@
  *   observe_cancel_yes_<id>  cancel confirmed
  *   observe_cancel_<id>      "Cancel observation" — ask first
  *   observe_who_<id>_<n>     who was observed (bare capture)
+ *   observe_form_<id>        reopen the coach's rating form (pending list)
  *
  * @returns {Promise<boolean>} true when the id was ours and has been handled
  */
@@ -21,6 +22,7 @@ const ROUTES = [
   ['observe_ok_', async () => true],
   ['observe_cancel_yes_', (user, from, rest) => require('../services/observe/observe-capture.service').cancelObservation(user, from, rest)],
   ['observe_cancel_', (user, from, rest) => require('../services/observe/observe-capture.service').askCancel(user, from, rest)],
+  ['observe_form_', (user, from, rest) => require('../services/observe/observe-form.service').resume(user, from, rest)],
   ['observe_who_', (user, from, rest, id) => require('../services/observe/observe-who.service').handleObservedTeacherPick(user, from, id)],
 ];
 
