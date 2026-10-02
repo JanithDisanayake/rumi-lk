@@ -103,7 +103,8 @@ class FeatureRegistrationService {
       const { count: coachingSessions } = await supabase
         .from('coaching_sessions')
         .select('*', { count: 'exact', head: true })
-        .eq('user_id', userId);
+        .eq('user_id', userId)
+        .is('observation_type', null); // never a coach's observation of this teacher: it is not their own session
 
       // Count reading assessments
       const { count: readingAssessments } = await supabase

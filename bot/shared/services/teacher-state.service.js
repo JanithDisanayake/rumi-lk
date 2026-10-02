@@ -43,6 +43,7 @@ async function probeTeacherBusy(userId) {
       .from('coaching_sessions')
       .select('id, status, created_at')
       .eq('user_id', userId)
+      .is('observation_type', null) // a coach observing this teacher is the coach's work, not the teacher's
       .not('status', 'in', `(${COACHING_TERMINAL.join(',')})`)
       .gte('created_at', ONE_HOUR_AGO())
       .limit(1);
@@ -179,6 +180,7 @@ async function listActiveResources(userId) {
       .from('coaching_sessions')
       .select('id, created_at, status')
       .eq('user_id', userId)
+      .is('observation_type', null) // a coach observing this teacher is the coach's work, not the teacher's
       .not('status', 'in', `(${COACHING_TERMINAL.join(',')})`)
       .gte('created_at', ONE_HOUR_AGO())
       .limit(2);
@@ -265,7 +267,8 @@ async function cancelResource(item, userId) {
         .from('coaching_sessions')
         .update({ status: 'cancelled' })
         .eq('id', item.refId)
-        .eq('user_id', userId);
+        .eq('user_id', userId)
+        .is('observation_type', null); // a teacher can never cancel a coach's observation of them
       return { ok: true, message: `🛑 Coaching session stopped on our end.` };
     }
     if (item.kind === 'lesson_plan' && item.refId) {

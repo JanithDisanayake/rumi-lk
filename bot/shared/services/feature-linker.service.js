@@ -349,6 +349,7 @@ class FeatureLinkerService {
         .from('coaching_sessions')
         .select('created_at')
         .eq('user_id', userId)
+        .is('observation_type', null) // never a coach's observation of this teacher: it is not their own session
         .order('created_at', { ascending: false })
         .limit(1);
 

@@ -59,6 +59,7 @@ class QuizSchedulerService {
       .from('coaching_sessions')
       .select('id')
       .eq('user_id', lp.user_id)
+      .is('observation_type', null) // never a coach's observation of this teacher: it is not their own session
       .gte('created_at', lp.created_at)
       .limit(1);
 
