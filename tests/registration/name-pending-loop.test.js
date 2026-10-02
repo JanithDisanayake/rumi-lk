@@ -48,30 +48,37 @@ function load() {
   return { handleTextMessage, sent, updates };
 }
 
-it('"Salam" sent twice registers the teacher as Salam', async () => {
-  const { handleTextMessage, sent, updates } = load();
+// The real handler loads the bot's own packages, which the root CI pass runs
+// before bot/ installs (same guard as tests/observe/observe-wiring.test.js).
+const botDepsInstalled = require('fs').existsSync(require('path').resolve(__dirname, '../../bot/node_modules'));
+const describeWithBotDeps = botDepsInstalled ? describe : describe.skip;
 
-  await handleTextMessage({ id: 'm1' }, FROM, 'Salam', USER);
-  expect(updates).toEqual([]);
-  expect(sent[0]).toMatch(/"Salam"/);
-  expect(sent[0]).toMatch(/your name/i);
+describeWithBotDeps('the pending-name loop through the real text handler', () => {
+  it('"Salam" sent twice registers the teacher as Salam', async () => {
+    const { handleTextMessage, sent, updates } = load();
 
-  await handleTextMessage({ id: 'm2' }, FROM, 'Salam', USER);
-  expect(updates[0]).toEqual(expect.objectContaining({ first_name: 'Salam', registration_pending_name: false }));
-  expect(sent[1]).toMatch(/Nice to meet you, Salam/);
-});
+    await handleTextMessage({ id: 'm1' }, FROM, 'Salam', USER);
+    expect(updates).toEqual([]);
+    expect(sent[0]).toMatch(/"Salam"/);
+    expect(sent[0]).toMatch(/your name/i);
 
-it('"null" is asked again and never stored', async () => {
-  const { handleTextMessage, sent, updates } = load();
-  await handleTextMessage({ id: 'm1' }, FROM, 'null', USER);
-  await handleTextMessage({ id: 'm2' }, FROM, 'null', USER);
-  expect(updates).toEqual([]);
-  expect(sent).toEqual([expect.stringMatching(/didn't quite catch/), expect.stringMatching(/didn't quite catch/)]);
-});
+    await handleTextMessage({ id: 'm2' }, FROM, 'Salam', USER);
+    expect(updates[0]).toEqual(expect.objectContaining({ first_name: 'Salam', registration_pending_name: false }));
+    expect(sent[1]).toMatch(/Nice to meet you, Salam/);
+  });
 
-it('a different reply to the re-ask is read on its own', async () => {
-  const { handleTextMessage, updates } = load();
-  await handleTextMessage({ id: 'm1' }, FROM, 'Hi', USER);
-  await handleTextMessage({ id: 'm2' }, FROM, 'My name is Noor', USER);
-  expect(updates[0]).toEqual(expect.objectContaining({ first_name: 'Noor' }));
+  it('"null" is asked again and never stored', async () => {
+    const { handleTextMessage, sent, updates } = load();
+    await handleTextMessage({ id: 'm1' }, FROM, 'null', USER);
+    await handleTextMessage({ id: 'm2' }, FROM, 'null', USER);
+    expect(updates).toEqual([]);
+    expect(sent).toEqual([expect.stringMatching(/didn't quite catch/), expect.stringMatching(/didn't quite catch/)]);
+  });
+
+  it('a different reply to the re-ask is read on its own', async () => {
+    const { handleTextMessage, updates } = load();
+    await handleTextMessage({ id: 'm1' }, FROM, 'Hi', USER);
+    await handleTextMessage({ id: 'm2' }, FROM, 'My name is Noor', USER);
+    expect(updates[0]).toEqual(expect.objectContaining({ first_name: 'Noor' }));
+  });
 });
