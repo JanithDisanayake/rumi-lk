@@ -11,9 +11,12 @@
  * WhatsApp driver.
  */
 
-jest.mock('../../bot/shared/config/supabase', () => {
+// Mocked at the client library (the network boundary): the real config/supabase.js loads and
+// exports this in-memory client.
+jest.mock('@supabase/supabase-js', () => {
   const { createMemorySupabase } = require('../fixtures/memory-supabase');
-  return createMemorySupabase();
+  const memory = createMemorySupabase();
+  return { createClient: () => memory };
 });
 jest.mock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn() }));
 

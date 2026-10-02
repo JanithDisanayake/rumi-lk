@@ -12,7 +12,9 @@
 const { createAttendanceDb } = require('./_helpers/attendance-db');
 
 let mockDb;
-jest.mock('../../bot/shared/config/supabase', () => ({ from: (t) => mockDb.client.from(t) }));
+// Mocked at the client library (the network boundary): the real config/supabase.js loads and hands
+// every service this in-memory client.
+jest.mock('@supabase/supabase-js', () => ({ createClient: () => ({ from: (t) => mockDb.client.from(t) }) }));
 
 const linkSchool = require('../../bot/scripts/attendance/link-school');
 

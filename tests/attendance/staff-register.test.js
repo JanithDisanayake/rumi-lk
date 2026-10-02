@@ -15,7 +15,9 @@ let mockDb;
 const mockSendDocument = jest.fn();
 const mockSent = [];
 
-jest.mock('../../bot/shared/config/supabase', () => ({ from: (t) => mockDb.client.from(t) }));
+// Mocked at the client library (the network boundary): the real config/supabase.js loads and hands
+// every service this in-memory client.
+jest.mock('@supabase/supabase-js', () => ({ createClient: () => ({ from: (t) => mockDb.client.from(t) }) }));
 jest.mock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn() }));
 jest.mock('../../bot/shared/storage/r2', () => ({
   uploadBuffer: jest.fn(),

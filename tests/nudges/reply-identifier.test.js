@@ -5,12 +5,15 @@
  * no inbound message to reply to — can deliver back to it instead of re-deriving it.
  */
 
-jest.mock('../../bot/shared/config/supabase', () => {
-  const { createMemorySupabase } = require('../fixtures/memory-supabase');
-  return createMemorySupabase();
-});
+// Mocked at the client library — the network boundary — so the real
+// config/supabase.js loads and hands bot-helpers this in-memory client. (Mocking
+// config/supabase.js itself is what the bot-helpers suites in tests/database do,
+// and on a warm jest cache that mock is intermittently not the module bot-helpers
+// receives; the library boundary does not depend on it.)
+const mockMemory = require('../fixtures/memory-supabase').createMemorySupabase();
+jest.mock('@supabase/supabase-js', () => ({ createClient: () => mockMemory }));
 
-const supabase = require('../../bot/shared/config/supabase');
+const supabase = mockMemory;
 const { getOrCreateUserByChannel } = require('../../bot/shared/database/bot-helpers');
 
 beforeEach(() => supabase.reset());

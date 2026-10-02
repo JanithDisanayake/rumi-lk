@@ -16,7 +16,9 @@ const { createAttendanceDb } = require('./_helpers/attendance-db');
 let mockDb;
 const mockRedis = new Map();
 
-jest.mock('../../bot/shared/config/supabase', () => ({ from: (t) => mockDb.client.from(t) }));
+// Mocked at the client library (the network boundary): the real config/supabase.js loads and hands
+// every service this in-memory client.
+jest.mock('@supabase/supabase-js', () => ({ createClient: () => ({ from: (t) => mockDb.client.from(t) }) }));
 jest.mock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn() }));
 jest.mock('../../bot/shared/services/cache/railway-redis.service', () => ({
   get: jest.fn(async (k) => (mockRedis.has(k) ? mockRedis.get(k) : null)),

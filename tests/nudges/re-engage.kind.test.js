@@ -22,9 +22,12 @@
  *   honest fails  a send that returns false is `failed`, never `sent`.
  */
 
-jest.mock('../../bot/shared/config/supabase', () => {
+// Mocked at the client library (the network boundary): the real config/supabase.js loads and
+// exports this in-memory client.
+jest.mock('@supabase/supabase-js', () => {
   const { createMemorySupabase } = require('../fixtures/memory-supabase');
-  return createMemorySupabase({}, { unique: { teacher_nudges: ['user_id', 'nudge_date', 'kind'] } });
+  const memory = createMemorySupabase({}, { unique: { teacher_nudges: ['user_id', 'nudge_date', 'kind'] } });
+  return { createClient: () => memory };
 });
 jest.mock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn() }));
 jest.mock('../../bot/shared/services/whatsapp.service', () => ({ sendMessage: jest.fn() }));
