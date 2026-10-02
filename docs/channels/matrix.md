@@ -130,7 +130,7 @@ on). "Degrades" means it works with a plainer experience; "breaks" means a teach
 | Forms (reading setup, class setup, attendance) | degrades | One question per message; `cancel` leaves; commands still work |
 | Voice note in, spoken reply out | works | Reply is an audio file |
 | Reading assessment | works | Passage image, recording, then the result, PDF report and audio feedback |
-| Classroom coaching | works | Send the recording as an audio file (15 minutes or longer). Report PDF, voice debrief and commitment card arrive from the worker |
+| Classroom coaching | works | Send the recording as an audio file (15 minutes or longer). Report PDF, voice debrief and commitment card arrive from the worker. The "share a classroom photo?" Yes/No has no handler yet on any channel: send the photos (up to 3) to continue |
 | Attendance | works | Including the monthly register spreadsheet |
 | Quiz preview in chat | works | Numbered questions |
 | Lesson plans | works with `GAMMA_API_KEY` | Without the key the teacher gets an apology within seconds |
