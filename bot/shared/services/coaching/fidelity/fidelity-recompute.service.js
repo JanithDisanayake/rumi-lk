@@ -29,6 +29,10 @@ async function defaultLoadSession(sessionId) {
   return data || null;
 }
 
+function persistOutcome(data, error) {
+  return error ? { ok: false, error: error.message } : { ok: !!(data && data.length) };
+}
+
 async function defaultPersist(sessionId, patch) {
   const supabase = require('../../../config/supabase');
   const { data, error } = await supabase
@@ -37,8 +41,7 @@ async function defaultPersist(sessionId, patch) {
     .eq('id', sessionId)
     .in('status', RECOMPUTABLE_STATUSES)
     .select('id');
-  if (error) return { ok: false, error: error.message };
-  return { ok: !!(data && data.length) };
+  return persistOutcome(data, error);
 }
 
 function frameworkFor(analysis) {

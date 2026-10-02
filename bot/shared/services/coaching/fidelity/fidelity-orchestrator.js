@@ -21,8 +21,8 @@
  * bad recording blamed for a lesson they taught. The guard takes the model out of that decision.
  *
  * LP_FIDELITY_RUNS=N (odd, at most 5) grades N times concurrently and keeps the median scored run whole; every run's
- * percentage and the spread are persisted as telemetry (fidelity-telemetry.js strips them before any person-facing
- * prompt). Unset = one call plus one retry.
+ * percentage and the spread are persisted as telemetry; no person-facing prompt sees them (the voice note gets only
+ * the band, fidelity-report.js#projectForVoice). Unset = one call plus one retry.
  *
  * All collaborators are injectable (deps) for unit testing.
  */

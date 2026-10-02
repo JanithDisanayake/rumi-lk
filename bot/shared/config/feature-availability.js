@@ -118,6 +118,7 @@ const FEATURES = [
     name: 'Lesson-plan fidelity (did the lesson follow the plan?)',
     keys: ['SONIOX_API_KEY'],
     flag: 'LP_FIDELITY_ENABLED',
+    probe: 'diarization',
     notes: 'Set LP_FIDELITY_ENABLED=true. Grades with OPENROUTER_API_KEY (LP_FIDELITY_MODEL, default google/gemini-3.8-flash).',
   },
 ];

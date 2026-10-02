@@ -22,7 +22,7 @@ describe('coaching flow wiring', () => {
   test('plan-picker list replies are routed before the generic list handling', () => {
     const at = bot.indexOf('handleLpListSelection(listId, from)');
     expect(at).toBeGreaterThan(-1);
-    expect(at).toBeLessThan(bot.indexOf("const { getOrCreateSession } = require('./shared/database/bot-helpers');\n      const currentSessionId"));
+    expect(at).toBeLessThan(bot.indexOf('const currentSessionId = await getOrCreateSession(user.id);'));
   });
 
   test('a pasted plan is taken before intent detection', () => {
