@@ -33,10 +33,10 @@ beforeEach(() => {
 describe('parseArgs', () => {
   it('reads repeated --staff and --staff-name', () => {
     expect(linkSchool.parseArgs([
-      '--school', 'Hillside Primary', '--code', 'HP-01', '--head', '15550100009',
+      '--school', 'Hillside Primary', '--ext-id', 'HP-01', '--head', '15550100009',
       '--staff', 'matrix:@amara:rumi.local', '--staff-name', 'Chen Rao', '--staff-name', 'Ben Ito',
     ])).toEqual({
-      school: 'Hillside Primary', code: 'HP-01', head: '15550100009',
+      school: 'Hillside Primary', extId: 'HP-01', head: '15550100009',
       staff: ['matrix:@amara:rumi.local'], staffNames: ['Chen Rao', 'Ben Ito'],
     });
   });
@@ -57,12 +57,12 @@ describe('resolveUser', () => {
 describe('linkSchool', () => {
   it('creates the school, links the head teacher and the staff, and adds name-only staff', async () => {
     const result = await linkSchool.linkSchool({
-      school: 'Hillside Primary', code: 'HP-01', head: '15550100009',
+      school: 'Hillside Primary', extId: 'HP-01', head: '15550100009',
       staff: ['matrix:@amara:rumi.local'], staffNames: ['Chen Rao'],
     });
 
     const [school] = mockDb.rowsOf('schools');
-    expect(school).toMatchObject({ name: 'Hillside Primary', code: 'HP-01' });
+    expect(school).toMatchObject({ name: 'Hillside Primary', ext_id: 'HP-01' });
 
     const byName = Object.fromEntries(mockDb.rowsOf('users').map((u) => [u.name, u]));
     expect(byName['Grace Hall']).toMatchObject({ school_id: school.id, role: 'head_teacher' });
@@ -74,7 +74,7 @@ describe('linkSchool', () => {
   });
 
   it('is idempotent: running it twice reuses the school and does not duplicate name-only staff', async () => {
-    const args = { school: 'Hillside Primary', code: 'HP-01', head: '15550100009', staff: [], staffNames: ['Chen Rao'] };
+    const args = { school: 'Hillside Primary', extId: 'HP-01', head: '15550100009', staff: [], staffNames: ['Chen Rao'] };
     await linkSchool.linkSchool(args);
     await linkSchool.linkSchool(args);
     expect(mockDb.rowsOf('schools')).toHaveLength(1);

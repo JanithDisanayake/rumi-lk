@@ -739,20 +739,20 @@ CREATE TABLE IF NOT EXISTS attendance_records (
 );
 
 -- A school, so a head teacher's staff can be found and their attendance kept.
--- `code` is an optional external identifier (a ministry or district school
+-- `ext_id` is an optional external identifier (a census or district school
 -- number) for deployments that have one; nothing in the bot depends on it.
+-- One definition shared with coach observations (same columns, same DDL).
 -- users.school_id (column reconcile below) links teachers and head teachers.
 CREATE TABLE IF NOT EXISTS schools (
-    id UUID NOT NULL DEFAULT uuid_generate_v4(),
-    name VARCHAR(255) NOT NULL,
-    code TEXT,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ext_id TEXT,
+    name TEXT NOT NULL,
+    district TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (id)
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_schools_code_unique
-    ON schools (code) WHERE code IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_schools_ext_id ON schools (ext_id) WHERE ext_id IS NOT NULL;
 
 -- Staff attendance: one row per (teacher, day), marked by a head teacher.
 -- Distinct from attendance_sessions/attendance_records, which are STUDENT
@@ -4141,8 +4141,8 @@ CREATE INDEX IF NOT EXISTS idx_test_papers_inflight ON test_papers (created_at) 
 -- spelling 'principal') makes "attendance" mean staff attendance. Both nullable:
 -- a deployment that never links schools sees no change.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS school_id UUID REFERENCES schools(id) ON DELETE SET NULL;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(32);
-CREATE INDEX IF NOT EXISTS idx_users_school_id ON users (school_id) WHERE school_id IS NOT NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(30);
+CREATE INDEX IF NOT EXISTS idx_users_school_id ON users (school_id);
 
 -- attendance_sessions.leave_count: students on approved leave that day, beside
 -- present_count/absent_count, so a Leave round-trips to the register summary.

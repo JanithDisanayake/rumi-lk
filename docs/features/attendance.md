@@ -67,7 +67,7 @@ _Always on_ — core. On a fresh install the class side needs nothing: a teacher
 **Staff attendance** needs a school with its head teacher and staff linked. From `bot/`:
 
 ```bash
-node scripts/attendance/link-school.js --school "Hillside Primary" --code HP-01 \
+node scripts/attendance/link-school.js --school "Hillside Primary" --ext-id HP-01 \
   --head 15550100009 \
   --staff matrix:@amara:example.org --staff slack:U0123ABCD \
   --staff-name "Chen Rao"
@@ -76,11 +76,11 @@ node scripts/attendance/link-school.js --school "Hillside Primary" --code HP-01 
 - `--head` / `--staff` name a person by `users.id`, WhatsApp number, or channel identity
   (`slack:…`, `discord:…`, `matrix:…`); a channel identity is found once that person has messaged the bot.
 - `--staff-name` adds a colleague who does not use the bot; they appear on the staff register like everyone else.
-- `--code` is an optional external school identifier (a ministry or district number) — nothing depends on it.
+- `--ext-id` is an optional external school identifier (`schools.ext_id`: a census or district number) — nothing depends on it.
 - The script is idempotent, and resolves everyone before writing anything.
 
-It sets `users.school_id` for everyone and `users.role = 'head_teacher'` for the head teacher (`principal` is
-accepted as the same role, for data that already uses that word).
+It sets `users.school_id` for everyone and `users.role = 'head_teacher'` for the head teacher (`principal` and
+`school_leader` are read as the same role, for data that already uses those words).
 
 **WhatsApp Flows (Meta Cloud API only).** The setup and marking Flows are registered during setup
 (`register-all-flows`) into `ATTENDANCE_SETUP_FLOW_ID` and `ATTENDANCE_MARKING_FLOW_ID`. To get the *On leave*

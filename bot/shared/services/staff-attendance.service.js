@@ -23,10 +23,10 @@ const AttendanceDates = require('./attendance-dates');
 const { deliverRegisterFile } = require('./attendance-register-delivery.service');
 
 /**
- * Roles that mark staff attendance. `principal` is the spelling some existing data
- * carries for the same job; both mean head teacher here.
+ * Roles that mark staff attendance. `head_teacher` is the one written; `principal`
+ * and `school_leader` are read as the same job, for data that already uses them.
  */
-const HEAD_TEACHER_ROLES = ['head_teacher', 'principal'];
+const HEAD_TEACHER_ROLES = ['head_teacher', 'principal', 'school_leader'];
 
 const LEAVE_TYPES = ['casual', 'sick', 'official'];
 
@@ -54,7 +54,7 @@ async function loadSchool(schoolId) {
   if (!schoolId) return null;
   const { data } = await supabase
     .from('schools')
-    .select('id, name, code')
+    .select('id, name, ext_id')
     .eq('id', schoolId)
     .maybeSingle();
   return data || null;

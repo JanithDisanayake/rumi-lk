@@ -35,7 +35,7 @@ jest.mock('../../bot/shared/services/attendance-conversation.service', () => ({
 const StaffAttendance = require('../../bot/shared/services/staff-attendance.service');
 const AttendanceDeliveryService = require('../../bot/shared/services/attendance-delivery.service');
 
-const SCHOOL = { id: 'sch1', name: 'Hillside Primary', code: null };
+const SCHOOL = { id: 'sch1', name: 'Hillside Primary', ext_id: null };
 
 function seed() {
   mockDb = createAttendanceDb({
@@ -85,9 +85,11 @@ describe('who is staff', () => {
 });
 
 describe('the role', () => {
-  it('a head teacher is head_teacher, and the legacy principal spelling counts too', () => {
+  it('a head teacher is head_teacher, and the principal / school_leader aliases count too', () => {
     expect(StaffAttendance.isHeadTeacher({ role: 'head_teacher' })).toBe(true);
     expect(StaffAttendance.isHeadTeacher({ role: 'principal' })).toBe(true);
+    expect(StaffAttendance.isHeadTeacher({ role: 'school_leader' })).toBe(true);
+    expect(StaffAttendance.isHeadTeacher({ role: 'coach' })).toBe(false);
     expect(StaffAttendance.isHeadTeacher({ role: 'teacher' })).toBe(false);
     expect(StaffAttendance.isHeadTeacher({ role: null })).toBe(false);
   });

@@ -7,25 +7,27 @@
 -- valid before stays valid after.
 -- =============================================================================
 
--- A school, so a head teacher's staff can be found. `code` is an optional
--- external identifier for deployments that have one.
+-- A school, so a head teacher's staff can be found. `ext_id` is an optional
+-- external identifier for deployments that have one. Same definition as the
+-- coach-observation migration; whichever runs first creates it.
 CREATE TABLE IF NOT EXISTS schools (
-    id UUID NOT NULL DEFAULT uuid_generate_v4(),
-    name VARCHAR(255) NOT NULL,
-    code TEXT,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ext_id TEXT,
+    name TEXT NOT NULL,
+    district TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (id)
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-ALTER TABLE schools ADD COLUMN IF NOT EXISTS code TEXT;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_schools_code_unique
-    ON schools (code) WHERE code IS NOT NULL;
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS ext_id TEXT;
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS district TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_schools_ext_id ON schools (ext_id) WHERE ext_id IS NOT NULL;
 
--- Who works where, and in which job. NULL role is a teacher; 'head_teacher'
--- (or 'principal') marks staff attendance.
+-- Who works where, and in which job. NULL or 'teacher' is a teacher;
+-- 'head_teacher' marks staff attendance ('principal' and 'school_leader' are
+-- read as the same role, never written).
 ALTER TABLE users ADD COLUMN IF NOT EXISTS school_id UUID REFERENCES schools(id) ON DELETE SET NULL;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(32);
-CREATE INDEX IF NOT EXISTS idx_users_school_id ON users (school_id) WHERE school_id IS NOT NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(30);
+CREATE INDEX IF NOT EXISTS idx_users_school_id ON users (school_id);
 
 -- Staff attendance: one row per (teacher, day).
 CREATE TABLE IF NOT EXISTS teacher_attendance_records (

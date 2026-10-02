@@ -10,14 +10,14 @@
  * register like everyone else.
  *
  * Usage (from bot/):
- *   node scripts/attendance/link-school.js --school "Hillside Primary" [--code HP-01] \
+ *   node scripts/attendance/link-school.js --school "Hillside Primary" [--ext-id HP-01] \
  *     --head <person> [--staff <person> ...] [--staff-name "Full Name" ...]
  *
  * <person> is a users.id, a WhatsApp number (digits, any punctuation), or a channel
  * identity as the bot addresses it: "slack:U0123", "discord:1234", "matrix:@ivy:example.org".
  * A channel identity is found once that person has messaged the bot.
  *
- * Idempotent: re-running reuses the school (matched by --code, else by exact name)
+ * Idempotent: re-running reuses the school (matched by --ext-id, else by exact name)
  * and does not duplicate name-only staff. People it cannot find are reported and
  * skipped; a head teacher it cannot find stops the run before anything is written.
  */
@@ -28,12 +28,12 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HEAD_TEACHER_ROLE = 'head_teacher';
 
 function parseArgs(argv) {
-  const out = { school: null, code: null, head: null, staff: [], staffNames: [] };
+  const out = { school: null, extId: null, head: null, staff: [], staffNames: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
     const value = argv[i + 1];
     if (flag === '--school') { out.school = value; i += 1; }
-    else if (flag === '--code') { out.code = value; i += 1; }
+    else if (flag === '--ext-id') { out.extId = value; i += 1; }
     else if (flag === '--head') { out.head = value; i += 1; }
     else if (flag === '--staff') { out.staff.push(value); i += 1; }
     else if (flag === '--staff-name') { out.staffNames.push(value); i += 1; }
@@ -72,17 +72,17 @@ async function resolveUser(who) {
   return data || null;
 }
 
-async function findOrCreateSchool(name, code) {
-  const lookup = code
-    ? supabase.from('schools').select('id, name, code').eq('code', code)
-    : supabase.from('schools').select('id, name, code').eq('name', name);
+async function findOrCreateSchool(name, extId) {
+  const lookup = extId
+    ? supabase.from('schools').select('id, name, ext_id').eq('ext_id', extId)
+    : supabase.from('schools').select('id, name, ext_id').eq('name', name);
   const { data: existing } = await lookup.maybeSingle();
   if (existing) return existing;
 
   const { data: created, error } = await supabase
     .from('schools')
-    .insert({ name, code: code || null })
-    .select('id, name, code')
+    .insert({ name, ext_id: extId || null })
+    .select('id, name, ext_id')
     .single();
   if (error) throw new Error(`Could not create the school: ${error.message}`);
   return created;
@@ -113,10 +113,10 @@ async function ensureNameOnlyStaff(name, schoolId) {
 }
 
 /**
- * @param {{school: string, code?: string, head: string, staff: string[], staffNames: string[]}} args
+ * @param {{school: string, extId?: string, head: string, staff: string[], staffNames: string[]}} args
  * @returns {Promise<{school: object, head: object, linked: string[], added: string[], missing: string[]}>}
  */
-async function linkSchool({ school, code = null, head, staff = [], staffNames = [] }) {
+async function linkSchool({ school, extId = null, head, staff = [], staffNames = [] }) {
   if (!school) throw new Error('--school is required');
   if (!head) throw new Error('--head is required');
 
@@ -132,7 +132,7 @@ async function linkSchool({ school, code = null, head, staff = [], staffNames = 
     else missing.push(who);
   }
 
-  const schoolRow = await findOrCreateSchool(school, code);
+  const schoolRow = await findOrCreateSchool(school, extId);
   await setUser(headUser.id, { school_id: schoolRow.id, role: HEAD_TEACHER_ROLE });
 
   const linked = [];
@@ -156,7 +156,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   try {
     const result = await linkSchool(args);
-    console.log(`School: ${result.school.name}${result.school.code ? ` (${result.school.code})` : ''} — ${result.school.id}`);
+    console.log(`School: ${result.school.name}${result.school.ext_id ? ` (${result.school.ext_id})` : ''} — ${result.school.id}`);
     console.log(`Head teacher: ${result.head.name || result.head.id}`);
     if (result.linked.length) console.log(`Linked staff: ${result.linked.join(', ')}`);
     if (result.added.length) console.log(`Added by name: ${result.added.join(', ')}`);
