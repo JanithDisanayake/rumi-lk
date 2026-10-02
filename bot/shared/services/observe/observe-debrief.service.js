@@ -15,8 +15,7 @@
  * analysis_data.observer_debrief, always merge-written.
  *
  * Also the read side of the coach's worklist: listPendingDebriefs,
- * listUnsentReports, listUnfinished and buildPendingListPayload. Every list
- * row id has a route in observe-interactive.handler.js.
+ * listUnsentReports and listUnfinished (the /observe menu builds the list).
  */
 
 const WhatsAppService = require('../whatsapp.service');
@@ -270,78 +269,6 @@ async function countPending(observerUserId) {
     listUnsentReports(observerUserId, { limit: 1000 }).catch(() => []),
   ]);
   return p.length + u.length;
-}
-
-// The row's clock time is how a coach tells two observations apart, so it is
-// shown in the deployment's own timezone (the same setting scheduled visits
-// use), never a hardcoded one.
-function _rowTitle(createdAt) {
-  try {
-    return new Intl.DateTimeFormat('en-GB', {
-      day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-      timeZone: process.env.OBSERVE_CALENDAR_TIMEZONE || 'UTC',
-    }).format(new Date(createdAt));
-  } catch (_) {
-    return String(createdAt).slice(0, 16);
-  }
-}
-
-// Score-free row context: the focus-area headline, if the analysis has one.
-function _rowDescription(analysisData, S) {
-  const focus = (analysisData && (analysisData.focus_area || analysisData.focus_area_sw)) || {};
-  const label = focus.title || focus.title_sw;
-  return String(label || S.list_row_default_desc).slice(0, 72);
-}
-
-/**
- * The interactive-list payload for sendInteractiveMessage: up to three
- * labelled stages, then the new-observation row. Max 10 rows. When over
- * budget, stage A (the otherwise-invisible backlog) wins, then debriefs, then
- * sends; the new-observation row always ships.
- */
-function buildPendingListPayload(pendings, S, unsentReports = [], unfinished = []) {
-  // Lead with WHO, not when: two pending debriefs are indistinguishable by a
-  // date and a focus line. Rows that never recorded a teacher keep the date.
-  const debriefRows = (pendings || []).map((p) => {
-    const when = _rowTitle(p.created_at);
-    const desc = p.teacher_name ? [when, p.school_name].filter(Boolean).join(' · ') : _rowDescription(p.analysis_data, S);
-    return {
-      id: `${LIST_ROW_PREFIX}${p.id}`,
-      title: `📋 ${p.teacher_name || when}`.slice(0, 24),
-      description: String(desc).slice(0, 72),
-    };
-  });
-  const sendRows = (unsentReports || []).map((r) => {
-    const d = (r.analysis_data && r.analysis_data.teacher_delivery) || {};
-    const name = d.teacher_name || r.teacher_name;
-    return {
-      id: `observe_send_${r.id}`,
-      title: `📨 ${name || _rowTitle(r.created_at)}`.slice(0, 24),
-      description: (name ? `${S.list_send_desc_prefix} ${name}` : S.list_send_default_desc).slice(0, 72),
-    };
-  });
-  const unfinishedRows = (unfinished || []).map((u) => ({
-    id: `observe_resume_${u.id}`,
-    title: `📝 ${u.teacher_name || _rowTitle(u.created_at)}`.slice(0, 24),
-    description: String(S[`resume_desc_${u.resume}`] || S.resume_desc_wait || '').slice(0, 72),
-  }));
-  const budget = MAX_PENDING_ROWS;
-  const a = unfinishedRows.slice(0, budget);
-  const b = debriefRows.slice(0, Math.max(0, budget - a.length));
-  const c = sendRows.slice(0, Math.max(0, budget - a.length - b.length));
-  const sections = [];
-  if (a.length) sections.push({ title: String(S.section_stage_a).slice(0, 24), rows: a });
-  if (b.length) sections.push({ title: String(S.section_stage_b).slice(0, 24), rows: b });
-  if (c.length) sections.push({ title: String(S.section_stage_c).slice(0, 24), rows: c });
-  sections.push({
-    title: String(S.list_section_new || S.list_section_title).slice(0, 24),
-    rows: [{
-      id: LIST_NEW_ID,
-      title: String(S.list_new_observation).slice(0, 24),
-      description: String(S.list_new_observation_desc).slice(0, 72),
-    }],
-  });
-  return { body: S.list_body, action: { button: String(S.list_button).slice(0, 20), sections } };
 }
 
 // ── State helpers ──────────────────────────────────────────────────────
@@ -905,7 +832,6 @@ module.exports = {
   resumeKindFor,
   sendReportRowMeta,
   countPending,
-  buildPendingListPayload,
   clearStateAfterSubmit,
   armDebriefAudio,
   startDebrief,

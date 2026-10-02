@@ -307,27 +307,6 @@ describe('the pending lists (for the /observe worklist)', () => {
     expect(rows.find((r) => r.id === 'p1').teacher_name).toBe('Jordan Lee');
   });
 
-  test('buildPendingListPayload: three labelled stages + the new-observation row, within the list caps', async () => {
-    const payload = ObserveDebrief.buildPendingListPayload(
-      await ObserveDebrief.listPendingDebriefs(COACH.id), S,
-      await ObserveDebrief.listUnsentReports(COACH.id),
-      await ObserveDebrief.listUnfinished(COACH.id),
-    );
-    const { sections } = payload.action;
-    const ids = sections.flatMap((s) => s.rows.map((r) => r.id));
-    expect(ids).toEqual(['observe_resume_a2', 'observe_resume_a1', 'observe_debrief_p2', 'observe_debrief_p1', 'observe_send_u1', 'observe_new']);
-    expect(ids.length).toBeLessThanOrEqual(10);
-    for (const s of sections) {
-      expect(s.title.length).toBeLessThanOrEqual(24);
-      for (const r of s.rows) {
-        expect(r.title.length).toBeLessThanOrEqual(24);
-        expect(r.description.length).toBeLessThanOrEqual(72);
-        expect(r.id.startsWith('observe_')).toBe(true);
-      }
-    }
-    expect(sections.flatMap((s) => s.rows).find((r) => r.id === 'observe_debrief_p1').title).toContain('Robin Park');
-  });
-
   test('countPending counts debriefs + unsent reports', async () => {
     expect(await ObserveDebrief.countPending(COACH.id)).toBe(3);
   });

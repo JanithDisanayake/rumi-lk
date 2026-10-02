@@ -314,10 +314,6 @@ The `/observe` list uses these functions from `observe-debrief.service.js`:
   yet. Each row has `resume` set to `form`, `retry` or `wait`.
 - `listPendingDebriefs(coachId)`
 - `listUnsentReports(coachId)`
-- `buildPendingListPayload(...)` builds the list in three labelled stages plus
-  the `observe_new` row, within the 10-row limit.
-
-Row times use `OBSERVE_CALENDAR_TIMEZONE`.
 
 ## The teacher's report
 
