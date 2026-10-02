@@ -54,6 +54,8 @@ jest.mock('../../bot/shared/services/cache/railway-redis.service', () => {
     setNX: async (k, v) => { if (mockKv.has(k)) return false; mockKv.set(k, JSON.stringify(v)); return true; },
     delete: async (k) => { mockKv.delete(k); return true; },
     del: async (k) => { mockKv.delete(k); return true; },
+    incr: async (k) => { const n = (mockKv.has(k) ? JSON.parse(mockKv.get(k)) : 0) + 1; mockKv.set(k, JSON.stringify(n)); return n; },
+    expire: async () => true,
   };
 });
 
@@ -177,6 +179,20 @@ describe('region with video quizzes OFF', () => {
     const joined = await say('QUIZ-NOPE23');
     expect(joined).toEqual([]);
     expect(reachedChat('QUIZ-NOPE23')).toBe(true);
+  });
+
+  // The lookup made before the ack counts wrong codes like the join does
+  // (review F-S5): after the limit a sender's codes are not looked up.
+  test('wrong codes count here too: the sixth is not looked up, and goes on to chat', async () => {
+    for (let i = 0; i < share.JOIN_GUESS_LIMIT; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await say(`QUIZ-NOPE2${i}`);
+    }
+    const reads = jest.spyOn(mockMem, 'from');
+    const joined = await say('QUIZ-LESABC');
+    expect(reads).not.toHaveBeenCalledWith('quiz_share_codes');
+    expect(joined).toEqual([]);
+    expect(reachedChat('QUIZ-LESABC')).toBe(true);
   });
 
   test('a lesson quiz code still joins (the region gate is about the video library only)', async () => {

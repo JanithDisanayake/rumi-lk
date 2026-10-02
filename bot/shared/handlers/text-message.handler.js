@@ -104,12 +104,17 @@ const { ownCoaching } = require('../services/coaching/own-coaching');
  * answer is known before the join is acked. A failed read says yes: the join
  * itself then decides, as before.
  */
-async function shareCodeAdmitted(code) {
+async function shareCodeAdmitted(from, code) {
   try {
     const { isVideoQuizzesEnabled } = require('../services/region-features.service');
     const { detectRegion } = require('../utils/region');
     if (await isVideoQuizzesEnabled(detectRegion())) return true;
+    // This lookup is a code check too, so it counts wrong codes like the join
+    // does: past the limit a sender's codes are not looked up at all.
+    const VideoQuizShare = require('../services/quiz/video-quiz-share.service');
+    if (await VideoQuizShare.guessesExhausted(from)) return false;
     const sc = await require('../services/quiz/video-quiz-invite.service').resolveInvite(code);
+    if (!sc) await VideoQuizShare.countWrongGuess(from);
     return !!(sc && !sc.video_id);
   } catch (err) {
     logToFile('⚠️ video-quiz: share-code region check failed — the join decides', { error: err.message });
@@ -138,7 +143,7 @@ async function tryShareCodeJoin(from, messageBody, typingController) {
     // Acked first, that false would reach nobody and the text would be
     // swallowed. A lesson quiz's code (no video) still joins. The common case
     // (video quizzes on) costs no extra read.
-    if (!(await shareCodeAdmitted(code))) return false;
+    if (!(await shareCodeAdmitted(from, code))) return false;
 
     // ACK FIRST. A class tapping a forwarded link within the same minute would
     // otherwise run every join (identity lookup, share-code resolution, the

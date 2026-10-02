@@ -727,4 +727,5 @@ module.exports = {
   parseShareCode, beginFromCode, beginFromCodeLocked, consumeJoinReply, handleJoinFlowReply,
   SHARE_YES, SHARE_NO, JOIN_KEY, JOIN_LOCK_KEY, JOIN_LOCK_SECS, JOIN_FLOW_PREFIX, CODE_RX, randomCode, botNumber,
   joinInvite, classMessage, JOIN_GUESS_LIMIT, JOIN_GUESS_WINDOW_SECS, JOIN_GUESS_KEY,
+  guessesExhausted, countWrongGuess,
 };
