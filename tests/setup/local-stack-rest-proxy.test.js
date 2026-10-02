@@ -5,9 +5,8 @@
  */
 
 const http = require('http');
-const path = require('path');
 
-const { rewritePath, createProxy } = require(path.resolve(__dirname, '../../infrastructure/local/rest-proxy.js'));
+const { rewritePath, createProxy } = require('../../infrastructure/local/rest-proxy');
 
 function listen(server) {
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server.address().port)));
