@@ -807,7 +807,8 @@ async function handleTextMessage(message, from, messageBody, user = null) {
     // library and went to the generator, which then needs its own API keys.
     const STUDENT_VIDEOS_FLOW_ID = process.env.STUDENT_VIDEOS_FLOW_ID || '';
     typingController.stop();
-    const videoFlowToken = `${user?.id || 'anon'}:student-videos:${Date.now()}`;
+    // The chat rides on the token so the video reaches a teacher on any channel.
+    const videoFlowToken = `${user?.id || 'anon'}:student-videos:${Date.now()}:${from}`;
     const pickerSent = await WhatsAppService.sendFlow(from, {
       flowId: STUDENT_VIDEOS_FLOW_ID,
       flowKind: 'student-videos',

@@ -162,6 +162,22 @@ describe('SELECT_TOPIC → SUCCESS (deliver)', () => {
     expect(caption).not.toMatch(/—.*—/); // no fragmented em-dashes
   });
 
+  test('a teacher on Matrix (no users.phone_number) gets the ack and the video in the chat the picker was opened from', async () => {
+    mockQueue = [
+      { data: { id: 'uuid-1', grade: '3', subject: 'Maths', clean_chapter: 'Numbers',
+                clean_title: 'Identifying Even and Odd Numbers', r2_url: 'https://r2/sample.mp4',
+                migration_status: 'done' }, error: null },
+    ];
+    // The opener puts the recipient at the end of the token: userId:student-videos:<ts>:<recipient>.
+    const res = await handleStudentVideosDataExchange('u9:student-videos:1790000000000:mtx:15550100001', 'SELECT_TOPIC', {
+      grade: '3', subject: 'Maths', video: 'uuid-1',
+    });
+    expect(res.screen).toBe('SUCCESS');
+    expect(WhatsAppService.sendMessage.mock.calls[0][0]).toBe('mtx:15550100001');
+    await flush();
+    expect(WhatsAppService.sendVideoFromUrl.mock.calls[0][0]).toBe('mtx:15550100001');
+  });
+
   test('unknown video id → error, no delivery', async () => {
     mockQueue = [{ data: null, error: { message: 'not found' } }];
     const res = await handleStudentVideosDataExchange('u:tok', 'SELECT_TOPIC', {

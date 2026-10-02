@@ -58,6 +58,24 @@ function distinct(rows, key) {
   return [...new Set(rows.map((r) => r[key]).filter((v) => v != null && v !== ''))];
 }
 
+/**
+ * The chat the picker was opened from, when the opener put it on the token
+ * (`<userId>:student-videos:<ts>:<recipient>`, see text-message.handler /video
+ * and the /quiz menu). A teacher on Matrix, Slack or Discord has no WhatsApp
+ * number in users.phone_number to send the video to. The recipient itself may
+ * contain ':' (`mtx:…`, `slack:…`), so it is everything after the third ':'.
+ */
+function recipientFromToken(flowToken) {
+  const parts = String(flowToken || '').split(':');
+  if (parts[1] !== 'student-videos' || parts.length < 4) return null;
+  return parts.slice(3).join(':') || null;
+}
+
+async function recipientFor(flowToken) {
+  const userId = (flowToken || '').split(':')[0];
+  return recipientFromToken(flowToken) || getPhoneForUser(userId);
+}
+
 async function getPhoneForUser(userId) {
   if (!userId) return null;
   const { data } = await supabase
@@ -191,9 +209,8 @@ async function selectTopic(flowToken, screenData) {
 // Awaited (not fire-and-forget) so it lands BEFORE the SUCCESS screen renders;
 // tiny sendMessage call, well under Meta's 10s data_exchange budget.
 async function sendPreDeliveryAck(flowToken, row) {
-  const userId = (flowToken || '').split(':')[0];
   try {
-    const phone = await getPhoneForUser(userId);
+    const phone = await recipientFor(flowToken);
     if (!phone) return;
     await WhatsAppService.sendMessage(
       phone,
@@ -213,7 +230,7 @@ function deliverVideoAsync(flowToken, row) {
   (async () => {
     let phone;
     try {
-      phone = await getPhoneForUser(userId);
+      phone = await recipientFor(flowToken);
       if (!phone) {
         logToFile('Student Videos: no phone for user', { userId });
         return;

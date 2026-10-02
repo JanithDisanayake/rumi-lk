@@ -358,7 +358,8 @@ async function openVideoQuizzes(user, phone, lang) {
       header: resolveUx('tqVideoPickerHeader', { language: lang }),
       body: resolveUx('tqVideoPickerBody', { language: lang }),
       buttonText: resolveUx('tqVideoPickerCta', { language: lang }),
-      flowToken: `${user?.id || 'anon'}:student-videos:${Date.now()}`,
+      // The chat rides on the token so the video reaches a teacher on any channel.
+      flowToken: `${user?.id || 'anon'}:student-videos:${Date.now()}:${phone}`,
     });
   } catch (err) {
     logToFile('⚠️ quiz menu: the video picker could not be sent', { error: err.message });
