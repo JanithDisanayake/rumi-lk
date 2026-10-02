@@ -26,6 +26,7 @@ const supabase = require('../../config/supabase');
 const { logToFile } = require('../../utils/logger');
 const { familyOf } = require('./question-types');
 const { subjectName } = require('./paper-renderer');
+const { planTextFromRow } = require('../coaching/fidelity/lesson-plan-text');
 
 /** How many of a teacher's recent lesson plans are offered. */
 const LESSON_PLAN_LIMIT = 20;
@@ -250,7 +251,12 @@ async function _pdfText(buffer) {
 
 /** A lesson plan's text: its saved content, else its PDF's text, else ''. */
 async function _lessonText(lp) {
-  const saved = flattenContent(lp.content);
+  // A plan Rumi made stores its PDF's text as content.plan_text, read through
+  // the one shared reader; any other saved shape is flattened. Only the
+  // content is passed, since the paper already heads each plan with its topic.
+  const saved = lp.content && typeof lp.content.plan_text === 'string'
+    ? (planTextFromRow({ content: lp.content }) || '')
+    : flattenContent(lp.content);
   if (saved.length >= MIN_LESSON_CHARS) return saved;
   if (lp.pdf_url) {
     try {

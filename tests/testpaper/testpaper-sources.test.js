@@ -138,6 +138,16 @@ describe('loadLessonPlanContent', () => {
     expect(mockAxiosGet).not.toHaveBeenCalled();
   });
 
+  it('reads a Rumi-made plan\'s stored text (content.plan_text) through the shared lesson-plan reader', async () => {
+    db.tables.lesson_plans.push({ id: 'lp-4', user_id: TEACHER, topic: 'The water cycle', grade: '5', subject: 'Science', content: { plan_text: LONG, export_meta: 'gamma-export-v2' }, pdf_url: null, created_at: '2026-09-24T10:00:00Z' });
+    const c = await Sources.loadLessonPlanContent(['lp-4'], TEACHER);
+    expect(c.text).toContain('Plants make their own food');
+    // The stored PDF text is the plan itself, not a field to be headed like a sectioned plan.
+    expect(c.text).not.toMatch(/Plan text:/);
+    expect(c.text).not.toContain('gamma-export-v2');
+    expect(mockAxiosGet).not.toHaveBeenCalled();
+  });
+
   it('falls back to the text of the plan\'s PDF', async () => {
     mockAxiosGet.mockResolvedValue({ data: Buffer.from('%PDF-1.4') });
     mockPdfParse.mockResolvedValue({ text: `Parts of a flower. ${LONG}` });
