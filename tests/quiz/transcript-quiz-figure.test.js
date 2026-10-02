@@ -35,13 +35,12 @@ function codeOf(fn) {
 }
 
 describe('ALLOWED_TYPES', () => {
-  test('is exactly the twenty-four phone-safe types, and excludes the five that are not', () => {
-    // molecule joined later: it was excluded because a
-    // flash model's SMILES is a gamble, and it is back only because the model
-    // no longer writes one — it names a formula from a fixed dictionary and
-    // the structure is filled in from code.
+  test('is exactly the twenty-three phone-safe types, and excludes the six that are not', () => {
+    // molecule is excluded: the engine draws a structure only through the
+    // optional openchemlib package, which the bot does not install, so every
+    // molecule came out as a formula card.
     //
-    // The last eight joined after that: the fifteen above are the
+    // The last eight joined after that: the fourteen above are the
     // 6-12 lesson-plan roster and a grade 1-5 phonics, counting, time, money,
     // pattern or matching lesson could reach none of them. They are offered to
     // the AUTHOR only for a grade 1-5 lesson (CORE_TYPES / EARLY_YEARS_TYPES),
@@ -53,14 +52,14 @@ describe('ALLOWED_TYPES', () => {
     // draw on nearly every place-value page.
     expect(Figure.ALLOWED_TYPES).toEqual([
       'numberline', 'fraction_bar', 'grid', 'geometry', 'graph', 'chem_equation', 'circuit',
-      'free_body', 'atom', 'punnett', 'ray_diagram', 'flow', 'timeline', 'cell', 'molecule',
+      'free_body', 'atom', 'punnett', 'ray_diagram', 'flow', 'timeline', 'cell',
       'word_blank', 'count_objects', 'count_frame', 'clock', 'pattern', 'match', 'money', 'compare_size',
       'base_ten',
     ]);
-    expect(Figure.CORE_TYPES).toHaveLength(15);
+    expect(Figure.CORE_TYPES).toHaveLength(14);
     expect(Figure.EARLY_YEARS_TYPES).toHaveLength(9);
     expect([...Figure.CORE_TYPES, ...Figure.EARLY_YEARS_TYPES]).toEqual(Figure.ALLOWED_TYPES);
-    ['illustrative', 'labelled_figure', 'mindmap', 'panels', 'dna_helix']
+    ['illustrative', 'labelled_figure', 'mindmap', 'panels', 'dna_helix', 'molecule']
       .forEach((t) => expect(Figure.ALLOWED_TYPES).not.toContain(t));
   });
 
@@ -77,9 +76,10 @@ describe('ALLOWED_TYPES', () => {
     expect(Figure.canonicalType('nope')).toBeNull();
   });
 
-  test('an alias of molecule resolves, now that the type is allowed again', () => {
-    expect(Figure.canonicalType('smiles')).toBe('molecule');
-    expect(Figure.canonicalType('structure')).toBe('molecule');
+  test('an alias of molecule does not resolve while the type is excluded', () => {
+    expect(Figure.canonicalType('molecule')).toBeNull();
+    expect(Figure.canonicalType('smiles')).toBeNull();
+    expect(Figure.canonicalType('structure')).toBeNull();
   });
 });
 

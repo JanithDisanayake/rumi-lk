@@ -44,7 +44,8 @@ const DENSE = [
   ['punnett', 'punnett_dihybrid'],
   ['punnett', 'punnett_monohybrid_ur'],
   ['numberline', 'numberline_inequality_ur'],
-  ['molecule', 'molecule_nacl_ionic'],
+  // molecule_nacl_ionic left the list with the type: molecule is not a quiz
+  // figure while the engine cannot draw a structure (see ALLOWED_TYPES).
 ];
 
 describe('a dense spec is scaled down, never thrown away', () => {

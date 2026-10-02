@@ -21,6 +21,10 @@ const Figure = require('../../bot/shared/services/quiz/transcript-quiz-figure');
 const Gates = require('../../bot/shared/services/quiz/transcript-quiz-figure-gates');
 
 const { renderFigureSvg, withFontScale, PHONE_FONT_SCALE } = Figure;
+const { TYPE_DEFAULTS = {} } = Figure;
+
+/** A type the sweep improved (k=2.4): a short three-step process. */
+const FLOW = { type: 'flow', direction: 'lr', steps: [{ title: 'Seed' }, { title: 'Sprout' }, { title: 'Plant' }] };
 
 /** Canvas renderedPx for the smallest label in `svg` — same box gates.js uses. */
 function canvasMinPx(svg) {
@@ -64,15 +68,15 @@ describe('PHONE_FONT_SCALE applied by renderFigureSvg', () => {
     expect(canvasMinPx(svg)).toBeGreaterThanOrEqual(PHONE_FONT_SCALE.atom * 13);
   });
 
-  test('a type the sweep improved (molecule, k=2.4) renders visibly larger than at k=1', () => {
-    const spec = { type: 'molecule', formula: 'H2O', smiles: 'O', name: 'water' };
+  test('a type the sweep improved (flow, k=2.4) renders visibly larger than at k=1', () => {
+    const spec = FLOW;
     // A bigger viewBox from bigger fonts nudges the box-fit scale too, so the
     // growth is not perfectly linear in k — check direction and a wide margin,
     // not an exact multiple.
     const shipped = canvasMinPx(renderFigureSvg(spec, 'en'));
-    const unscaled = canvasMinPx(renderDiagram({ ...spec, type: 'molecule', lang: 'en' }));
-    expect(PHONE_FONT_SCALE.molecule).toBeGreaterThan(1);
-    expect(shipped).toBeGreaterThan(unscaled * (PHONE_FONT_SCALE.molecule * 0.7));
+    const unscaled = canvasMinPx(renderDiagram({ ...(TYPE_DEFAULTS.flow || {}), ...spec, lang: 'en' }));
+    expect(PHONE_FONT_SCALE.flow).toBeGreaterThan(1);
+    expect(shipped).toBeGreaterThan(unscaled * (PHONE_FONT_SCALE.flow * 0.7));
     expect(shipped).toBeGreaterThan(unscaled);
   });
 
@@ -120,10 +124,10 @@ describe('the gates still run on the scaled SVG', () => {
   });
 
   test('the shipped scale for an improved type is visibly bigger AND still passes every gate cleanly', () => {
-    const spec = { type: 'molecule', formula: 'H2O', smiles: 'O', name: 'water' };
+    const spec = FLOW;
     const shipped = renderFigureSvg(spec, 'en');
-    const unscaled = renderDiagram({ ...spec, type: 'molecule', lang: 'en' });
+    const unscaled = renderDiagram({ ...(TYPE_DEFAULTS.flow || {}), ...spec, lang: 'en' });
     expect(canvasMinPx(shipped)).toBeGreaterThan(canvasMinPx(unscaled));
-    expect(Gates.figureGateDefects(shipped, 'molecule')).toEqual([]);
+    expect(Gates.figureGateDefects(shipped, 'flow')).toEqual([]);
   });
 });

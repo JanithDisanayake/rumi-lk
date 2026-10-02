@@ -53,9 +53,9 @@ const { clampLanguage } = require('../../config/ux-strings');
  */
 const ALLOWED_TYPES = [
   'numberline', 'fraction_bar', 'grid', 'geometry', 'graph', 'chem_equation', 'circuit',
-  'free_body', 'atom', 'punnett', 'ray_diagram', 'flow', 'timeline', 'cell', 'molecule',
+  'free_body', 'atom', 'punnett', 'ray_diagram', 'flow', 'timeline', 'cell',
   // ── the early-years half ───────────────────────────────────
-  // The fifteen above are the 6-12 lesson-plan roster: they draw quantity,
+  // The fourteen above are the 6-12 lesson-plan roster: they draw quantity,
   // structure and process, and a grade-1 phonics or counting lesson could not
   // reach any of them. Yet a picture can come in handy at any stage — fill in
   // the blanks, phonics or spelling questions, or a question where an image of
@@ -89,12 +89,11 @@ const EARLY_YEARS_TYPES = [
 const CORE_TYPES = ALLOWED_TYPES.filter((t) => !EARLY_YEARS_TYPES.includes(t));
 
 /**
- * `molecule` was off this list because "SMILES from a flash model is a gamble":
- * a SMILES that will not parse degrades silently to a formula card, and one
- * that parses to the WRONG structure is drawn as confidently as the right one.
- * Round 4 re-admits it with the gamble removed — the model may only name a
- * formula from a fixed dictionary in transcript-quiz-figure-science.js, and the
- * SMILES (or the ionic flag) is then written by CODE, not by the model.
+ * `molecule` is not on this list. The engine draws a structure only through the
+ * optional `openchemlib` package, which the bot does not install, so every
+ * molecule fell back to a formula card a child cannot read a structure off.
+ * The fixed formula dictionary in transcript-quiz-figure-science.js stays, so
+ * the type can come back once that dependency is declared and tested.
  */
 
 /**
@@ -452,7 +451,6 @@ const PHONE_FONT_SCALE = {
   flow: 2.4,
   timeline: 2.4, // improved, still under 10dp
   cell: 1.0, // unsolved
-  molecule: 2.4,
   // The early-years types are typed for a child, not for an A4 column: their
   // own SIZE tokens are already 20-54 units (a word_blank letter is 54), so
   // every one of them clears the floor unscaled and scaling them further only

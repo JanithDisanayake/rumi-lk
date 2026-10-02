@@ -15,7 +15,6 @@ const { completeJson } = require('./transcript-quiz-llm');
 const { LANG_NAME, canonicalSubject } = require('./transcript-quiz-language');
 const { ALLOWED_TYPES, EARLY_YEARS_TYPES, CORE_TYPES, minimalSpecBlock } = require('./transcript-quiz-figure');
 const { names: pictogramNames } = require('../../../vendor/lp-v9/diagrams/lib/pictogram');
-const { MOLECULE_DICTIONARY } = require('./transcript-quiz-figure-science');
 const { multiContract, multiSelectEnabled } = require('./transcript-quiz-multi');
 const { requiredHigherOrder } = require('./transcript-quiz-pedagogy');
 const { peopleRule } = require('./transcript-quiz-people');
@@ -52,7 +51,7 @@ function isEarlyYears(gradeBand) {
 /**
  * The block that opens the option space for a young class.
  *
- * The fifteen 6-12 types draw quantity, structure and process; before this block a
+ * The fourteen 6-12 types draw quantity, structure and process; before this block a
  * grade-1 phonics, spelling, counting, time or pattern lesson could reach none
  * of them, and the prompt told a language teacher to leave "figure" null. Yet a
  * picture can come in handy at any stage: an image of a cat is shown, then
@@ -156,7 +155,6 @@ HARD RULES
 - Colours: use only the tokens named in the minimal specs; never invent one (var(--sand), var(--brown) do not exist and render as nothing).
 - SCIENCE MUST BE TRUE. A drawing is checked against the world, not only against the engine: a chem_equation must BALANCE (set "balanced": false only when the question is asking the child to balance it); an atom's element must be one the engine knows (H to Ca, plus Fe, Cu, Zn, Br, I) or carry an explicit "Z" and "shells", because an unknown symbol is drawn as a different element wearing that label; a cell may only label parts the chosen kind has (an animal cell has no wall, no chloroplast, no large vacuole).
 - A dot-and-cross bonding picture ("mode":"dot_cross") takes a "partner" OBJECT ({"element":"Cl"}) and a NUMERIC "transfer" — a string for either is silently dropped and the engine draws a different element, or a charge nobody chose. It is for MAIN-GROUP elements only: never Fe, Cu or Zn, whose shells in the engine are a simplification their real ion charge does not follow from. In an ionic pair the transfer is the donor's outer electrons AND what the acceptor needs to reach eight — the same number both ways (Na to Cl is 1; Mg to O is 2).
-- molecule draws only these formulas, and you write ONLY the "formula" — the structure is filled in from a fixed table, never from a SMILES you write: ${Object.keys(MOLECULE_DICTIONARY).join(', ')}.
 
 WORKED EXAMPLES (spec next to the question it serves):
 1. fraction_bar, read_off — stem "تصویر میں روٹی کا کتنا حصہ رنگا ہوا ہے؟", options ["$\\\\frac{3}{4}$", "$\\\\frac{1}{4}$", "$\\\\frac{4}{3}$"], correct 0,

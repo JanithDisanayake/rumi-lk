@@ -14,7 +14,6 @@ jest.mock('../../bot/shared/utils/structured-logger', () => ({ logEvent: jest.fn
 
 const { validate } = require('../../bot/shared/services/quiz/transcript-quiz-validator');
 const Figure = require('../../bot/shared/services/quiz/transcript-quiz-figure');
-const { MOLECULE_DICTIONARY } = require('../../bot/shared/services/quiz/transcript-quiz-figure-science');
 
 const DIGEST = { subject: 'science', slos: [{ id: 'S1', statement: 'name the parts of a cell', taught_level: 'understand' }] };
 
@@ -85,15 +84,16 @@ describe('FIGURE_CELL — a part the chosen cell has not got is silently dropped
   });
 });
 
-describe('FIGURE_MOLECULE — molecule is back on the allowlist, behind the dictionary', () => {
-  test('molecule is an allowed type again', () => {
-    expect(Figure.ALLOWED_TYPES).toContain('molecule');
-    expect(Figure.canonicalType('molecule')).toBe('molecule');
+describe('molecule is not a quiz figure while the engine cannot draw a structure', () => {
+  test('molecule is not an allowed type', () => {
+    expect(Figure.ALLOWED_TYPES).not.toContain('molecule');
+    expect(Figure.canonicalType('molecule')).toBeNull();
   });
 
-  test('a formula in the dictionary draws', () => {
+  test('a formula in the dictionary is still refused as a figure', () => {
     const r = run(six({ figure: { type: 'molecule', formula: 'H2O' } }));
-    expect(errorsOf(r)).not.toMatch(/FIGURE_MOLECULE/);
+    expect(r.ok).toBe(false);
+    expect(errorsOf(r)).toMatch(/q0: FIGURE_TYPE[^\n]*molecule/);
   });
 
   test('a formula outside the dictionary is rejected, and the error lists what is drawable', () => {
@@ -101,20 +101,6 @@ describe('FIGURE_MOLECULE — molecule is back on the allowlist, behind the dict
     expect(r.ok).toBe(false);
     expect(errorsOf(r)).toMatch(/q0: FIGURE_MOLECULE/);
     expect(errorsOf(r)).toMatch(/H2O/);
-  });
-
-  test("the dictionary overwrites the model's SMILES rather than trusting it", () => {
-    // The author agreed with the dictionary's formula but wrote no SMILES at
-    // all: the drawing must still be the real structure, from code.
-    const r = run(six({ figure: { type: 'molecule', formula: 'CO2' } }));
-    expect(r.questions[0].figure.smiles).toBe(MOLECULE_DICTIONARY.CO2.smiles);
-    expect(r.questions[0].figure.name).toBe(MOLECULE_DICTIONARY.CO2.name);
-  });
-
-  test('an ionic compound is drawn as a lattice, not as a molecule', () => {
-    const r = run(six({ figure: { type: 'molecule', formula: 'NaCl' } }));
-    expect(r.questions[0].figure.ionic).toBe(true);
-    expect(errorsOf(r)).not.toMatch(/FIGURE_MOLECULE/);
   });
 });
 
@@ -127,14 +113,14 @@ describe('the science errors participate in salvage', () => {
   });
 });
 
-describe('the author is told the molecule rule', () => {
-  test('the prompt names the fixed dictionary and generates its formula list from the code', () => {
+describe('the author is not offered molecule', () => {
+  test('the prompt neither lists the type nor its formula rule', () => {
     const { buildAuthorPrompt } = require('../../bot/shared/services/quiz/transcript-quiz-author.service');
     const p = buildAuthorPrompt({
       digest: { topic: 'Bonding', subject: 'science', grade_band: '6-8', slos: [] },
       excerpts: '…', language: 'en', n: 8, gradeBand: '6-8',
     });
-    Object.keys(MOLECULE_DICTIONARY).forEach((f) => expect(p).toContain(f));
-    expect(p).toMatch(/molecule[^\n]*only[^\n]*formulas/i);
+    expect(p).not.toMatch(/molecule[^\n]*only[^\n]*formulas/i);
+    expect(p).not.toMatch(/"type":\s*"molecule"/);
   });
 });
