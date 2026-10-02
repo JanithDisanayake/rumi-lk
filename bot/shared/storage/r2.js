@@ -30,6 +30,16 @@ const getR2Client = lazyClient(S3Client, ['R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2
 const BUCKET_NAME = process.env.R2_BUCKET_NAME;
 
 /**
+ * One path segment of an object key, built from a channel identifier or a
+ * message/session id. A Matrix identity ("mtx:1555…", "matrix:@teacher:server")
+ * or event id ("$abc:server") carries characters several S3-compatible
+ * stores refuse; a WhatsApp number or message id passes through unchanged.
+ */
+function keySegment(value) {
+  return String(value).replace(/[^A-Za-z0-9._-]/g, '_');
+}
+
+/**
  * Upload audio file to R2 storage
  * @param {string} filePath - Local file path
  * @param {string} userId - User's phone number (for organizing files)
@@ -43,7 +53,7 @@ async function uploadAudio(filePath, userId, messageId) {
     const timestamp = Date.now();
 
     // Create organized path: audio/{userId}/{timestamp}_{messageId}.ext
-    const key = `audio/${userId}/${timestamp}_${messageId}${fileExt}`;
+    const key = `audio/${keySegment(userId)}/${timestamp}_${keySegment(messageId)}${fileExt}`;
 
     const command = new PutObjectCommand({
       Bucket: BUCKET_NAME,
@@ -93,7 +103,7 @@ function buildR2PublicUrl(key) {
 
 async function uploadLessonPlanBuffer({ buffer, userId, sessionId, fileType = 'pdf' }) {
   const normalizedExt = fileType.startsWith('.') ? fileType.toLowerCase() : `.${fileType.toLowerCase()}`;
-  const key = `lesson_plans/${userId}/${sessionId}_lesson_plan${normalizedExt}`;
+  const key = `lesson_plans/${keySegment(userId)}/${keySegment(sessionId)}_lesson_plan${normalizedExt}`;
 
   const command = new PutObjectCommand({
     Bucket: BUCKET_NAME,
@@ -158,7 +168,7 @@ async function uploadClassroomAudio(filePath, userId, sessionId, metadata = {}) 
     const yearMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 
     // Create organized path: classroom_audio/{userId}/{YYYY-MM}/{sessionId}_{timestamp}.ext
-    const key = `classroom_audio/${userId}/${yearMonth}/${sessionId}_${timestamp}${fileExt}`;
+    const key = `classroom_audio/${keySegment(userId)}/${yearMonth}/${keySegment(sessionId)}_${timestamp}${fileExt}`;
 
     const command = new PutObjectCommand({
       Bucket: BUCKET_NAME,
@@ -201,7 +211,7 @@ async function uploadLessonPlan(filePath, userId, sessionId) {
     const fileExt = path.extname(filePath);
 
     // Create path: lesson_plans/{userId}/{sessionId}_lesson_plan.{ext}
-    const key = `lesson_plans/${userId}/${sessionId}_lesson_plan${fileExt}`;
+    const key = `lesson_plans/${keySegment(userId)}/${keySegment(sessionId)}_lesson_plan${fileExt}`;
 
     const command = new PutObjectCommand({
       Bucket: BUCKET_NAME,
@@ -238,7 +248,7 @@ async function uploadLessonPlan(filePath, userId, sessionId) {
 async function uploadVoiceDebrief(audioBuffer, userId, sessionId, language) {
   try {
     // Create path: voice_debriefs/{userId}/{sessionId}_debrief.mp3
-    const key = `voice_debriefs/${userId}/${sessionId}_debrief.mp3`;
+    const key = `voice_debriefs/${keySegment(userId)}/${keySegment(sessionId)}_debrief.mp3`;
 
     const command = new PutObjectCommand({
       Bucket: BUCKET_NAME,
@@ -275,7 +285,7 @@ async function uploadVoiceDebrief(audioBuffer, userId, sessionId, language) {
 async function uploadReportPDF(pdfBuffer, userId, sessionId) {
   try {
     // Create path: reports/{userId}/{sessionId}_report.pdf
-    const key = `reports/${userId}/${sessionId}_report.pdf`;
+    const key = `reports/${keySegment(userId)}/${keySegment(sessionId)}_report.pdf`;
 
     const command = new PutObjectCommand({
       Bucket: BUCKET_NAME,
@@ -647,7 +657,7 @@ async function uploadImageWithRetry(imageBuffer, userId, imageId, mimeType) {
                     mimeType === 'image/gif' ? 'gif' :
                     mimeType === 'image/webp' ? 'webp' : 'jpg';
   const timestamp = Date.now();
-  const key = `images/${userId}/${imageId}_${timestamp}.${extension}`;
+  const key = `images/${keySegment(userId)}/${keySegment(imageId)}_${timestamp}.${extension}`;
 
   let lastError;
 
