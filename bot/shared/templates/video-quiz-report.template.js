@@ -152,10 +152,11 @@ const CHROME = {
   en: {
     eyebrow: 'Class quiz results',
     gradeLine: (g) => `Grade ${esc(g)}`,
-    // Built by classHeading() from what the CHILDREN typed,
-    // so the template only has to place it. `gradeLine` stays for the callers
+    // Built by classHeading() from what the CHILDREN typed, so it is
+    // untrusted text and is escaped here like every other field (the page is
+    // rendered by the server's browser). `gradeLine` stays for the callers
     // that still pass a single `grade` and know it (the video-quiz lane).
-    classesLine: (c) => c,
+    classesLine: (c) => esc(c),
     classAverage: 'Class average',
     started: 'Started', finished: 'Finished', worthReteaching: 'Worth reteaching',
     worthReteachingHeading: 'Worth reteaching &mdash; most missed',
@@ -188,7 +189,7 @@ const CHROME = {
     // were the only place in the repo that had drifted off it.
     eyebrow: 'کلاس کے quiz کے نتائج',
     gradeLine: (g) => `جماعت ${esc(g)}`,
-    classesLine: (c) => c,
+    classesLine: (c) => esc(c),
     // "کلاس اوسط" was a word-for-word calque: Urdu does not stack two nouns
     // the way English does, so it needs the linker to mean anything at all.
     classAverage: 'کلاس کا اوسط',
