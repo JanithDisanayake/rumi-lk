@@ -529,3 +529,28 @@ describe('doctor only probes a channel whose keys are set', () => {
     expect(row.detail).toBe('set: MATRIX_HOMESERVER_URL, MATRIX_ACCESS_TOKEN');
   });
 });
+
+// CHANNEL_DRIVER=none: no WhatsApp, only the additive channels answer.
+describe('doctor on a WhatsApp-free deployment (CHANNEL_DRIVER=none)', () => {
+  const CORE = {
+    SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'k', OPENROUTER_API_KEY: 'k', REDIS_URL: 'redis://x',
+  };
+  const probes = { supabase: async () => ({ ok: true }), redis: async () => ({ ok: true }), openrouter: async () => ({ ok: true }),
+    matrix: async () => ({ ok: true, detail: 'connected as @rumi:example.org, end-to-end encrypted' }) };
+
+  it('needs no WhatsApp keys and says which channels answer', async () => {
+    const env = { ...CORE, CHANNEL_DRIVER: 'none', MATRIX_HOMESERVER_URL: 'https://m.example.org', MATRIX_ACCESS_TOKEN: 't' };
+    const r = await runDoctor({ env, probes, setupState: null });
+    expect(r.missingRequired).toEqual([]);
+    expect(r.ok).toBe(true);
+    const text = formatReport(r);
+    expect(text).toMatch(/Channel driver: none \(no WhatsApp\)/);
+    expect(text).toMatch(/answers only on: matrix/);
+  });
+
+  it('fails when nothing at all can answer', async () => {
+    const r = await runDoctor({ env: { ...CORE, CHANNEL_DRIVER: 'none' }, probes, setupState: null });
+    expect(r.ok).toBe(false);
+    expect(formatReport(r)).toMatch(/no channel is configured/i);
+  });
+});

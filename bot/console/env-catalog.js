@@ -146,6 +146,30 @@ const CHANNEL_CARDS = {
   },
 };
 
+/** How the overview names a channel in a sentence. */
+const CHANNEL_SPOKEN = { matrix: 'Rumi Messenger (Matrix)', slack: 'Slack', discord: 'Discord' };
+
+function joinNames(names) {
+  return names.length <= 1 ? (names[0] || '') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+/**
+ * The overview's one-line answer to "where are teachers reaching Rumi?", from
+ * the resolved WhatsApp-family driver and the additive channels that are on.
+ */
+function answeringOn(channel, activeChannels = []) {
+  const extras = joinNames(activeChannels.map((c) => CHANNEL_SPOKEN[c] || c));
+  if (channel === 'none') {
+    return extras
+      ? `Answering on ${extras} — no WhatsApp number.`
+      : 'No channel is configured: set up Matrix, Slack or Discord, or choose a WhatsApp driver.';
+  }
+  const base = channel === 'baileys'
+    ? 'Answering as a linked WhatsApp account — the try-it-out setup, no Meta approval needed'
+    : 'Answering on an official WhatsApp Business number';
+  return extras ? `${base}, and on ${extras}.` : `${base}.`;
+}
+
 /**
  * Which feature (if any) a key switches on, so a row can say what turning it on
  * would buy you. Built from FEATURES rather than hand-listed.
@@ -292,4 +316,4 @@ function knownKeys() {
   return keys;
 }
 
-module.exports = { buildCatalog, knownKeys, GROUP_ORDER, CORE_LABELS };
+module.exports = { buildCatalog, knownKeys, answeringOn, GROUP_ORDER, CORE_LABELS };

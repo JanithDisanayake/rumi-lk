@@ -413,7 +413,10 @@ async function runDoctor({
   }
 
   const probesPassed = probeResults.every((p) => p.status !== 'fail');
-  const ok = analysis.missingRequired.length === 0 && probesPassed;
+  // CHANNEL_DRIVER=none answers only on the additive channels; with none of
+  // those configured there is nothing a teacher could reach.
+  const noChannel = analysis.channel === 'none' && !(analysis.activeChannels || []).length;
+  const ok = analysis.missingRequired.length === 0 && probesPassed && !noChannel;
 
   return {
     ok,
@@ -424,6 +427,7 @@ async function runDoctor({
     channel: analysis.channel,
     channelDriverTypo: analysis.channelDriverTypo,
     activeChannels: analysis.activeChannels,
+    noChannel,
   };
 }
 
@@ -433,7 +437,12 @@ function formatReport(result) {
   const mark = (s) => ({ pass: '✅', fail: '❌', skip: '⏭️ ', on: '✅', off: '➖' }[s] || '•');
   const lines = [];
   lines.push('Rumi doctor — deployment preflight');
-  if (result.channel) {
+  if (result.channel === 'none') {
+    lines.push('Channel driver: none (no WhatsApp)');
+    lines.push(result.noChannel
+      ? '❌ CHANNEL_DRIVER=none but no channel is configured: set MATRIX_*, SLACK_* or DISCORD_* keys (see docs/channels/matrix.md).'
+      : `ℹ️  Rumi answers only on: ${(result.activeChannels || []).join(', ')}.`);
+  } else if (result.channel) {
     const tier = isProductionTier(result.channel) ? 'production' : 'sandbox';
     lines.push(`Channel driver: ${result.channel} (${tier})`);
     if (result.channel === 'baileys') {
@@ -449,7 +458,7 @@ function formatReport(result) {
   }
   if (result.channelDriverTypo) {
     lines.push(
-      `⚠️  CHANNEL_DRIVER="${result.channelDriverTypo}" is not a recognized driver (valid: meta | baileys) —`
+      `⚠️  CHANNEL_DRIVER="${result.channelDriverTypo}" is not a recognized driver (valid: meta | baileys | none) —`
       + ` falling back to ${result.channel}.`
     );
   }

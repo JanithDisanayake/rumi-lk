@@ -13,7 +13,7 @@
 const express = require('express');
 
 const { render } = require('../view');
-const { buildCatalog } = require('../env-catalog');
+const { buildCatalog, answeringOn } = require('../env-catalog');
 const { buildPipeline } = require('../pipeline-map');
 const { readEnvFile } = require('../../scripts/setup/env-file');
 
@@ -79,6 +79,7 @@ module.exports = function pagesRouter({ runtime, posture, mount }) {
       missing: missingRequired(env),
       channel: resolveChannelDriver(env),
       activeChannels: resolveActiveChannels(env),
+      answeringOn: answeringOn(resolveChannelDriver(env), resolveActiveChannels(env)),
       identity,
       processState,
       features,

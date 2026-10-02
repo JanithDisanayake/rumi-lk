@@ -42,6 +42,7 @@ require('../../bot/shared/services/messaging/baileys-channel.service');
 require('../../bot/shared/services/messaging/slack-channel.service');
 require('../../bot/shared/services/messaging/discord-channel.service');
 require('../../bot/shared/services/messaging/matrix-channel.service');
+require('../../bot/shared/services/messaging/none-channel.service');
 
 function parseMethodNames(src) {
   const names = new Set();

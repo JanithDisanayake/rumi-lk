@@ -72,6 +72,18 @@ describe('the channel question', () => {
   });
 });
 
+describe('the channel question: no WhatsApp at all', () => {
+  it('offers running on your own messenger, Slack or Discord only, without naming the driver', async () => {
+    const { chooseChannelDriver } = loadWizard();
+    const io = fakeIo({ select: ['none'] });
+    expect(await chooseChannelDriver(io)).toBe('none');
+    const { options } = io.asked.select[0];
+    const none = options.find((o) => o.value === 'none');
+    expect(`${none.label} ${none.hint}`).toMatch(/messenger/i);
+    expect(`${none.label} ${none.hint}`).not.toMatch(/CHANNEL_DRIVER|driver/i);
+  });
+});
+
 describe('stepChannel', () => {
   /** Collects what would have been written to .env. */
   function recordingSaver(env = {}) {
@@ -94,6 +106,19 @@ describe('stepChannel', () => {
     // as failed, because scheduling its report threw "SQS Queue not configured".
     expect(saved.QUEUE_DRIVER).toBe('bullmq');
     expect(saved.CHANNEL_STATE_DIR).toBe('.channel-state');
+  });
+
+  it('a WhatsApp-free deployment saves CHANNEL_DRIVER=none and a runnable queue, and links nothing', async () => {
+    const { stepChannel } = loadWizard({ probes: allPass });
+    const { env, saved, save } = recordingSaver();
+    const io = fakeIo({ select: ['none'] });
+
+    const result = await stepChannel(io, env, save);
+
+    expect(result).toEqual({ channel: 'none', linked: false });
+    expect(saved.CHANNEL_DRIVER).toBe('none');
+    expect(saved.QUEUE_DRIVER).toBe('bullmq');
+    expect(io.asked.confirm || []).toEqual([]); // no QR code offered
   });
 
   it('leaves a production deployment\'s queue choice alone', async () => {

@@ -44,6 +44,7 @@ const REQUIRED_VARS = [
 const CHANNEL_REQUIRED_VARS = {
   meta: ['WHATSAPP_TOKEN', 'PHONE_NUMBER_ID', 'WEBHOOK_VERIFY_TOKEN', 'WABA_ID'],
   baileys: [],
+  none: [],
 };
 
 // Additive channels (Slack, Discord, ...) run ALONGSIDE whichever

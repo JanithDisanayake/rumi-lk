@@ -18,6 +18,8 @@ const DRIVERS = {
   slack: './slack-channel.service',
   discord: './discord-channel.service',
   matrix: './matrix-channel.service',
+  // No WhatsApp at all: only the additive channels answer (CHANNEL_DRIVER=none).
+  none: './none-channel.service',
 };
 
 const DEFAULT_DRIVER = 'baileys';

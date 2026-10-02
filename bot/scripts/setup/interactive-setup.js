@@ -518,7 +518,7 @@ async function stepExtras(io, env, save, opts = {}) {
  * our vocabulary, and asking it of a user makes them guess at an architecture
  * they have no reason to know.
  *
- * @returns {Promise<'baileys'|'meta'>}
+ * @returns {Promise<'baileys'|'meta'|'none'>}
  */
 async function chooseChannelDriver(io) {
   return io.select('How are you using Rumi right now?', [
@@ -531,6 +531,11 @@ async function chooseChannelDriver(io) {
       value: 'meta',
       label: 'Real deployment — official WhatsApp Business number',
       hint: 'Needs a Meta Business account and their review process.',
+    },
+    {
+      value: 'none',
+      label: 'No WhatsApp — only our own messenger, Slack or Discord',
+      hint: 'For a school system on its own Matrix messenger (Rumi Messenger). Set it up in the next step.',
     },
   ], 'baileys');
 }
@@ -613,6 +618,7 @@ async function collectMetaCredentials(io, env, save) {
  * @returns {Promise<{number?: string|null, detail?: string}|null>} null when it is not
  */
 async function channelAlreadyWorking(env, channel) {
+  if (channel === 'none') return { detail: '(no WhatsApp: answering on the channels in the next step)' };
   if (channel === 'meta') {
     if (!hasAll(env, ['WHATSAPP_TOKEN', 'PHONE_NUMBER_ID'])) return null;
     const check = await probe('whatsapp', env);
@@ -659,6 +665,10 @@ async function stepChannel(io, env, save, opts = {}) {
 
   if (channel === 'meta') {
     await collectMetaCredentials(io, env, save);
+    return { channel, linked: false };
+  }
+  if (channel === 'none') {
+    console.log(ui.aside('No WhatsApp, then. Teachers reach Rumi on the channels you set up next — Matrix (Rumi Messenger), Slack or Discord.'));
     return { channel, linked: false };
   }
   const outcome = await linkSandbox(io);

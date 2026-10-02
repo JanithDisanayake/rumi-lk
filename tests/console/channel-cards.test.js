@@ -36,3 +36,22 @@ describe('console channel cards', () => {
     for (const id of channelIds) expect(WHEN_OFF[id]).toEqual(expect.any(String));
   });
 });
+
+describe('console overview: what Rumi is answering on', () => {
+  const { answeringOn } = require('../../bot/console/env-catalog');
+
+  it('names the messenger on a WhatsApp-free deployment', () => {
+    expect(answeringOn('none', ['matrix'])).toBe('Answering on Rumi Messenger (Matrix) — no WhatsApp number.');
+    expect(answeringOn('none', ['matrix', 'slack'])).toBe('Answering on Rumi Messenger (Matrix) and Slack — no WhatsApp number.');
+  });
+
+  it('says plainly when nothing can answer', () => {
+    expect(answeringOn('none', [])).toMatch(/No channel is configured/);
+  });
+
+  it('keeps the WhatsApp wording, plus any extra channels', () => {
+    expect(answeringOn('meta', [])).toBe('Answering on an official WhatsApp Business number.');
+    expect(answeringOn('meta', ['matrix'])).toBe('Answering on an official WhatsApp Business number, and on Rumi Messenger (Matrix).');
+    expect(answeringOn('baileys', [])).toMatch(/linked WhatsApp account/);
+  });
+});
