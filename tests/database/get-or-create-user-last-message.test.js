@@ -24,6 +24,11 @@ beforeEach(() => {
   mockState.existingUser = null;
   mockState.calls = { updates: [], inserts: [] };
 
+  // Not `{ virtual: true }`: config/supabase.js is a real file, and Jest keys a
+  // virtual mock by the raw path. When another suite in the same worker had
+  // already resolved bot-helpers' require('../config/supabase') to the real
+  // file, that cached resolution skipped this mock and the real client (the
+  // supabase-js stub) ran — the one-suite-per-run red this file used to be.
   jest.doMock('../../bot/shared/config/supabase', () => {
     const api = {
       from() { return api; },
@@ -46,7 +51,7 @@ beforeEach(() => {
       },
     };
     return api;
-  }, { virtual: true });
+  });
 
   ({ getOrCreateUser } = require('../../bot/shared/database/bot-helpers'));
 });
