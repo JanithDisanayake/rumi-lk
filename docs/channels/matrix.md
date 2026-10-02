@@ -1,0 +1,143 @@
+# Run Rumi on your own messenger (Matrix)
+
+Rumi can run on a chat server your school system owns: a [Matrix](https://matrix.org) homeserver. Teachers
+use a Rumi-branded Android app or web app that looks and behaves like WhatsApp: they sign in with their phone
+number, chat and call colleagues, and find Rumi already there as a contact. Every message, voice note and PDF
+is end-to-end encrypted, and there is no per-message fee and no third-party app review.
+
+It is the same Rumi. Matrix is a channel next to WhatsApp, Slack and Discord: a teacher's message goes through
+the same pipeline, so lesson plans, coaching, reading assessments and the rest are the same code. Where
+WhatsApp shows buttons and forms, Matrix shows a numbered menu ("reply 1, 2 or the option's name") and asks a
+form's questions one message at a time.
+
+**What you need**
+
+| Piece | Where it comes from |
+|---|---|
+| A Matrix homeserver (Synapse) and the teacher apps | [rumi-messenger](https://github.com/Orenda-Project/rumi-messenger): a Docker or Railway deploy of Synapse, a branded Element Web, the Android app, calls and push. Its setup creates the `@rumi` account and writes the connection lines for you. |
+| This repo, running the bot **and** the worker | [SETUP.md](../../SETUP.md), or [a laptop setup](../local-stack.md) with no Supabase account |
+| **Node 24 or newer** | End-to-end encryption needs it (see [Encryption](#encryption)) |
+| **Redis** (`REDIS_URL`) | Already required. On Matrix it also carries the worker's sends to the bot (see [The relay](#the-relay)) |
+| Object storage (`R2_*`) | For coaching recordings, reading recordings and generated images, as on any non-Meta channel |
+
+## Turn it on
+
+The guided way: `rumi setup` has a Matrix step after Slack and Discord. Point it at rumi-messenger's
+`deploy/rumi-channel.env` (or paste the homeserver URL and token), and it checks the connection and
+whether encryption can start.
+
+By hand, in `.env`:
+
+```bash
+MATRIX_HOMESERVER_URL=https://matrix.example.org   # your homeserver's client API
+MATRIX_ACCESS_TOKEN=                               # the @rumi account's access token
+MATRIX_USER_ID=@rumi:example.org                   # optional; saves a lookup on the first send
+MATRIX_STORAGE_DIR=/data/matrix-storage            # must survive restarts (see below)
+MATRIX_E2EE=on                                     # the default; "off" only if plaintext is acceptable
+```
+
+Then start both processes and check:
+
+```bash
+node bot/whatsapp-bot.js          # owns the Matrix connection
+node bot/workers/sqs-worker.js    # lesson plans, coaching reports, ... sent through the bot
+node bin/rumi.js doctor           # "Matrix channel — connected as @rumi:…, end-to-end encrypted"
+```
+
+`node bot/scripts/matrix-smoke.js` (with `MATRIX_SMOKE_TARGET_USER=@teacher:example.org`) runs a live round
+trip with one account. Stop the bot first: it opens its own connection.
+
+| Variable | Required | Default | What it does |
+|---|---|---|---|
+| `MATRIX_HOMESERVER_URL` | yes | — | With the token, switches the channel on |
+| `MATRIX_ACCESS_TOKEN` | yes | — | The bot account's token. Keep it secret; rotating it means a new device (see below) |
+| `MATRIX_USER_ID` | no | looked up | The bot's own id |
+| `MATRIX_STORAGE_DIR` | no | `./.matrix-storage` | Sync position and the encryption store |
+| `MATRIX_E2EE` | no | `on` | Only `off` runs without encryption |
+| `MATRIX_WELCOME_ROOM_ALIAS` | no | `#rumi-announcements:<server>` | The room new accounts are auto-joined to; Rumi greets each newcomer in a DM |
+| `RUMI_FEATURE_CHANNEL_MATRIX` | no | — | `off` pauses the channel without deleting its keys (the console's Features page writes it) |
+
+## How teachers are identified
+
+A teacher's Matrix username is their phone number with a leading `+` (or `t`): `@+15550100001:example.org`.
+Rumi stores that teacher as `mtx:15550100001`, the same digits a WhatsApp number would have, so it fits the
+existing database columns. rumi-messenger's `teacher.sh add "+1555…" "Name"` creates accounts in this form.
+Any other username (`@teacher:example.org`) works too, as `matrix:@teacher:example.org`. Two numbers that
+differ only in their country code stay two different teachers.
+
+## Encryption
+
+Encryption is on by default and **fails closed**. The bot needs the optional
+`@matrix-org/matrix-sdk-crypto-nodejs` package, which only installs on **Node 24 or newer**. If it cannot load,
+the Matrix channel refuses to start with an error saying why, the bot keeps serving its other channels, and
+`rumi doctor` reports it. Set `MATRIX_E2EE=off` only if plaintext is acceptable on your homeserver.
+
+**`MATRIX_STORAGE_DIR` must persist.** It holds the encryption keys of the bot's device, paired with its
+access token. On a host with an ephemeral disk (most PaaS services), mount a volume there. If the store is
+lost, the old token can no longer encrypt: log in again for a new token (a new device) and, if you
+cross-sign, sign the new device (rumi-messenger's `scripts/bot-cross-sign.sh`).
+
+**Run one bot process per store.** Two processes syncing on one device fight over its keys and its saved
+state. Let an old instance stop before a new one starts (no overlapping deploys on one volume).
+
+## The relay
+
+Only the bot process holds the Matrix connection. Every other process (the queue worker, the stale-session
+cron, the Morning Brief worker, a script) sends to Matrix by queuing the call in Redis; the bot performs it
+and returns the result. Files travel with the call, so the processes do not need a shared disk. This is
+automatic. If the bot is down, a worker's send waits up to three minutes and is then reported as failed.
+
+## Messages sent while the bot is down
+
+Rumi answers them when it comes back, once. It keeps a marker of the last message it processed next to the
+encryption store, answers everything after it, and skips anything it already answered. (Messages older than
+23 hours are dropped, as on WhatsApp.)
+
+## Staff group rooms
+
+In a room with more than one person, Rumi stays quiet unless someone addresses it: by mention, or by starting
+the message with its name ("Rumi, …"). A numbered reply only answers the menu Rumi sent to that teacher.
+
+## In the apps
+
+- **Element treats a leading `/` as an app command** and does not send it. To send one of Rumi's
+  commands, type it with two slashes: `//menu` is sent as `/menu`.
+- Element shows a small shield on Rumi's messages until the bot's device is cross-signed. It is cosmetic;
+  messages are still encrypted.
+- Spoken replies arrive as an audio file you tap to play, not a voice-message bubble.
+
+## What works on Matrix
+
+From the scripted end-to-end run (a local Synapse, the full bot and worker, real model providers, encryption
+on). "Degrades" means it works with a plainer experience; "breaks" means a teacher cannot finish.
+
+| Feature | On Matrix | Notes |
+|---|---|---|
+| Chat (text) | works | Reaction, typing, reply |
+| Welcome for a new account | works | Greeting in a DM once the teacher joins it |
+| Registration | works | Name asked as a question, even when `REGISTRATION_FLOW_ID` is set for WhatsApp |
+| Menus and pickers | degrades | Numbered menu; reply with a number or the option's name |
+| Forms (reading setup, class setup, attendance) | degrades | One question per message; `cancel` leaves; commands still work |
+| Voice note in, spoken reply out | works | Reply is an audio file |
+| Reading assessment | works | Passage image, recording, then the result, PDF report and audio feedback |
+| Classroom coaching | works | Send the recording as an audio file (15 minutes or longer). Report PDF, voice debrief and commitment card arrive from the worker |
+| Attendance | works | Including the monthly register spreadsheet |
+| Quiz preview in chat | works | Numbered questions |
+| Lesson plans | works with `GAMMA_API_KEY` | Without the key the teacher gets an apology within seconds |
+| Exam checker | breaks after OCR | Photos and OCR work and students are confirmed automatically; the question-confirmation step has no handler yet on any channel |
+| Morning Brief to a Matrix room | works | `BRIEF_RECIPIENTS=mtx:1555…`, sent through the relay |
+| `/status`, homework, edit class | degrades | Text summary, or an honest "not available", when their Flow ids are set for WhatsApp |
+| Group rooms | works | Quiet until addressed |
+| Approved templates (24-hour window) | n/a | Matrix has no message window; template-only sends return false |
+
+## Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| `The matrix channel did not start: … refusing to start without encryption` | The crypto package did not load. Reinstall `bot/` dependencies under Node 24+, or set `MATRIX_E2EE=off` |
+| `M_UNKNOWN_TOKEN` at start | The token was revoked or mistyped. Log the bot in again |
+| `One time key … already exists`, or messages Rumi cannot decrypt | Two processes share the device, or the store was lost. Stop extra processes; if the store is gone, use a new token and device |
+| The worker's PDFs and reports never arrive | `REDIS_URL` differs between bot and worker, or the bot is not running |
+| A teacher gets no welcome | The announcements room alias does not exist; create it or set `MATRIX_WELCOME_ROOM_ALIAS` |
+| A coaching recording is answered like a voice note | It was sent as a voice message, or is shorter than 15 minutes |
+| Uploads fail on a self-hosted object store | Set `R2_FORCE_PATH_STYLE=true` for stores that need path-style addressing (MinIO) |

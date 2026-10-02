@@ -22,7 +22,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a>
   <a href="https://github.com/Orenda-Project/rumi-platform/actions/workflows/ci.yml"><img src="https://github.com/Orenda-Project/rumi-platform/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-  <img src="https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg" alt="Node.js" />
+  <img src="https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg" alt="Node.js" />
   <img src="https://img.shields.io/badge/platform-WhatsApp-25D366.svg" alt="WhatsApp" />
   <img src="https://img.shields.io/badge/setup-15%20minutes-25D366.svg" alt="15 minute setup" />
   <img src="https://img.shields.io/badge/setup-AI--agent--native-7C3AED.svg" alt="Agent-native" />
@@ -165,6 +165,12 @@ asks the same questions as a normal message instead — but nothing is missing. 
 [docs/onboarding/sandbox-production-design.md](docs/onboarding/sandbox-production-design.md) for how this
 works under the hood.
 
+**Or run Rumi on a messenger you own.** With [Rumi Messenger](https://github.com/Orenda-Project/rumi-messenger)
+(a Matrix homeserver plus a Rumi-branded Android and web app), teachers sign in with their phone number and
+find Rumi already there as a contact — end-to-end encrypted, self-hosted, with no per-message fee. Set
+`MATRIX_HOMESERVER_URL` + `MATRIX_ACCESS_TOKEN` (or run `rumi setup`). Needs Node 24+ for encryption. See
+[docs/channels/matrix.md](docs/channels/matrix.md), including what works on Matrix today.
+
 ---
 
 ## Why Rumi Exists
@@ -204,9 +210,10 @@ key(s) that switch it on.
 | 🎬🎓 **[Video Quizzes](docs/features/video-quizzes.md)** | A curriculum video → its quiz, 3 s later — pictures, voice notes, class share links, and a next-morning reteach report. Ships with the open **Taleemabad content library** ([see below ↓](#-the-taleemabad-content-library)) | one import script + `DEFAULT_REGION=pakistan` |
 | 🗣️ **[Voice Messages](docs/features/voice.md)** | Full spoken interaction in many languages | `SONIOX_API_KEY` + `ELEVENLABS_API_KEY` |
 | 🎬 **[Video Generation](docs/features/video.md)** | A topic → a short narrated educational video | `VIDEO_GENERATION_ENABLED` + `KIE_API_KEY` |
-| ✅ **[Attendance](docs/features/attendance.md)** | Mark attendance by voice or by tapping names — works the same way on WhatsApp, Slack, and Discord | _always on (core)_ |
+| ✅ **[Attendance](docs/features/attendance.md)** | Mark attendance by voice or by tapping names — works the same way on WhatsApp, Slack, Discord and Matrix | _always on (core)_ |
 | 🧮 **[Exam Checker](docs/features/exam-checker.md)** | Photograph answer sheets → vision OCR + AI grading | `MISTRAL_API_KEY` |
-| 🌅 **[Morning Brief](docs/features/morning-brief.md)** | Every morning, one thread that tells your team how the programme is doing — registration, lesson plans, coaching, scores, reading, every school worst-first — on WhatsApp, Slack or Discord, with a live page | `BRIEF_RECIPIENTS` + a read-only `BRIEF_DATABASE_URL` |
+| 🔐 **[Rumi Messenger (Matrix)](docs/channels/matrix.md)** | Run Rumi on your own end-to-end-encrypted messenger: same features, numbered menus instead of buttons, no per-message fee | `MATRIX_HOMESERVER_URL` + `MATRIX_ACCESS_TOKEN` |
+| 🌅 **[Morning Brief](docs/features/morning-brief.md)** | Every morning, one thread that tells your team how the programme is doing — registration, lesson plans, coaching, scores, reading, every school worst-first — on WhatsApp, Slack, Discord or Matrix, with a live page | `BRIEF_RECIPIENTS` + a read-only `BRIEF_DATABASE_URL` |
 
 > **No tiers, no toggles to hunt for.** Rumi gates features by **presence**: set a feature's API key and it
 > switches on; leave it blank and it stays off cleanly — the bot never crashes over a missing key. Run
@@ -315,7 +322,7 @@ rumi-platform/
 │   ├── shared/
 │   │   ├── config/         # Presence-based feature gating, branding, languages, regions
 │   │   ├── services/
-│   │   │   ├── messaging/  # Talks to WhatsApp, Slack, and Discord, and the plain-text fallback for simple setups
+│   │   │   ├── messaging/  # Talks to WhatsApp, Slack, Discord and Matrix, and the plain-text fallback for simple setups
 │   │   │   ├── queue/      # Pluggable queue (sqs | bullmq)
 │   │   │   └── …           # LLM, coaching, reading, lesson plans, quiz, video, …
 │   │   ├── handlers/       # text / voice / image / flow / exam / attendance
@@ -334,8 +341,8 @@ rumi-platform/
 ### How a message flows
 
 ```
-Teacher on WhatsApp, Slack, or Discord
-  → Meta Cloud API (webhook)  ·OR·  linked-device socket (sandbox)  ·OR·  Slack/Discord events
+Teacher on WhatsApp, Slack, Discord, or Matrix
+  → Meta Cloud API (webhook)  ·OR·  linked-device socket (sandbox)  ·OR·  Slack/Discord events  ·OR·  Matrix sync
     → one normalized inbound shape → message dispatch
       → user lookup (Supabase) → language detection → feature routing
         → text | voice | image | flow handler
@@ -385,7 +392,7 @@ Guide](docs/agent-customization.md) maps each goal to exact files:
 |---|---|---|
 | Runtime | Node.js 22+ | Server-side JavaScript |
 | Web | Express.js | Webhook + API routes |
-| Messaging | WhatsApp (official API or a linked-device QR code), plus Slack and Discord | Messages, media, interactive forms |
+| Messaging | WhatsApp (official API or a linked-device QR code), plus Slack, Discord and Matrix | Messages, media, interactive forms |
 | AI / LLM | OpenRouter (500+ models) | Chat, analysis, content |
 | Database | Supabase (PostgreSQL) | 76 tables with Row-Level Security |
 | Queue | Redis or AWS SQS (pluggable via `QUEUE_DRIVER`) | Transcription, reports, video, exams |
@@ -422,6 +429,7 @@ the schema, the docs, the agent skills, and the link web all stay honest.
 |---|---|
 | [SETUP.md](SETUP.md) | Full setup — the two-command path, then the manual/production walkthrough |
 | [docs/local-stack.md](docs/local-stack.md) | Run Rumi on a laptop with no Supabase account and no Docker |
+| [docs/channels/matrix.md](docs/channels/matrix.md) | Run Rumi on your own messenger (Matrix): setup, encryption, the relay, what works |
 | [docs/features/](docs/features/) | Per-feature deep dives (what / how / enable) — one page each |
 | [docs/onboarding/sandbox-production-design.md](docs/onboarding/sandbox-production-design.md) | How the channel drivers work, and how `rumi graduate` moves between them |
 | [docs/onboarding/whatsapp.md](docs/onboarding/whatsapp.md) | Getting a WhatsApp Business number, start to finish |

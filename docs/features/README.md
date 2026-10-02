@@ -21,6 +21,10 @@ Run **`npm run doctor`** at any time to see which features are live for your cur
 | 🧮 [Exam Checker](exam-checker.md) | Photograph answer sheets → vision OCR + AI grading | `MISTRAL_API_KEY` |
 | 🌅 [Morning Brief](morning-brief.md) | Every morning, one thread of programme-health panels to your team on WhatsApp/Slack/Discord, plus a live dashboard page | `BRIEF_RECIPIENTS` + a read-only `BRIEF_DATABASE_URL` |
 
+**Channels.** Every feature also runs on Slack, Discord and Matrix (your own encrypted messenger). For Matrix
+— setup, encryption, and a feature-by-feature parity table from an end-to-end run — see
+[Run Rumi on your own messenger](../channels/matrix.md).
+
 **How lesson plans get routed** (pre-generated vs Gamma vs photo): see [LP_PATHS.md](../LP_PATHS.md).
 
 **Utility flows** (presence-gated on their Flow id, with a text fallback when unset): a **settings** flow (`SETTINGS_FLOW_ID` — language + coaching framework), a **status** flow (`STATUS_FLOW_ID` — your active sessions), an **edit-class** roster editor (`EDIT_CLASS_FLOW_ID`), and a **student-video** library picker (`STUDENT_VIDEOS_FLOW_ID`).
