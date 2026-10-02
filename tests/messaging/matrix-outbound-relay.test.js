@@ -49,16 +49,22 @@ function loadRelay({ redisUrl = 'redis://fake:6379' } = {}) {
   jest.doMock('ioredis', () => server.FakeRedis);
   jest.doMock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn() }));
   if (redisUrl) process.env.REDIS_URL = redisUrl; else delete process.env.REDIS_URL;
+  // Both sides derive the request signing key and the key namespace from these.
+  process.env.MATRIX_ACCESS_TOKEN = 'syt_test_token';
+  process.env.MATRIX_HOMESERVER_URL = 'https://matrix.example.org';
   // eslint-disable-next-line global-require
   relay = require('../../bot/shared/services/messaging/matrix-outbound-relay');
   return relay;
 }
 
-const savedRedisUrl = process.env.REDIS_URL;
+const ENV_KEYS = ['REDIS_URL', 'MATRIX_ACCESS_TOKEN', 'MATRIX_HOMESERVER_URL'];
+const savedEnv = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
 
 afterEach(() => {
   if (relay) relay._resetForTests();
-  if (savedRedisUrl === undefined) delete process.env.REDIS_URL; else process.env.REDIS_URL = savedRedisUrl;
+  for (const k of ENV_KEYS) {
+    if (savedEnv[k] === undefined) delete process.env[k]; else process.env[k] = savedEnv[k];
+  }
   jest.resetModules();
 });
 
@@ -166,15 +172,12 @@ describe('matrix-outbound-relay -- failures are reported the way the driver repo
     expect(relay.startOwner({})).toBe(false);
   });
 
-  it('the owner drops a request its caller has already given up on', async () => {
+  it('no MATRIX_ACCESS_TOKEN: nothing can be signed, so the call resolves false and the owner does not start', async () => {
     loadRelay();
-    const sendMessage = jest.fn(async () => true);
-    const redis = new server.FakeRedis();
-    await redis.lpush(relay.REQUEST_LIST, JSON.stringify({
-      id: 'stale', method: 'sendMessage', args: [TO, 'late'], expiresAt: Date.now() - 1000,
-    }));
-    await relay._runRequest(redis, { id: 'stale', method: 'sendMessage', args: [TO, 'late'], expiresAt: Date.now() - 1000 }, { sendMessage });
-    expect(sendMessage).not.toHaveBeenCalled();
+    delete process.env.MATRIX_ACCESS_TOKEN;
+    await expect(relay.call('sendMessage', [TO, 'hi'])).resolves.toBe(false);
+    expect(server.lists.size).toBe(0);
+    expect(relay.startOwner({})).toBe(false);
   });
 });
 
@@ -213,7 +216,7 @@ describe('matrix-outbound-relay -- process roles', () => {
     relay._setTimeoutForTests(50);
     try {
       await driver.sendMessage(TO, 'Your session is about to expire');
-      const queued = server.lists.get(relay.REQUEST_LIST) || [];
+      const queued = server.lists.get(relay._requestListKey()) || [];
       expect(queued.map((r) => JSON.parse(r).method)).toContain('sendMessage');
       expect(getClient).not.toHaveBeenCalled();
     } finally {

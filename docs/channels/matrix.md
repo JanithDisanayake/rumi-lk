@@ -110,6 +110,14 @@ cron, the Morning Brief worker, a script) sends to Matrix by queuing the call in
 and returns the result. Files travel with the call, so the processes do not need a shared disk. This is
 automatic. If the bot is down, a worker's send waits up to three minutes and is then reported as failed.
 
+The bot does not trust the Redis it shares. Each queued call is signed with a key derived from
+`MATRIX_ACCESS_TOKEN`, so every process that sends to Matrix needs the same token as the bot. The bot drops
+unsigned calls and calls whose sender has stopped waiting. The Redis keys include a short id derived from the
+token and `MATRIX_HOMESERVER_URL`, so two deployments on one Redis do not run each other's sends. The bot never
+reads a file path from a call: a file comes only as the bytes the sender read, and media only as those bytes
+or an `http(s)` URL. A send that is already uploading when its sender gives up can still arrive, so a retry
+can send it twice.
+
 ## Messages sent while the bot is down
 
 Rumi answers them when it comes back, once. It keeps a marker of the last message it processed next to the

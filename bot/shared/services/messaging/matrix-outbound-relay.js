@@ -22,9 +22,9 @@
  * inbound listener is attached. The owner runs the real driver method and
  * pushes the result back. Plain JSON on two Redis lists, no new dependency:
  *
- *   caller: LPUSH rumi:matrix:relay:requests {id, method, args, expiresAt}
- *           BRPOP rumi:matrix:relay:reply:<id>  (timeout)
- *   owner:  BRPOP rumi:matrix:relay:requests -> run -> LPUSH reply:<id>, EXPIRE
+ *   caller: LPUSH rumi:matrix:relay:<ns>:requests {v, id, method, args, issuedAt, expiresAt, sig}
+ *           BRPOP rumi:matrix:relay:<ns>:reply:<id>  (timeout)
+ *   owner:  BRPOP rumi:matrix:relay:<ns>:requests -> verify -> run -> LPUSH reply:<id>, EXPIRE
  *
  * Arguments that cannot cross a process (and on Railway, a container) boundary
  * are carried by value: Buffers as base64, and local files -- sendDocument's
@@ -33,6 +33,21 @@
  * the call. A timeout or an unreachable Redis is reported the way the driver
  * itself reports a failed send (false / null, or a throw for the media
  * lookups whose contract is to throw), and logged -- never a silent hang.
+ *
+ * Why the owner trusts nothing in the list: Redis is often shared (one Redis
+ * for several services, or for staging and production), so "can LPUSH" must
+ * not mean "can make the bot send, or read the bot's own files". Hence:
+ *   - every request and reply is HMAC-SHA256 signed with a key both processes
+ *     derive from MATRIX_ACCESS_TOKEN (which they already share -- the token
+ *     itself never goes on the wire or in a log); the owner drops unsigned or
+ *     badly signed requests, and requests past their caller's deadline;
+ *   - the list names carry a namespace derived from the same token and the
+ *     homeserver, so two deployments on one Redis never pop each other's work;
+ *   - the owner never reads a local path a request names. ARG_KINDS below is
+ *     an allowlist: a file argument may only be bytes the caller encoded, a
+ *     media argument only those bytes or an http(s) URL. Any raw string there
+ *     (a path, relative or absolute, or file://) is refused with a failure
+ *     reply, before anything is read.
  *
  * Why the default is relay rather than opt-in: a process that forgot to opt in
  * used to open a second sync on the bot's device. Synapse then refused its
@@ -46,13 +61,36 @@ const path = require('path');
 const crypto = require('crypto');
 const { logToFile } = require('../../utils/logger');
 
-const REQUEST_LIST = 'rumi:matrix:relay:requests';
-const REPLY_PREFIX = 'rumi:matrix:relay:reply:';
+const KEY_ROOT = 'rumi:matrix:relay:';
+const PROTOCOL_VERSION = 1;
 const DEFAULT_TIMEOUT_MS = 180000; // a video upload from the worker can take a while
 const REPLY_TTL_SECONDS = 300;
 
-// Positional arguments that are local file paths, per driver method.
-const LOCAL_PATH_ARGS = { sendDocument: [1], sendImage: [1], sendSticker: [1] };
+/**
+ * The shape each relayed argument position must have, per driver method --
+ * the owner refuses anything else (see the header). Positions not listed are
+ * plain JSON values (recipient, text, captions, menus) that the driver never
+ * treats as a file. matrix-outbound-relay-security.test.js fails if a driver
+ * method that reads a file or a media URL is missing here.
+ *   file:    a local file -> crosses only as caller-encoded bytes (__rumiFile)
+ *   media:   an http(s) URL, or a caller's file:// file as bytes (__rumiFile)
+ *   buffer:  a Buffer -> crosses as base64 (__rumiBuffer)
+ *   dropped: the caller's temp dir -- meaningless on the owner (and unused by
+ *            the Matrix driver), so it crosses as null
+ */
+const ARG_KINDS = {
+  sendDocument: { 1: 'file' },
+  sendImage: { 1: 'file' },
+  sendSticker: { 1: 'file' },
+  sendDocumentFromUrl: { 1: 'media' },
+  sendAudioFromUrl: { 1: 'media' },
+  sendAudioFromUrlReturningId: { 1: 'media' },
+  sendImageFromUrl: { 1: 'media' },
+  sendVideoFromUrl: { 1: 'media' },
+  sendImageWithButtons: { 1: 'media' },
+  sendAudio: { 1: 'buffer', 2: 'dropped' },
+  sendVideo: { 1: 'buffer', 2: 'dropped' },
+};
 
 // What the driver itself returns on failure -- the relay returns the same.
 const THROWING_METHODS = new Set(['getMediaInfo', 'downloadMedia']);
@@ -70,6 +108,64 @@ let replyTimeoutMs = DEFAULT_TIMEOUT_MS;
 
 function timeoutMs() {
   return replyTimeoutMs;
+}
+
+// ── Shared secret and namespace ───────────────────────────────────────────────
+
+function hkdf(token, label) {
+  return Buffer.from(crypto.hkdfSync('sha256', token, Buffer.alloc(0), label, 32));
+}
+
+/**
+ * The signing key and the key namespace, both derived from what the bot and
+ * its workers already share. The namespace comes from the access token and
+ * the homeserver rather than MATRIX_USER_ID: that variable is optional (the
+ * bot can learn its id from whoami, which a worker that never connects cannot
+ * do), whereas a process without the token cannot sign at all. A token is
+ * bound to one account on one homeserver, so this is per bot account, and it
+ * is stable across restarts until the token is rotated -- which already
+ * means redeploying the bot and its workers together.
+ */
+function deploymentKeys() {
+  const token = process.env.MATRIX_ACCESS_TOKEN;
+  if (!token) throw new Error('Matrix relay needs MATRIX_ACCESS_TOKEN to sign and verify relayed calls');
+  const homeserver = String(process.env.MATRIX_HOMESERVER_URL || '').trim().toLowerCase().replace(/\/+$/, '');
+  const namespace = hkdf(token, `rumi-matrix-relay/v1/namespace|${homeserver}`).toString('hex').slice(0, 12);
+  return {
+    signingKey: hkdf(token, 'rumi-matrix-relay/v1/signing-key'),
+    requestList: `${KEY_ROOT}${namespace}:requests`,
+    replyKey: (id) => `${KEY_ROOT}${namespace}:reply:${id}`,
+  };
+}
+
+function signatureOf(signingKey, fields) {
+  return crypto.createHmac('sha256', signingKey).update(JSON.stringify(fields)).digest('hex');
+}
+
+/** Serialises `fields` with their signature. The signed bytes are exactly JSON.stringify(fields). */
+function signed(signingKey, fields) {
+  return JSON.stringify({ ...fields, sig: signatureOf(signingKey, fields) });
+}
+
+/**
+ * Parses and verifies a signed message; null if it is malformed or its
+ * signature does not match. Re-serialising the parsed fields reproduces the
+ * signed bytes (JSON.stringify(JSON.parse(x)) is stable for JSON.stringify
+ * output), and any edit or key reordering by a third party breaks the match.
+ */
+function verified(signingKey, raw) {
+  let message;
+  try {
+    message = JSON.parse(raw);
+  } catch (error) {
+    return null;
+  }
+  if (!message || typeof message !== 'object' || Array.isArray(message) || typeof message.sig !== 'string') return null;
+  const { sig, ...fields } = message;
+  const expected = Buffer.from(signatureOf(signingKey, fields), 'hex');
+  const given = Buffer.from(sig, 'hex');
+  if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return null;
+  return fields;
 }
 
 function newRedis() {
@@ -112,33 +208,86 @@ function decodeValue(value) {
   return value;
 }
 
-function fileArg(localPath, asUrl) {
-  return {
-    __rumiFile: { name: path.basename(localPath), data: fs.readFileSync(localPath).toString('base64'), asUrl },
-  };
+/** Thrown for an argument whose shape ARG_KINDS does not allow; never carries the value itself. */
+class RelayRefusal extends Error {}
+
+function fileArg(localPath) {
+  return { __rumiFile: { name: path.basename(localPath), data: fs.readFileSync(localPath).toString('base64') } };
 }
 
-/** Caller side: turns driver arguments into JSON-safe values, carrying local files by value. */
+function isLocalFile(value) {
+  return typeof value === 'string' && value !== '' && fs.existsSync(value) && fs.statSync(value).isFile();
+}
+
+function isHttpUrl(value) {
+  return typeof value === 'string' && /^https?:\/\//i.test(value);
+}
+
+/**
+ * Caller side: turns driver arguments into JSON-safe values, carrying the
+ * caller's own local files by value. Only positions ARG_KINDS declares are
+ * ever read -- a file:// string in a message text stays text.
+ */
 function encodeArgs(method, args) {
-  const pathArgs = LOCAL_PATH_ARGS[method] || [];
+  const kinds = ARG_KINDS[method] || {};
   return args.map((arg, index) => {
-    if (pathArgs.includes(index) && typeof arg === 'string' && fs.existsSync(arg)) return fileArg(arg, false);
-    if (typeof arg === 'string' && arg.startsWith('file://') && fs.existsSync(arg.slice('file://'.length))) {
-      return fileArg(arg.slice('file://'.length), true);
+    switch (kinds[index]) {
+      case 'file':
+        if (isLocalFile(arg)) return fileArg(arg);
+        throw new RelayRefusal(`${method}: argument ${index} is not a local file this process can read`);
+      case 'media':
+        if (isHttpUrl(arg)) return arg;
+        if (typeof arg === 'string' && arg.startsWith('file://') && isLocalFile(arg.slice('file://'.length))) {
+          return fileArg(arg.slice('file://'.length));
+        }
+        throw new RelayRefusal(`${method}: argument ${index} is neither an http(s) URL nor a local file:// this process can read`);
+      case 'buffer':
+        if (Buffer.isBuffer(arg)) return encodeValue(arg);
+        throw new RelayRefusal(`${method}: argument ${index} is not a Buffer`);
+      case 'dropped':
+        return null;
+      default:
+        return encodeValue(arg);
     }
-    return encodeValue(arg);
   });
 }
 
-/** Owner side: materialises carried files into `tmpDir`, returns the real arguments. */
-function decodeArgs(args, tmpDir) {
-  return (args || []).map((arg) => {
-    if (arg && typeof arg === 'object' && arg.__rumiFile) {
-      const { name, data, asUrl } = arg.__rumiFile;
-      const target = path.join(tmpDir, path.basename(name) || 'file');
-      fs.writeFileSync(target, Buffer.from(data, 'base64'));
-      return asUrl ? `file://${target}` : target;
-    }
+/** Owner side: writes carried bytes into `tmpDir` under a name that cannot leave it. */
+function materialise(carried, tmpDir, method, index) {
+  const { name, data } = (carried && carried.__rumiFile) || {};
+  if (typeof data !== 'string') throw new RelayRefusal(`${method}: argument ${index} carries no file bytes`);
+  const base = path.basename(typeof name === 'string' ? name : '');
+  const target = path.join(tmpDir, base && base !== '.' && base !== '..' ? base : 'file');
+  fs.writeFileSync(target, Buffer.from(data, 'base64'));
+  return target;
+}
+
+function isCarriedFile(value) {
+  return Boolean(value && typeof value === 'object' && value.__rumiFile);
+}
+
+/**
+ * Owner side: checks every argument against ARG_KINDS and returns the real
+ * arguments. A refusal is thrown before any bytes are written, and nothing
+ * here ever reads a path -- a file only exists on the owner because its bytes
+ * came in the request.
+ */
+function decodeArgs(method, args, tmpDir) {
+  const kinds = ARG_KINDS[method] || {};
+  const list = Array.isArray(args) ? args : [];
+  list.forEach((arg, index) => {
+    const kind = kinds[index];
+    const ok = (kind === 'file' && isCarriedFile(arg))
+      || (kind === 'media' && (isCarriedFile(arg) || isHttpUrl(arg)))
+      || (kind === 'buffer' && arg && typeof arg === 'object' && typeof arg.__rumiBuffer === 'string')
+      || (kind === 'dropped' && arg == null)
+      || (kind === undefined && !isCarriedFile(arg));
+    if (!ok) throw new RelayRefusal(`${method}: argument ${index} is not an allowed ${kind || 'value'} (a local path is never accepted)`);
+  });
+  return list.map((arg, index) => {
+    const kind = kinds[index];
+    if (kind === 'file') return materialise(arg, tmpDir, method, index);
+    if (kind === 'media' && isCarriedFile(arg)) return `file://${materialise(arg, tmpDir, method, index)}`;
     return decodeValue(arg);
   });
 }
@@ -156,16 +305,22 @@ async function call(method, args) {
   const waitMs = timeoutMs();
   let blocking = null;
   try {
+    const keys = deploymentKeys();
+    // The deadline is this caller's own timeout: the owner skips the request
+    // once it has passed, because by then this call has already reported failure.
+    const request = {
+      v: PROTOCOL_VERSION, id, method, args: encodeArgs(method, args), issuedAt: started, expiresAt: started + waitMs,
+    };
     if (!callerRedis) callerRedis = newRedis();
-    const request = { id, method, args: encodeArgs(method, args), expiresAt: started + waitMs };
-    await callerRedis.lpush(REQUEST_LIST, JSON.stringify(request));
+    await callerRedis.lpush(keys.requestList, signed(keys.signingKey, request));
 
     // A BRPOP blocks its whole connection, so each wait gets its own.
     blocking = newRedis();
-    const popped = await blocking.brpop(`${REPLY_PREFIX}${id}`, Math.ceil(waitMs / 1000));
+    const popped = await blocking.brpop(keys.replyKey(id), Math.ceil(waitMs / 1000));
     if (!popped) throw new Error(`no reply from the Matrix sync owner within ${waitMs}ms -- is the bot process running?`);
 
-    const reply = JSON.parse(popped[1]);
+    const reply = verified(keys.signingKey, popped[1]);
+    if (!reply || reply.id !== id) throw new Error('the reply was not signed by this deployment\'s sync owner');
     logToFile('↪️ Matrix relay: call completed by the sync owner', {
       channel: 'matrix', method, ok: reply.ok, ms: Date.now() - started,
     });
@@ -182,26 +337,73 @@ async function call(method, args) {
 
 // ── Owner side (bot) ──────────────────────────────────────────────────────────
 
-async function runRequest(redis, request, implementations) {
-  const replyKey = `${REPLY_PREFIX}${request.id}`;
-  if (request.expiresAt && Date.now() > request.expiresAt) {
+/** Ids already run, until their deadline: a captured request pushed again is not sent twice. */
+function firstSighting(seen, request) {
+  const now = Date.now();
+  for (const [id, expiresAt] of seen) if (expiresAt < now) seen.delete(id);
+  if (seen.has(request.id)) return false;
+  seen.set(request.id, request.expiresAt);
+  return true;
+}
+
+/**
+ * Verifies and runs one popped request. Never throws. Unsigned, badly signed,
+ * replayed and expired requests are dropped without a reply (their id cannot
+ * be trusted, or their caller has stopped listening); a signed request with a
+ * refused argument gets a failure reply and runs nothing.
+ *
+ * @param {object} redis the connection replies are pushed on
+ * @param {string} raw the list entry, exactly as popped
+ * @param {Record<string, Function>} implementations the driver's real, local methods
+ * @param {{keys: object, seen: Map}} [owner] startOwner's keys and replay memory
+ */
+async function runRequest(redis, raw, implementations, owner) {
+  let request;
+  let keys;
+  try {
+    ({ keys } = owner || { keys: deploymentKeys() });
+    request = verified(keys.signingKey, typeof raw === 'string' ? raw : '');
+  } catch (error) {
+    request = null;
+  }
+  if (!request || request.v !== PROTOCOL_VERSION || typeof request.id !== 'string' || typeof request.method !== 'string') {
+    logToFile('🚫 Matrix relay: dropped an unsigned or badly signed request', { channel: 'matrix' });
+    return;
+  }
+  // N5: the caller reports failure once its own timeout passes, so a request
+  // past its deadline (or without one) is not started -- a retry of the job
+  // would otherwise send it twice. What remains: a call the owner started
+  // just before the deadline (a slow video upload) can still complete after
+  // the caller has given up, and a clock skew between the two containers
+  // shifts the deadline by that much. Both are rare and leave a duplicate,
+  // never a lost send.
+  if (typeof request.expiresAt !== 'number' || Date.now() > request.expiresAt) {
     logToFile('⚠️ Matrix relay: dropped a request its caller already gave up on', { channel: 'matrix', method: request.method });
     return;
   }
+  if (!firstSighting((owner && owner.seen) || new Map(), request)) {
+    logToFile('🚫 Matrix relay: dropped a replayed request', { channel: 'matrix', method: request.method });
+    return;
+  }
+
   const impl = implementations[request.method];
   let reply;
   let tmpDir = null;
   try {
     if (typeof impl !== 'function') throw new Error(`unknown Matrix driver method "${request.method}"`);
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rumi-matrix-relay-'));
-    const result = await impl(...decodeArgs(request.args, tmpDir));
+    const result = await impl(...decodeArgs(request.method, request.args, tmpDir));
     reply = { ok: true, result: encodeValue(result === undefined ? null : result) };
   } catch (error) {
+    if (error instanceof RelayRefusal) {
+      logToFile('🚫 Matrix relay: refused a request argument', { channel: 'matrix', method: request.method, reason: error.message });
+    }
     reply = { ok: false, error: error.message };
   } finally {
     if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
   }
-  await redis.lpush(replyKey, JSON.stringify(reply));
+  const replyKey = keys.replyKey(request.id);
+  await redis.lpush(replyKey, signed(keys.signingKey, { v: PROTOCOL_VERSION, id: request.id, ...reply }));
   await redis.expire(replyKey, REPLY_TTL_SECONDS);
 }
 
@@ -217,7 +419,10 @@ function startOwner(implementations) {
   if (ownerStarted) return true;
   let redis;
   let replies;
+  let owner;
   try {
+    // Derived once: the namespace and key this process serves stay fixed while it runs.
+    owner = { keys: deploymentKeys(), seen: new Map() };
     redis = newRedis();
     replies = newRedis();
   } catch (error) {
@@ -232,10 +437,9 @@ function startOwner(implementations) {
     while (running) {
       try {
         // eslint-disable-next-line no-await-in-loop -- a blocking pop loop, by design
-        const popped = await redis.brpop(REQUEST_LIST, 5);
+        const popped = await redis.brpop(owner.keys.requestList, 5);
         if (popped) {
-          const request = JSON.parse(popped[1]);
-          runRequest(replies, request, implementations).catch((error) => {
+          runRequest(replies, popped[1], implementations, owner).catch((error) => {
             logToFile('❌ Matrix relay: failed to answer a request', { channel: 'matrix', error: error.message });
           });
         }
@@ -279,9 +483,9 @@ module.exports = {
   call,
   startOwner,
   close,
-  REQUEST_LIST,
-  REPLY_PREFIX,
   // exported for unit tests
+  _ARG_KINDS: ARG_KINDS,
+  _requestListKey: () => deploymentKeys().requestList,
   _encodeArgs: encodeArgs,
   _decodeArgs: decodeArgs,
   _runRequest: runRequest,
