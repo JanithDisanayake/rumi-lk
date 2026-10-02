@@ -19,10 +19,8 @@
   <p class="lede">
     <% if (standalone) { %>
       This console is running on its own so you can fix the settings. Start the bot with <code>rumi start</code> when you are done.
-    <% } else if (channel === 'baileys') { %>
-      Answering as a linked WhatsApp account — the try-it-out setup, no Meta approval needed.
     <% } else { %>
-      Answering on an official WhatsApp Business number.
+      <%= answeringOn %>
     <% } %>
   </p>
   <dl class="hero-grid">

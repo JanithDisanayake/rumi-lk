@@ -18,6 +18,7 @@ const LessonPlanQueueService = require('../shared/services/lesson-plan-queue.ser
 const FeatureLinkerService = require('../shared/services/feature-linker.service');
 const FeatureRegistrationService = require('../shared/services/feature-registration.service');
 const { storeLessonPlan } = require('../shared/database/bot-helpers');
+const { planContentFromPdfFile } = require('../shared/services/coaching/fidelity/lesson-plan-text');
 
 // Temp directory for PDF downloads
 const TEMP_DIR = process.env.TEMP_DIR || '/tmp';
@@ -133,6 +134,7 @@ class LessonPlanGenerationWorker {
       });
 
       // 3. Download and send PDF if available
+      let planContent = null;
       if (result.pdfUrl) {
         const safeTopic = topic.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_').substring(0, 50);
         const pdfFilename = `${contentType}_${safeTopic}.pdf`;
@@ -140,6 +142,12 @@ class LessonPlanGenerationWorker {
 
         try {
           await ContentService.downloadPDF(result.pdfUrl, pdfFilename, TEMP_DIR);
+
+          // Keep the plan's text on its row: a teacher can later say "this is the plan I taught" for a lesson
+          // recording, and lesson-plan fidelity reads the plan from this text.
+          if (contentType === 'lesson_plan') {
+            planContent = await planContentFromPdfFile(pdfPath);
+          }
 
           await WhatsAppService.sendDocument(
             phoneNumber,
@@ -174,7 +182,7 @@ class LessonPlanGenerationWorker {
 
       // 4. Store in lesson_plans table
       try {
-        await storeLessonPlan(userId, topic, contentType, result.gammaUrl, result.pdfUrl);
+        await storeLessonPlan(userId, topic, contentType, result.gammaUrl, result.pdfUrl, planContent);
         logToFile('Lesson plan stored in database', { requestId, userId });
       } catch (storeError) {
         logToFile('Warning: Failed to store lesson plan', {
@@ -228,8 +236,19 @@ class LessonPlanGenerationWorker {
       // Mark as failed (increments retry_count)
       await LessonPlanQueueService.markFailed(requestId, error.message);
 
+      // A failure no retry can fix (the generation API rejecting our key or the
+      // request itself) is final NOW: waiting for MAX_RETRIES only delays the
+      // apology, and on a queue that does not redeliver (BullMQ as configured
+      // today -- see issue #108) the teacher would never hear back at all.
+      const permanent = isPermanentFailure(error);
+
       // If max retries exceeded, send apology and STOP (don't re-throw)
-      if (retryCount >= MAX_RETRIES) {
+      if (retryCount >= MAX_RETRIES || permanent) {
+        if (permanent) {
+          logToFile('Lesson plan failure is not retryable -- telling the teacher now', {
+            requestId, status: error.response?.status, retryCount,
+          });
+        }
         try {
           await WhatsAppService.sendMessage(phoneNumber, messages.apology);
           logToFile('Apology message sent after max retries - job complete', { requestId, retryCount });
@@ -247,4 +266,15 @@ class LessonPlanGenerationWorker {
   }
 }
 
+/**
+ * Whether retrying cannot help: the generation API answered with a client
+ * error (400 bad request, 401/403 bad or missing key, 404, 422). A 408/429 or
+ * any 5xx/network error is transient and keeps the normal retry path.
+ */
+function isPermanentFailure(error) {
+  const status = error?.response?.status;
+  return [400, 401, 403, 404, 422].includes(status);
+}
+
 module.exports = LessonPlanGenerationWorker;
+module.exports.isPermanentFailure = isPermanentFailure;

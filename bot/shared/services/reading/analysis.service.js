@@ -30,6 +30,7 @@ const path = require('path');
 const { isR2Configured } = require('../../storage/r2');
 const { TEMP_DIR } = require('../../utils/constants');
 const { logToFile } = require('../../utils/logger');
+const { displayName } = require('../../utils/display-name');
 const { getClient } = require('../llm-client');
 const { OPENAI_API_KEY } = require('../../utils/constants');
 
@@ -818,7 +819,7 @@ Generate a 3-4 sentence summary that:
         .eq('id', assessment.user_id)
         .single();
 
-      const teacherName = user ? `${user.first_name} ${user.last_name}`.trim() : 'Unknown';
+      const teacherName = displayName(user, 'Unknown');
 
       // Build report data
       const reportData = {
@@ -1410,7 +1411,7 @@ Output the complete enhanced summary (not just the new parts).`;
         .eq('id', assessment.user_id)
         .single();
 
-      const teacherName = user ? `${user.first_name} ${user.last_name}`.trim() : 'Unknown';
+      const teacherName = displayName(user, 'Unknown');
 
       // Build report data structure (same as generateReport)
       const reportData = {

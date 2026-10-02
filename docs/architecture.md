@@ -82,7 +82,8 @@ Meta WhatsApp API
 | **Quizzes** | `quizzes`, `quiz_sessions`, `quiz_questions`, `quiz_answers` | active |
 | **Exam checker** | `exam_check_sessions`, `exam_submissions`, `exam_grades`, `image_analysis_requests` | active |
 | **Video generation** | `video_requests`, `video_tasks`, `student_videos`, `student_video_feedback` | active |
-| **Attendance** | `attendance_sessions`, `attendance_records` | active |
+| **Attendance** | `attendance_sessions`, `attendance_records`, `teacher_attendance_records`, `schools` | active |
+| **Teacher nudges** | `teacher_nudges` | active |
 | **Homework + content** | `homework_chapters`, `textbook_toc` | active |
 | **BYOF (bring-your-own-flow)** | `byof_plans`, `byof_sessions`, `byof_messages`, `byof_approval_log` | active |
 | **Broadcasts** | `broadcast_logs`, `broadcast_messages`, `website_visits`, `release_notes` | active |

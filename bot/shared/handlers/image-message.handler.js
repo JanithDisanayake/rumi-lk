@@ -33,6 +33,19 @@ const IDEMPOTENCY_TTL_SECONDS = 3600;
 const MAX_COACHING_PHOTOS = 3;
 
 /**
+ * With lesson-plan fidelity on, the photo limit leads to the lesson-plan step (the same step "Done" leads to), so
+ * a teacher who sends the maximum number of photos is still asked which plan the lesson followed. Off, the photo
+ * limit queues the analysis directly, as it always has.
+ * @returns {Promise<boolean>} true when the session moved to the lesson-plan step
+ */
+async function advanceToPlanStepIfFidelity(sessionId, from, user) {
+  const { isFidelityEnabled } = require('../services/coaching/fidelity/fidelity-orchestrator');
+  if (!isFidelityEnabled()) return false;
+  const { advanceToLessonPlanStep } = require('../services/coaching/lp-coaching/lp-step.service');
+  return advanceToLessonPlanStep({ sessionId, from, tapperUserId: user && user.id });
+}
+
+/**
  * Handle image message processing
  * @param {Object} message - WhatsApp message object
  * @param {string} from - Sender phone number
@@ -121,6 +134,10 @@ async function handleImageMessage(message, from, user = null) {
                 ? '📸 آپ زیادہ سے زیادہ 3 تصاویر بھیج سکتی ہیں۔ اب تجزیہ شروع کیا جا رہا ہے۔'
                 : '📸 You can upload a maximum of 3 photos. Starting analysis now.'
             );
+            if (await advanceToPlanStepIfFidelity(photoSession.id, from, user)) {
+              typingController.stop();
+              return;
+            }
             const CoachingSessionService = require('../services/coaching/coaching-session.service');
             const CoachingJobQueueService = require('../services/coaching/coaching-job-queue.service');
             await CoachingSessionService.updateStatus(photoSession.id, 'analysis_started');
@@ -154,14 +171,16 @@ async function handleImageMessage(message, from, user = null) {
                 ? `📸 تصویر ${existingPhotos.length} موصول۔ زیادہ سے زیادہ حد پوری ہو گئی ہے، اب تجزیہ شروع کیا جا رہا ہے۔`
                 : `📸 Photo ${existingPhotos.length} received. Maximum reached, starting analysis now.`
             );
-            const CoachingSessionService = require('../services/coaching/coaching-session.service');
-            const CoachingJobQueueService = require('../services/coaching/coaching-job-queue.service');
-            await CoachingSessionService.updateStatus(photoSession.id, 'analysis_started');
-            await CoachingJobQueueService.queueAnalysis(photoSession.id, {
-              from,
-              trigger: 'photo_max_reached',
-              photoCount: existingPhotos.length
-            });
+            if (!(await advanceToPlanStepIfFidelity(photoSession.id, from, user))) {
+              const CoachingSessionService = require('../services/coaching/coaching-session.service');
+              const CoachingJobQueueService = require('../services/coaching/coaching-job-queue.service');
+              await CoachingSessionService.updateStatus(photoSession.id, 'analysis_started');
+              await CoachingJobQueueService.queueAnalysis(photoSession.id, {
+                from,
+                trigger: 'photo_max_reached',
+                photoCount: existingPhotos.length
+              });
+            }
           } else {
             const confirmMsg = userLang === 'ur'
               ? `📸 تصویر ${existingPhotos.length} موصول۔ کیا آپ ایک اور تصویر شامل کرنا چاہیں گی؟`

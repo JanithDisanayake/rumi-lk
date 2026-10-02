@@ -20,6 +20,8 @@
  * - GET /api/portal/reading-assessment/:id - Get single reading assessment detail
  * - GET /api/portal/reading-stats - Get reading assessment summary stats
  * - GET /api/portal/reading-analytics - Get reading assessment trends over time
+ * - GET /api/portal/coach/observations, /coach/teachers, /coach/teacher/:id -
+ *   the coach's view (observe role family only; see portal-coach.routes.js)
  *
  * Related: TEACHER_PORTAL_IMPLEMENTATION_PLAN.md, READING_ASSESSMENTS_PORTAL_INTEGRATION_PLAN.md
  */
@@ -32,6 +34,8 @@ const supabase = require('../config/supabase');
 const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { generatePresignedUrl, generatePresignedUrls, isValidR2Url } = require('../services/r2.service');
 const { widenPortalAppSession } = require('../lib/portal-app-origins');
+const { createCoachRouter } = require('./portal-coach.routes');
+const { canUseCoachView } = require('../services/coach-observations.service');
 
 // Configure R2 S3 client for private PDF access. Lazy — resolved on first
 // use, not at module load, so mounting these routes never depends on R2 env
@@ -741,6 +745,7 @@ router.get('/dashboard', requirePortalAuth, async (req, res) => {
         .from('coaching_sessions')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', userId)
+        .is('observation_type', null) // never a coach's observation: its scores are the coach's ratings
         .eq('status', 'completed')
     ]);
 
@@ -778,6 +783,7 @@ router.get('/dashboard', requirePortalAuth, async (req, res) => {
       .from('coaching_sessions')
       .select('id, created_at, analysis_data')
       .eq('user_id', userId)
+      .is('observation_type', null) // never a coach's observation: its scores are the coach's ratings
       .eq('status', 'completed')
       .not('analysis_data', 'is', null)
       .order('created_at', { ascending: false })
@@ -797,7 +803,10 @@ router.get('/dashboard', requirePortalAuth, async (req, res) => {
       user: {
         firstName: user.first_name,
         lastName: user.last_name,
-        phoneNumber: user.phone_number
+        phoneNumber: user.phone_number,
+        // Shows the "Observations" nav item (observe on + role family); the
+        // coach endpoints gate on the server.
+        isCoach: canUseCoachView(user)
       },
       stats: {
         totalLessonPlans: lessonPlansResult.status === 'fulfilled' ? (lessonPlansResult.value.count || 0) : 0,
@@ -900,6 +909,7 @@ router.get('/coaching-sessions', requirePortalAuth, async (req, res) => {
       .from('coaching_sessions')
       .select('id, created_at, audio_duration_seconds, status, analysis_data', { count: 'exact' })
       .eq('user_id', userId)
+      .is('observation_type', null) // never a coach's observation: its scores are the coach's ratings
       .eq('status', 'completed')
       .not('analysis_data', 'is', null)
       .order('created_at', { ascending: false })
@@ -960,6 +970,7 @@ router.get('/coaching-session/:id', requirePortalAuth, async (req, res) => {
       .select('*')
       .eq('id', sessionId)
       .eq('user_id', userId) // Security: ensure user owns this session
+      .is('observation_type', null) // never a coach's observation: its scores are the coach's ratings
       .single();
 
     if (error || !session) {
@@ -1253,6 +1264,7 @@ router.get('/coaching-analytics', requirePortalAuth, async (req, res) => {
       .from('coaching_sessions')
       .select('id, created_at, analysis_data')
       .eq('user_id', userId)
+      .is('observation_type', null) // never a coach's observation: its scores are the coach's ratings
       .eq('status', 'completed')
       .not('analysis_data', 'is', null)
       .order('created_at', { ascending: true });
@@ -1985,5 +1997,8 @@ router.get('/video/:id', requirePortalAuth, async (req, res) => {
     });
   }
 });
+
+// The coach's view (observe role family only).
+router.use(createCoachRouter({ db: supabase, requireAuth: requirePortalAuth }));
 
 module.exports = router;

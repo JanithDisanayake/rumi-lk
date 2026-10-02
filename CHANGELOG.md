@@ -5,6 +5,381 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0] - 2026-10-03
+
+**Rumi Messenger — run Rumi on your own messenger.** A school system can now run Rumi on a Matrix homeserver
+it owns: teachers sign in to a Rumi-branded app with their phone number and find Rumi already there as a
+contact. Every message, voice note and PDF is end-to-end encrypted, there is no per-message fee and no
+third-party review, and it is the same Rumi. It runs alongside WhatsApp, or with `CHANNEL_DRIVER=none`
+instead of it. This release also makes a laptop a supported place to run Rumi (no Supabase account, no
+Docker).
+
+> **Upgrade notes — read before you update.**
+> - **Breaking: Node 22 is now the minimum (Node 20 is end-of-life). Upgrade Node before updating;
+>   `install.sh` now refuses older versions, and on Railway the build picks the version up from `engines`.**
+> - **Existing Supabase deployments: run `node infrastructure/scripts/migrate.js`** (migration
+>   `V2.7.0__exec_sql_service_role_only.sql`). Earlier copies of the one-time `exec_sql` helper could be
+>   called with the anon key, which runs any SQL as `postgres`. The migration revokes that and fails loudly
+>   if it cannot.
+> - Matrix: every process that sends to Matrix (bot, queue worker, crons) needs the same
+>   `MATRIX_ACCESS_TOKEN` and `MATRIX_HOMESERVER_URL`; deploy the bot and its workers together.
+
+### Added
+
+- **The Matrix channel** (`MATRIX_HOMESERVER_URL` + `MATRIX_ACCESS_TOKEN`). It is built on #104 by
+  @oyekamal: a persistent sync connection, the inbound adapter, the outbound driver and E2EE media both
+  ways. Buttons become numbered menus, WhatsApp Flows become one question per message, and in staff group
+  rooms Rumi stays quiet until it is addressed. Server and apps:
+  [rumi-messenger](https://github.com/Orenda-Project/rumi-messenger). Guide, including a feature parity
+  table from a scripted end-to-end run: `docs/channels/matrix.md`.
+- **Encryption that fails closed.** `MATRIX_E2EE=on` is the default. If the crypto module cannot load, the
+  Matrix channel refuses to start with a clear error, and `rumi doctor` says why. Only `MATRIX_E2EE=off`
+  runs it without encryption. Sends fail closed too: when the bot cannot confirm whether a room is
+  encrypted, it does not send, rather than risk plaintext. Encryption works on Node 22 or newer.
+- **Only your homeserver reaches Rumi** (`MATRIX_ALLOWED_SERVERS`, blank = the bot's own server). Invites
+  from other servers are declined and their users' messages ignored. A teacher's identity names their
+  account on your server; the number in a username is admin-asserted, so run the homeserver with
+  admin-created accounts and federation off (`docs/channels/matrix.md`, "Who can reach Rumi").
+- **One connection, many senders.** The bot owns the Matrix connection, and every other process (the queue
+  worker, the stale-session cron, the Morning Brief worker, scripts) sends through it over Redis by
+  default. Each queued send is signed with a key derived from the access token and namespaced per bot
+  account, and the bot never reads a file path from a queued send.
+- **Staff group rooms.** Rumi answers an addressed message in the group; reports, registers, reminders and
+  every later message for that teacher go to their own DM.
+- **No lost messages on restart.** Messages teachers sent while the bot was down are answered when it comes
+  back, exactly once.
+- **`CHANNEL_DRIVER=none`** — a deployment with no WhatsApp at all. It needs no WhatsApp keys, does no
+  Graph call at boot, and fails loudly on a bare phone number. `rumi doctor`, the console ("Answering on
+  Rumi Messenger (Matrix) — no WhatsApp number.") and `rumi setup` all support it.
+- **`rumi setup` Matrix step.** It reads rumi-messenger's `deploy/rumi-channel.env` or asks for the URL and
+  token and checks the connection and whether encryption can start. The console has a Matrix card and a
+  `RUMI_FEATURE_CHANNEL_MATRIX` switch.
+- **Matrix in `/health`.** `channels.matrix` is `connected`, `connecting` or `down`; a Matrix-only
+  deployment whose homeserver is unreachable reports `degraded` (still HTTP 200). A homeserver that is down
+  when the bot starts is retried with backoff.
+- **Run Rumi on a laptop** — `infrastructure/local/up.sh` / `down.sh`. They run a private Postgres,
+  PostgREST, a `/rest/v1` proxy and Redis, with a minted service key. See `docs/local-stack.md`. They add
+  `SUPABASE_DB_SSL=off` (dashboard and portal against a Postgres without SSL) and `R2_FORCE_PATH_STYLE`
+  (MinIO and other S3-compatible stores).
+- **Channel-aware Flow gates** (`channel-capabilities.js`). On a channel that cannot draw a WhatsApp Flow,
+  the following take the text path even when their Flow ids are set for Meta:
+  - registration, and Reading from the menu;
+  - exam confirmation;
+  - `/status`, homework and edit class;
+  - the quiz flows.
+### Fixed
+
+- **Identities.** Two Matrix teachers whose numbers differ only in their first digits are no longer merged
+  into one user. A Matrix teacher's phone number is recorded, so they can sign in to the portal.
+- **Registration.** A greeting is no longer taken as a teacher's name, and a name that is also a greeting
+  ("Salam") is asked about once and then accepted. "null" is never a name, and a missing name part is never
+  printed as "null" (reports, filenames, reminders).
+- **Matrix media and replies.**
+  - Spoken replies are voice messages.
+  - Captions render formatting.
+  - Spreadsheets carry their real mime type.
+  - An audio file reaches classroom coaching.
+  - Object keys are safe for Matrix ids.
+- **After a restart,** proactive Matrix sends (reminders, delivered reports) go to the DM the teacher last
+  wrote from, not the room the DM first opened in. A group room is never used for them.
+- **Feature switches for channels** (`RUMI_FEATURE_CHANNEL_MATRIX`, `_SLACK`, `_DISCORD` set to `off`) now
+  stop the channel from the next restart; before, they changed only the console.
+- **A future-stamped Matrix event** no longer makes the bot ignore messages after a restart.
+- **On Meta, a Flow that fails to open** (a passing Graph error) says "try again", not "not set up".
+- **WhatsApp-free copy.** The boot banner shows Meta webhook steps only for `CHANNEL_DRIVER=meta`; doctor
+  and the console no longer assume a WhatsApp driver.
+- **Local stack.** `up.sh` refuses to adopt a non-empty directory it did not create, and `down.sh --wipe`
+  deletes only what the stack made. The anon and authenticated keys get Supabase's table grants, so Row
+  Level Security behaves as it does on hosted Supabase.
+- **Text channels** (Matrix, Baileys) render reply-button interactives as numbered menus. The exam checker's
+  "Process now" used to have nothing to answer.
+- **Versions.** `/health`, the boot banner, the console and the dashboard report the real version;
+  `bot/VERSION` is gone, and `dashboard/package.json` now moves in lockstep with the root and bot versions.
+- **`migrate.js` records what it applies.** It wrote `filename` and `checksum` columns that
+  `schema_versions` does not have, so every migration ran but none was recorded, and each run re-applied
+  them all and reported errors. It now writes the filename and checksum into `description`. The test-paper
+  migration recorded itself as 2.8.0 (left over from a rename); it now records 2.4.0, and `V2.7.0` removes
+  the stray 2.8.0 row.
+- **`rumi doctor`** no longer probes channels whose keys are not set.
+- **The console** no longer shows a quoted `.env` value as a pending change.
+
+### Changed
+
+- **Node 22 or newer** (`engines.node >=22` in root, bot and dashboard; `install.sh` and the local stack
+  check it; CI on Node 22 and 24).
+- **Matrix identities name the account.** `@+15550100001` on the bot's own server is `mtx:15550100001`; an
+  older `@t15550100001` username is a separate teacher (`mtx:t15550100001`, no phone number recorded), and
+  an account on any other server keeps its full id.
+- **Security notes.** `SECURITY.md` records the `request` advisories that `matrix-bot-sdk` brings in and why
+  they are accepted (its only peer is your own homeserver).
+
+## [2.6.0] - 2026-10-02
+
+**Observe — the coach's assistant.** Most school systems already employ people whose job is to coach
+teachers; their visits are inconsistent and leave no record. `/observe` makes anyone who visits classrooms a
+better coach: Rumi rates the lesson from a recording, scripts the feedback conversation, then listens to that
+conversation and coaches the coach — while the teacher only ever receives something kind and useful, never a
+score. And it keeps the coach organised: who is due, what is overdue, what is unfinished. It works the same
+way on WhatsApp (Meta or sandbox), Matrix, Slack and Discord.
+
+### Added
+
+- **Capture.** `/observe` (behind `OBSERVE_ENABLED=true` and the coach role family `OBSERVE_LEADER_ROLES`)
+  arms a recording; a voice note or an audio file becomes a `leader_observation` on the existing coaching
+  pipeline, owned by the observed teacher with the coach as `observer_user_id`. One audio router holds the
+  invariant that a coach's classroom-length recording never starts self-coaching — it resolves the real
+  duration itself (Matrix sends none), and an unarmed recording is parked and the coach is asked whose it
+  is, several in flight at once (oldest first, nothing lost). "Classroom-length" is the line the
+  self-coaching path draws (`COACHING_MIN_AUDIO_SECONDS`). A bare capture asks "who did you observe?".
+- **The AI's draft and the coach's edit.** The analysis is rated against an observation framework —
+  `OBSERVE_FRAMEWORK=teach` (default, the public TEACH tool), `hots` or `mewaka` — and the coach reviews it
+  one domain per message (`ok`, or `2 5`). The AI's first pass (v1) is frozen; the coach's version (v2) is
+  what everything downstream uses, and what they changed is recorded. On Meta, an editable WhatsApp Flow
+  (`OBSERVE_FORM_FLOW_ID`, generated by `bot/scripts/generate-observe-flow-json.js` and registered by
+  `rumi setup`) can replace the chat form.
+- **The debrief and coach-the-coach.** A six-step guide for the feedback conversation; the coach records
+  the conversation and gets two things they did well (in their own words) and one thing to try — never a
+  score. A **harm gate** in code: a coach who belittled the teacher gets no praise, an honest concern and
+  one move instead. A retry sweep re-queues a debrief whose transcription failed.
+- **The teacher's report.** Previewed by the coach, then delivered to the teacher on their own channel
+  (direct off Meta; inside the 24-hour window or by `OBSERVE_REPORT_TEMPLATE` on Meta; optionally through a
+  review number with `OBSERVE_REVIEW_MODE=operator`). A **trust firewall** checks the package before
+  anything is sent: no score, no rating, none of the coach's private feedback. Sweeps remind a coach about
+  a report never sent and nudge a teacher who never opened an invite.
+- **Organised.** The `/observe` menu lists what is waiting — ratings to check, debriefs to do, reports to
+  send, a stopped step to run again — oldest first, each row resuming exactly its step; a visit picker
+  (school → teacher → a brief that is guidance, not a grade); "Plan a visit" and "My schedule" (overdue
+  flagged, cleared automatically when the lesson is recorded); optional Google Calendar invites
+  (`OBSERVE_CALENDAR_ENABLED`, off by default).
+- **The coach's view in the portal** — `/portal/observe`: upcoming and overdue visits, what is waiting on
+  the coach, completed observations and their teachers, with no score anywhere a teacher could see it.
+- **A derived roster** — a coach holds schools; a teacher belongs to a school through `users.school_id` —
+  managed with `node bot/scripts/observe-roster.js` (`grant-coach`, `add-school`, `add-teacher`, `import`,
+  `list`, `set-email`).
+- Schema: `coaching_sessions` + `observation_type`, `observer_user_id`, `autofill_analysis_data`,
+  `debrief_status`; `users` + `role`, `school_id`; new `schools`, `leader_schools`, `observation_schedules`,
+  `coach_directory`. All additive — migration `V2.6.0__observe_coach_assistant.sql` for existing databases.
+- `docs/features/observe.md`, an Observe block in `.env.template`, an `observe` row in `rumi status` /
+  `doctor` / the console (with its `RUMI_FEATURE_OBSERVE` switch).
+
+### Changed
+
+- A coach's observation of a teacher is never one of the teacher's own numbers. The teacher portal's pages
+  (dashboard, sessions, analytics), the teacher's self-coaching score trend and prior-feedback context, the
+  chat context, `/status` and the "is the teacher busy" checks, the unfinished-session prompt, the coaching
+  spreadsheet export and the Morning Brief's coaching counts and averages all leave out observations
+  (`coaching_sessions.observation_type IS NULL`). **Apply the V2.6.0 migration before deploying the
+  dashboard** (even with Observe off) — its teacher pages read the new column. The bot checks for the column
+  at start-up: without it, it logs an error asking for the migration and computes teachers' coaching exactly
+  as before (restart the bot and worker after applying it).
+- The portal's coach view honours `OBSERVE_ENABLED` too (set it on the dashboard service as well as the bot);
+  off, the coach endpoints answer 404 and the nav item is hidden.
+- Coaching jobs that run more than once per session (a report preview then its delivery; each debrief
+  recording) are no longer dropped as duplicates: the phase / nonce is part of a job's dedup identity in both
+  queue drivers.
+- A teacher report's "Send now / Someone else / Cancel" buttons belong to one preview and one coach: a
+  button from an older preview (after Cancel, or after the coach picked someone else) or from anyone but the
+  observer sends nothing, and the worker re-checks before it sends. Each preview and each retry is its own
+  queue job, so on the default SQS driver a second preview or a retry after a failed send is no longer
+  dropped as a duplicate.
+- `generateHeroReport` takes an opt-in `scoreless` render (used for the teacher's observation report); the
+  default render is unchanged.
+
+### Fixed
+
+- A classroom recording is transcribed and analysed when object storage (R2) is not configured — the
+  archive copy is skipped instead of failing the job (this also fixes a teacher's own coaching on such a
+  deployment).
+
+## [2.5.1] - 2026-10-02
+
+**A fresh install works again.** 2.5.0 shipped a stray merge-conflict line (`=======`) in
+`infrastructure/supabase/00_complete-schema.sql`, so creating the schema on a new database stopped with a syntax
+error (and `01_rls-policies.sql` then failed on the missing `teacher_nudges` table). Deployments that upgrade through
+the versioned migrations were not affected. If you installed 2.5.0 from scratch, re-run the three schema files from
+2.5.1 on an empty database.
+
+### Fixed
+
+- `00_complete-schema.sql`: the stray conflict-marker line is removed; `00`, `01` and `02` apply cleanly to an empty
+  Postgres with `ON_ERROR_STOP`.
+
+### Added
+
+- `tests/setup/no-conflict-markers.test.js`: CI fails if any tracked text file (SQL, JS, Markdown, YAML, the env
+  template, …) contains a merge-conflict marker line.
+
+## [2.5.0] - 2026-10-02
+
+**A register the school can file.** After every mark, Rumi sends back the month's attendance register — one
+row per person, one column per day, weekends greyed, running totals, and approved **Leave** as its own status —
+regenerated whole, so the newest file always holds the whole month. A teacher's "attendance" is their class; a
+head teacher's is the school's staff. A past day can be named and corrected, and the correction rebuilds the
+month. Plus **teacher nudges**: one friendly check-in for a teacher who has gone quiet, never twice for the
+same silence.
+
+### Added
+
+- **Leave on every marking surface** — the native WhatsApp Flow gains an *On leave* checkbox group
+  (re-publish `docs/flows/attendance-marking-flow.json`); the text stand-in (Baileys, Matrix) takes one reply,
+  `2, 5 leave 3`; the Slack and Discord tap-to-mark modals gain a leave picker; voice roll call records
+  "on leave" as leave. Someone named in both lists counts once, as leave.
+- **Staff attendance and the staff register** — a head teacher (`users.role = 'head_teacher'`; `principal`
+  and `school_leader` are read as the same role, never written) marks the school's staff by voice, by tapping, or "everyone present", and
+  gets the month's staff register back. Staff are everyone linked to the school except the person marking;
+  colleagues who never use the bot can be added by name. "class attendance" still reaches a class they teach.
+- **`bot/scripts/attendance/link-school.js`** — links a school (optional external id: `--ext-id`, stored as `schools.ext_id`), its head
+  teacher and its staff, naming people by `users.id`, WhatsApp number or channel identity. Idempotent.
+- **Two rates, one per register** — staff: present ÷ (present + absent), approved leave excused; class:
+  present ÷ every marked day, because a child on leave was not in the room.
+- **Name a day** — `attendance yesterday`, `attendance 30 sep`, `attendance 2026-09-30` mark or correct that
+  day; future days and days older than `ATTENDANCE_MAX_BACKDATE_DAYS` (default 62) are refused in words.
+- **Teacher nudges** — `bot/shared/services/nudges/`: one `teacher_nudges` table, a sweeper with a registry
+  of nudge kinds, an idempotent booking and a single-flight claim (two replicas never send twice), a kill
+  switch (`TEACHER_NUDGES_ENABLED`, also `RUMI_FEATURE_TEACHER_NUDGES=off`), a per-tick cap, quiet hours and
+  a timezone. One kind ships: `re_engage`, a check-in for a teacher silent for `TEACHER_NUDGES_QUIET_MINUTES`,
+  once per quiet spell; on the Meta WhatsApp Cloud driver only inside the 24-hour window. The SQS worker
+  sweeps every `TEACHER_NUDGES_SWEEP_MINUTES`, or run `bot/workers/teacher-nudges.worker.js` from cron.
+- `docs/features/attendance.md` (rewritten), `docs/features/teacher-nudges.md`, `ATTENDANCE_*` and
+  `TEACHER_NUDGES_*` blocks in `.env.template`, a `teacher_nudges` entry in `FEATURES`, SETUP.md steps.
+
+### Changed
+
+- **Re-marking a day replaces it** instead of stopping at "Attendance Already Recorded", and the whole month's
+  register is regenerated, so the corrected file still holds every other day. The new records are written
+  before the old ones are removed (and taken back out if that fails), so a correction that fails leaves the
+  day on file; only the teacher whose
+  class it is can mark or replace its days.
+- A number after "class", "grade" or "section" is never read as a day ("attendance grade 5/6"), a month must
+  be a whole word, every date in the message is considered, and a bare `d/m` outside the correction window
+  opens today. The method menu always names the day being marked, today included.
+- `TEACHER_NUDGES_TZ` left blank uses `ATTENDANCE_TZ`. The feature list shows teacher nudges as available only
+  when `TEACHER_NUDGES_ENABLED` is on (a FEATURES entry may now name `flags`, switches that must read on).
+- "Everyone present" is a numbered option (`3`) and is recorded as `everyone_present`.
+- The academic year's start month is `ATTENDANCE_ACADEMIC_YEAR_START_MONTH` (default 4, the previous
+  behaviour). "Today" is the school's today, in `ATTENDANCE_TZ` (default UTC).
+- The text handler's attendance blocks moved to `attendance-entry.service.js` (one place a result becomes
+  messages).
+
+### Fixed
+
+- A child on approved leave was written into the register as **A**; voice roll call filed "on leave" as absent.
+- The register placed a day one column early west of UTC, and the month query dropped the month's last day
+  east of UTC.
+- Without R2 (or with R2 down) the register was generated and never sent; a refused send was reported as
+  delivered; the file was lost to `ENOENT` where the temp folder did not exist yet.
+- The sixth attendance start in five minutes got no reply at all.
+- Where the marking form could not be sent, the fallback offered "1" and "3", which the session then did not
+  accept.
+- The Meta Flow's data endpoint read `getStudentListById`'s `{ data }` as the row.
+
+### Database
+
+- Migration `V2.5.0__attendance_register.sql` (additive): `schools` (the shared definition: `id`, `ext_id`,
+  `name`, `district`, timestamps — the same DDL as the coach-observation migration, whichever runs first), `users.school_id`, `users.role`,
+  `teacher_attendance_records`, `attendance_sessions.leave_count`. **Where the legacy CHECK on
+  `attendance_records.status` exists, it is widened to accept `leave`** (every existing row stays valid);
+  legacy `excused` records are read as Leave and their sessions' `leave_count` is back-filled.
+- Migration `V2.5.1__teacher_nudges.sql` (additive): `teacher_nudges`, `users(last_message_at)` index,
+  `user_channels.reply_identifier` (the exact identifier a teacher last wrote from, so a proactive send
+  delivers back to it).
+
+## [2.4.0] - 2026-10-02
+
+**Make a test from the book.** A teacher picks a chapter — or a whole unit — from material the deployment
+already has (a textbook loaded from the curriculum pipeline, the teacher's own lesson plans, or a chapter
+they upload) and gets a printable test paper with a separate answer key in the chat, in about a minute. It
+works in any language the model writes, right-to-left papers included; every edit makes a new version, and
+"my papers" re-sends any of them. A paper is only ever built from real material: with nothing to build it
+from, the teacher is told so instead of getting an invented one.
+
+### Added
+
+- **`/testpaper`** (alias **`/paper`**, optionally with a subject and grade: `/testpaper science 8`) and **`/mypapers`** —
+  source → chapter(s) (one, several, a range or all) → size (quick 10 / standard 20 / full 30, or a typed mix
+  such as "5 MCQs, 3 true/false, 2 short") → paper language → paper + answer key PDFs → Edit / New paper / My
+  papers. Every pick is an interactive list or reply buttons through the messaging facade: native on
+  WhatsApp, a numbered menu on Baileys, Matrix, Slack and Discord. No WhatsApp Flow needed. Past six loaded
+  books, a "Textbooks (N)" row opens a numbered list of every book.
+- **`bot/shared/services/testpaper/`** — the conversation, sources, store, session, generation (one model call
+  with a neutral prompt pack; marks budget, MCQ answers and image keys made true after the call), the
+  question-type catalogue by subject family, the paper/answer-key renderer (right to left in Nastaliq or Naskh
+  for Perso-Arabic-script languages), and delivery through the repo's html-to-pdf. Ported from a fork's
+  assessment generator, generalised: no country-bound catalogue, prompts or subject packs.
+- **`bot/workers/testpaper.worker.js`** — the `testpaper_generate` and `testpaper_revise` jobs.
+- **`bot/scripts/testpaper/import-curriculum-corpus.js`** — loads the curriculum pipeline's page-truth output
+  into `textbooks` / `textbook_toc` / `textbook_pages` (idempotent, `--dry-run`; books of different
+  `--curriculum` keys are kept apart).
+- **`bot/shared/config/model-registry.js`** — a slim per-job model registry (`resolveModelForJob`); test papers
+  default to `google/gemini-2.5-pro` via OpenRouter, override with `TESTPAPER_MODEL`.
+- **Schema:** `test_paper_requests` and `test_papers` (versions via `edited_from`), RLS, and migration
+  `V2.4.0__test_papers.sql` (additive).
+- `docs/features/test-papers.md`, README and feature-library rows, a SETUP section, a `.env.template` block
+  (`TESTPAPER_MODEL`, `TESTPAPER_CURRICULUM`, `RUMI_FEATURE_TEST_PAPER`), and a `test_paper` entry in
+  `FEATURES` (on with the LLM key; `RUMI_FEATURE_TEST_PAPER=off` switches every entry point off, including
+  buttons from earlier papers and jobs already queued).
+- Lesson plans made by Rumi are read through the shared `content.plan_text` reader
+  (`bot/shared/services/coaching/fidelity/lesson-plan-text.js`, from the lesson-plan fidelity release).
+
+### Changed
+
+- **The bot's Meta webhook acknowledges a handled test-paper pick** before returning, so Meta does not
+  re-send it.
+- **The SQS worker loads the operator's `RUMI_FEATURE_*` switches at startup**, as the bot does, so a job for
+  a feature switched off after it was queued is not run (test papers check this).
+
+## [2.3.0] - 2026-10-02
+
+**Did the lesson follow the plan?** A teacher sends a lesson recording and links the plan they meant to teach — one
+Rumi made for them, a document, or pasted text. Rumi turns the plan into about a dozen observable moves, checks each
+one against the timestamped recording, and the coaching report shows, move by move, what happened, with the moment
+in the recording as proof. A different activity that serves the same purpose gets full credit; a recording Rumi
+cannot judge is "not assessed", never 0%. Off by default (`LP_FIDELITY_ENABLED=true`).
+
+### Added
+
+- **The fidelity engine** (`bot/shared/services/coaching/fidelity/`): a plan → moves extractor, a per-move grader
+  (`executed`, `substituted_equivalent`, `substituted_better`, `partial`, `not_done`, `not_adjudicable`, each asked
+  to quote a `[MM:SS]` line), and a deterministic scorer (credit ÷ moves counted, band ≥80 / 50-79 / <50, configurable).
+  Results are stored as `coaching_sessions.analysis_data.lp_fidelity`, framework-neutral, with an optional
+  `applyLpFidelity` framework hook (FICO maps it onto indicator 1.2). Default grader `google/gemini-3.8-flash` via
+  OpenRouter (`LP_FIDELITY_MODEL`, `LP_FIDELITY_EXTRACT_MODEL`, caps `LP_FIDELITY_MAX_TOKENS` / `LP_FIDELITY_EXTRACT_MAX_TOKENS`).
+  A credited verdict that quotes no moment is flagged (`unquoted_credit`) and shown as such in the report.
+- **The timestamp input contract:** a transcript without `[MM:SS]` timings is "not assessed" in code before any model
+  call. Every outcome has its own words for the teacher — measured, a different lesson, no timings, an unclear
+  recording, no plan, an unreadable plan, a failed check.
+- **In the report:** a "Did the lesson follow the plan?" block in the coaching PDF with a per-move table (planned
+  move · what the recording shows · verdict); one chat line after the report; the voice note speaks the band in
+  words, never a percentage.
+- **Plans Rumi made keep their text** (`content.plan_text` on `lesson_plans`), so a teacher can pick one from a short
+  list after sending a recording (`LP_FIDELITY_LIST_LIMIT`), and its move list is extracted once and kept on the plan
+  (`content.fidelity_moves`) so every lesson taught from it is graded against the same moves. Plans can also be
+  uploaded or pasted as a message.
+- **Diarization health:** every classroom transcription records whether it came back with speaker timings;
+  `rumi doctor` shows the 7-day rate under the feature and flags it below 80%.
+- `bot/scripts/fidelity-calibration.js` and a fictional fixture set (`tests/fixtures/fidelity/`) to re-check the
+  calibration after any prompt or model change; `docs/features/lesson-plan-fidelity.md`; an `LP_FIDELITY_*` block in
+  `.env.template`; a `Lesson-plan fidelity` row in `rumi doctor` and the console (switch: `RUMI_FEATURE_LP_FIDELITY`).
+- `COACHING_MIN_AUDIO_SECONDS` (default 900): how long audio must be to start classroom coaching.
+
+- **Operator console** (#97, on `main` since 2.2.0, recorded here) — `rumi start` opens a web page that shows what
+  is connected and switched on, each pipeline layer, feature switches that pause a feature without deleting its key
+  (`RUMI_FEATURE_<ID>`), and a live activity feed. `rumi console` serves it when the bot won't start. See
+  `docs/console.md`.
+- **Opt-in usage stats** (#95, on `main` since 2.2.0, recorded here) — `rumi setup` asks once. With
+  `RUMI_TELEMETRY=on` and both keys present, a deployment shares anonymous counts; with it off or blank, nothing is sent.
+
+### Fixed
+
+- The classroom-photo question's buttons (Yes / No / Add another / Done) had no handler, so a recording stalled after
+  transcription; "No" and "Done" now move to the lesson-plan step, which was never asked before.
+- Classroom coaching on Matrix, Slack and Discord: those channels report no audio duration, so a lesson recording was
+  always read as 0 seconds and never started coaching. The recording is now measured.
+- Classroom coaching without object storage: the transcription job failed building an S3 client; without R2 the
+  audio is no longer archived and the voice note is sent from memory.
+- The lesson-plan extraction worker stored only a 500-character excerpt of an uploaded plan; it now stores the full
+  text.
+
 ## [2.2.0] - 2026-09-04
 
 **The Morning Brief.** Every morning, your team wakes up to one thread that says how the programme is
