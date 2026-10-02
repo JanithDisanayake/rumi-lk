@@ -203,3 +203,23 @@ describe('handleCoachingFlowButton (the photo question)', () => {
     expect(await handleCoachingFlowButton('coaching_confirm_x', 'x', user)).toBe(false);
   });
 });
+
+describe('plan picker copy', () => {
+  const { buildLPSelectionList } = require('../../../bot/shared/services/coaching/lp-coaching/lp-selection-list.service');
+  const rows = (list) => list.listData.action.sections.flatMap((s) => s.rows);
+
+  test('a plan with no grade shows only its date (no "Grade ?")', () => {
+    const list = buildLPSelectionList(SID, [{ id: 'lp-1', topic: 'Adding fractions', grade: null, created_at: '2026-10-02T08:00:00Z' }], 'en');
+    expect(rows(list)[0].description).toBe('2 Oct');
+    const graded = buildLPSelectionList(SID, [{ id: 'lp-1', topic: 'Adding fractions', grade: '4', created_at: '2026-10-02T08:00:00Z' }], 'en');
+    expect(rows(graded)[0].description).toBe('Grade 4 • 2 Oct');
+  });
+
+  test('the upload row says a plan can also be pasted, and the question says the lesson is compared with it', () => {
+    const list = buildLPSelectionList(SID, [{ id: 'lp-1', topic: 'T', grade: '4', created_at: '2026-10-02T08:00:00Z' }], 'en');
+    const upload = rows(list).find((r) => r.id === `lp_upload_${SID}`);
+    expect(upload.title).toBe('Upload or paste');
+    expect(upload.description).toMatch(/paste/i);
+    expect(list.listData.body.text).toMatch(/Which lesson plan did you teach/);
+  });
+});
