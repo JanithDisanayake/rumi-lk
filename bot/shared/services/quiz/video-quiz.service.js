@@ -1405,8 +1405,9 @@ async function getActiveState(phone) {
  * trouble message.
  *
  * The words are the ones the adaptive quiz has always taken ("stop", "روکیں"),
- * in any case and with a full stop after them. Anything else, or no quiz
- * running on this phone, is not ours: false, and the message goes on.
+ * in any case and with a full stop after them. Anything else, the lesson quiz
+ * switched off, or no quiz running on this phone, is not ours: false, and the
+ * message goes on.
  *
  * Under the answer lock, like an answer: a tap being graded while STOP arrives
  * finishes first (its answer counts), and cannot put the state back after the
@@ -1417,6 +1418,9 @@ async function getActiveState(phone) {
 const STOP_RX = /^(stop|روکیں)[.!۔]?$/i;
 async function stopTyped(phone, text) {
   if (!STOP_RX.test(String(text || '').trim())) return false;
+  // Lesson quiz off: main's video engine never read a typed STOP (it went on
+  // to the adaptive quiz and chat), so neither does this.
+  if (!lessonQuizOn()) return false;
   const { key: lockKey, waitedMs, timedOut } = await acquireAnswerLock(phone);
   try {
     const state = await redisService.get(STATE_KEY(phone));

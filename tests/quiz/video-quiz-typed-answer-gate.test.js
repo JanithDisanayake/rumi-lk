@@ -140,6 +140,15 @@ describe('flag OFF: a v1.2.0 video quiz behaves exactly as on main', () => {
     expect(await settle(vq.answerTypedLetter(PHONE, 'B'))).toBe(false);
     expect(answers()).toEqual([]);
   });
+
+  // On main the video engine never read a typed STOP: it went on to the
+  // adaptive quiz / chat, and the video quiz stayed open for its taps.
+  test('"stop" during an unfinished video quiz is not taken: false, quiz left running', async () => {
+    reset({ mainShaped: true });
+    expect(await settle(vq.stopTyped(PHONE, 'stop'))).toBe(false);
+    expect(mockSent).toEqual([]);
+    expect(mockKv.has(`videoquiz:${PHONE}:active`)).toBe(true);
+  });
 });
 
 describe('flag ON', () => {
