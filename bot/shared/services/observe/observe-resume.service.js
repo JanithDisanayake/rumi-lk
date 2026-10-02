@@ -70,16 +70,15 @@ async function _refuseRetry(s, from, user, plan) {
 }
 
 /**
- * The form step belongs to the ratings-form slice; it is called lazily, and a
- * missing or failing form step degrades to "still working", never a crash.
+ * Reopen the coach's ratings form. A failing form step degrades to "still
+ * working", never a crash.
  */
 async function _resumeForm(s, from, user) {
   try {
-    const Form = require('./observe-siblings').step('observe-form.service');
-    if (Form && typeof Form.resumeForm === 'function') {
-      await Form.resumeForm(user, from, s.id);
-      return true;
-    }
+    // eslint-disable-next-line global-require -- lazy: the form reaches back into this graph
+    const Form = require('./observe-form.service');
+    await Form.resume(user, from, s.id);
+    return true;
   } catch (err) {
     logToFile('⚠️ observe-resume: form step unavailable', { sessionId: s.id, error: err.message });
   }

@@ -63,8 +63,8 @@ jest.mock('../../bot/shared/services/coaching/coaching-job-queue.service', () =>
   queueAnalysis: jest.fn(async () => true),
 }));
 const mockPending = { debriefs: [], unsent: [], unfinished: [] };
-// The sibling steps (debrief, send, ratings form) are their own slices; their
-// hand-off contract is what is faked here.
+// The neighbouring steps (debrief, send, ratings form) have their own suites;
+// here only their hand-off contract is faked.
 const mockDebrief = {
   listPendingDebriefs: jest.fn(async () => mockPending.debriefs),
   listUnsentReports: jest.fn(async () => mockPending.unsent),
@@ -72,11 +72,11 @@ const mockDebrief = {
   offerDebriefChoice: jest.fn(async () => true),
   startDebriefFromAudio: jest.fn(async () => true),
 };
-const mockSend = { offerSendReport: jest.fn(async () => true) };
-const mockForm = { resumeForm: jest.fn(async () => true) };
-jest.mock('../../bot/shared/services/observe/observe-debrief.service', () => mockDebrief, { virtual: true });
-jest.mock('../../bot/shared/services/observe/observe-send.service', () => mockSend, { virtual: true });
-jest.mock('../../bot/shared/services/observe/observe-form.service', () => mockForm, { virtual: true });
+const mockSend = { offerSendReport: jest.fn(async () => true), DETAILS_TEXT_STATES: ['awaiting_teacher_details', 'awaiting_teacher_pick'] };
+const mockForm = { resume: jest.fn(async () => true), handleText: jest.fn(async () => false) };
+jest.mock('../../bot/shared/services/observe/observe-debrief.service', () => mockDebrief);
+jest.mock('../../bot/shared/services/observe/observe-send.service', () => mockSend);
+jest.mock('../../bot/shared/services/observe/observe-form.service', () => mockForm);
 
 const WhatsAppService = require('../../bot/shared/services/whatsapp.service');
 const Queue = require('../../bot/shared/services/coaching/coaching-job-queue.service');
@@ -210,7 +210,7 @@ describe('/observe menu', () => {
     await tap('observe_retry_obs-a');
     expect(Queue.queueAnalysis).toHaveBeenCalledWith('obs-a', expect.objectContaining({ from: FROM }));
     await tap('observe_pend_resume_obs-f');
-    expect(Form.resumeForm).toHaveBeenCalledWith(coach(), FROM, 'obs-f');
+    expect(Form.resume).toHaveBeenCalledWith(coach(), FROM, 'obs-f');
     await tap('observe_pend_resume_obs-w');
     expect(lastText()).toMatch(/Still working/);
     await tap('observe_pend_resume_obs-x');

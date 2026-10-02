@@ -39,10 +39,9 @@ const { t, observeLang } = require('./observe-strings');
 const { canSelfCoach } = require('./observe-gate');
 const { row, listPayload, fmtDay } = require('./observe-list');
 const { logToFile } = require('../../utils/logger');
-const { step } = require('./observe-siblings');
-
-/** The debrief step, or null when it is not installed. */
-const _debriefStep = () => step('observe-debrief.service');
+/** The debrief step — required lazily, it reaches back into the capture graph. */
+// eslint-disable-next-line global-require
+const _debriefStep = () => require('./observe-debrief.service');
 
 const PARK_TTL_S = 6 * 3600;
 const RECENT_TTL_S = 24 * 3600;

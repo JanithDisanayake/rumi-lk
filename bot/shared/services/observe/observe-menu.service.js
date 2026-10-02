@@ -28,11 +28,10 @@ const { t, observeLang } = require('./observe-strings');
 const { row, pageOf, listPayload, fmtDay } = require('./observe-list');
 const { logToFile } = require('../../utils/logger');
 
-const { step } = require('./observe-siblings');
-
 function _debrief() {
   try {
-    return step('observe-debrief.service');
+    // eslint-disable-next-line global-require -- lazy: a failing debrief module hides the pending rows, never the menu
+    return require('./observe-debrief.service');
   } catch (err) {
     logToFile('⚠️ observe-menu: debrief step failed to load (pending hidden)', { error: err.message });
     return null;
@@ -158,7 +157,8 @@ async function onPendingTap(user, from, rest) {
   const [, kind, sessionId] = m;
   if (kind === 'resume') return require('./observe-resume.service').resume(sessionId, from, user);
   try {
-    const mod = step(kind === 'debrief' ? 'observe-debrief.service' : 'observe-send.service');
+    // eslint-disable-next-line global-require -- lazy: both steps reach back into this graph
+    const mod = kind === 'debrief' ? require('./observe-debrief.service') : require('./observe-send.service');
     const fn = kind === 'debrief' ? 'offerDebriefChoice' : 'offerSendReport';
     if (!mod || typeof mod[fn] !== 'function') throw new Error(`${fn} not available`);
     await mod[fn](user, from, sessionId);
