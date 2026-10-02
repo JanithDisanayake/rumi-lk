@@ -60,7 +60,7 @@ way on WhatsApp (Meta or sandbox), Matrix, Slack and Discord.
   (dashboard, sessions, analytics), the teacher's self-coaching score trend and prior-feedback context, the
   chat context, `/status` and the "is the teacher busy" checks, the unfinished-session prompt, the coaching
   spreadsheet export and the Morning Brief's coaching counts and averages all leave out observations
-  (`coaching_sessions.observation_type IS NULL`). **Apply the V2.8.0 migration before deploying the
+  (`coaching_sessions.observation_type IS NULL`). **Apply the V2.6.0 migration before deploying the
   dashboard** (even with Observe off) — its teacher pages read the new column. The bot checks for the column
   at start-up: without it, it logs an error asking for the migration and computes teachers' coaching exactly
   as before (restart the bot and worker after applying it).
