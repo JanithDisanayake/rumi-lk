@@ -421,6 +421,7 @@ the schema, the docs, the agent skills, and the link web all stay honest.
 | Doc | What it covers |
 |---|---|
 | [SETUP.md](SETUP.md) | Full setup — the two-command path, then the manual/production walkthrough |
+| [docs/local-stack.md](docs/local-stack.md) | Run Rumi on a laptop with no Supabase account and no Docker |
 | [docs/features/](docs/features/) | Per-feature deep dives (what / how / enable) — one page each |
 | [docs/onboarding/sandbox-production-design.md](docs/onboarding/sandbox-production-design.md) | How the channel drivers work, and how `rumi graduate` moves between them |
 | [docs/onboarding/whatsapp.md](docs/onboarding/whatsapp.md) | Getting a WhatsApp Business number, start to finish |

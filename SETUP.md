@@ -115,6 +115,11 @@ cd bot && npm install && cd ..
 
 ## Step 2: Create Supabase Database
 
+> **No Supabase account?** For a laptop, demo or test setup you can skip this step and Step 3:
+> `bash infrastructure/local/up.sh` starts a private Postgres, PostgREST and Redis (no Docker), applies
+> the schema, and prints the `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and `REDIS_URL` lines for `.env`.
+> Not for production. See [docs/local-stack.md](docs/local-stack.md).
+
 1. **Create account** at [supabase.com](https://supabase.com) (free tier is sufficient)
 2. **Create a new project** — choose a region closest to your users
 3. **Run the schema.** Two ways:
