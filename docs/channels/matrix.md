@@ -32,9 +32,7 @@ In programmes that work, the delivery channel is infrastructure for a human supp
 
 ### Honest limits
 
-- **Not merged.** Two security items are open:
-  - users from other servers could be mismatched to an existing teacher;
-  - a staff group could receive one teacher's private reports.
+- **Who can reach Rumi.** Only accounts on the deployment's own homeserver, or on servers listed in `MATRIX_ALLOWED_SERVERS`, can reach Rumi; an identity always names one account on one server. A staff group never receives a teacher's private replies: only a confirmed one-to-one room counts as a teacher's chat.
 - **Running cost.** No server or running cost was measured.
 - **Accounts.** A teacher's existing account on another platform is not merged automatically.
 - **Pre-existing bug.** The exam checker is broken on every channel. This bug predates the release.
