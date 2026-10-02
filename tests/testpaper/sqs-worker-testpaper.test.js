@@ -32,3 +32,13 @@ it.each([['testpaper_generate', 'generate'], ['testpaper_revise', 'revise']])('%
   expect(queue.extendJobTimeout).toHaveBeenCalledWith('rh-1', 600);
   expect(testpaper.process).toHaveBeenCalledWith({ ...payload, action });
 });
+
+it('reads the operator\'s RUMI_FEATURE_* switches at startup, as the bot does', () => {
+  process.env.RUMI_FEATURE_TEST_PAPER = 'off';
+  try {
+    load();
+    expect(require('../../bot/shared/config/feature-availability').overrides.isEnabled('test_paper')).toBe(false);
+  } finally {
+    delete process.env.RUMI_FEATURE_TEST_PAPER;
+  }
+});

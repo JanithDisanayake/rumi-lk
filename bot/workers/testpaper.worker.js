@@ -16,11 +16,14 @@
  * told as exactly that, never papered over.
  *
  * Idempotent under at-least-once delivery: a job for a row that is no longer
- * `generating` does nothing. Dispatched from workers/sqs-worker.js.
+ * `generating` does nothing. A job queued before the operator switched test
+ * papers off (RUMI_FEATURE_TEST_PAPER=off) is closed without a model call.
+ * Dispatched from workers/sqs-worker.js.
  */
 
 const WhatsAppService = require('../shared/services/whatsapp.service');
 const { logToFile } = require('../shared/utils/logger');
+const { FEATURES, isFeatureAvailable } = require('../shared/config/feature-availability');
 const Store = require('../shared/services/testpaper/testpaper-store.service');
 const Generation = require('../shared/services/testpaper/paper-generation.service');
 const Delivery = require('../shared/services/testpaper/testpaper-delivery.service');
@@ -89,6 +92,12 @@ async function run(job) {
   if (paper.status !== 'generating') {
     logToFile('⏭️ test paper job: already handled', { paperId, status: paper.status });
     return { skipped: paper.status };
+  }
+  if (!isFeatureAvailable(FEATURES.find((f) => f.id === 'test_paper'))) {
+    await Store.markFailed(paperId, 'SWITCHED_OFF', 'test papers were switched off before this job ran');
+    logToFile('⏭️ test paper job: feature switched off — not run', { paperId, action });
+    await WhatsAppService.sendMessage(to, t('notReady', chatLanguage));
+    return { skipped: 'switched_off' };
   }
 
   let result;

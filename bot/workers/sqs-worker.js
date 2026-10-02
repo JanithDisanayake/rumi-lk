@@ -32,6 +32,9 @@
 const { runWithCorrelation, generateCorrelationId } = require('../shared/utils/structured-logger');
 
 require('dotenv').config();
+// The operator's RUMI_FEATURE_* switches, as the bot loads them: a job for a
+// feature switched off after it was queued is not run (see testpaper.worker).
+require('../shared/config/feature-availability').overrides.load(process.env);
 const supabase = require('../shared/config/supabase');
 const { logToFile } = require('../shared/utils/logger');
 const SQSQueueService = require('../shared/services/queue');

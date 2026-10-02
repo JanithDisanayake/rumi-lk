@@ -68,6 +68,19 @@ async function queuedPaper(overrides = {}) {
   return { request, paper };
 }
 
+describe('switched off by the operator', () => {
+  it('a job queued before RUMI_FEATURE_TEST_PAPER=off is not run: no model call, the teacher is told', async () => {
+    const { paper } = await queuedPaper();
+    require('../../bot/shared/config/feature-availability').overrides.load({ RUMI_FEATURE_TEST_PAPER: 'off' });
+    const out = await Worker.process({ action: 'generate', paperId: paper.id, userId: TEACHER, to: 'matrix:@t:example.org', chatLanguage: 'en' });
+    expect(out).toEqual({ skipped: 'switched_off' });
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(db.tables.test_papers[0]).toMatchObject({ status: 'failed', error_code: 'SWITCHED_OFF' });
+    expect(WA.sendMessage.mock.calls[0][1]).toMatch(/not switched on/);
+    expect(WA.sendDocument).not.toHaveBeenCalled();
+  });
+});
+
 describe('generate', () => {
   it('writes the paper, marks it ready and delivers paper + key', async () => {
     mockCreate.mockResolvedValue(reply(PAPER_JSON));

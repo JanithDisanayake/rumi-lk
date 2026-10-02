@@ -51,6 +51,14 @@ const LANGUAGE_CHOICES = ['en', 'ur', 'ar', 'hi', 'bn', 'es', 'fr', 'ta-IN'];
 
 const FEATURE = FEATURES.find((f) => f.id === 'test_paper');
 
+/**
+ * The operator's switch, checked at every way in — a command, an old button,
+ * a pending pick, a document — not only at /testpaper, so "off" means off.
+ */
+function _enabled() {
+  return Boolean(FEATURE) && isFeatureAvailable(FEATURE);
+}
+
 function isTestPaperId(id) {
   return typeof id === 'string' && id.startsWith(ID_PREFIX);
 }
@@ -121,7 +129,7 @@ function parseArgs(arg) {
  */
 async function start({ user, from, args = '', language }) {
   const lang = _lang(language);
-  if (!FEATURE || !isFeatureAvailable(FEATURE)) {
+  if (!_enabled()) {
     await WhatsAppService.sendMessage(from, t('notReady', lang));
     return;
   }
@@ -363,6 +371,10 @@ async function _queue(user, from, lang, state, paperLanguage) {
 
 async function showMyPapers({ user, from, language }) {
   const lang = _lang(language);
+  if (!_enabled()) {
+    await WhatsAppService.sendMessage(from, t('notReady', lang));
+    return;
+  }
   const papers = await Store.listPapers(user.id, MAX_ROWS);
   if (!papers.length) {
     await WhatsAppService.sendMessage(from, t('noPapers', lang));
@@ -429,6 +441,12 @@ async function _queueEdit(user, from, lang, state, instruction) {
 async function handleSelection({ user, from, id, language }) {
   if (!isTestPaperId(id) || !user?.id) return false;
   const lang = _lang(language);
+  if (!_enabled()) {
+    // Our button, so it is answered — but nothing is opened, sent or queued.
+    await Session.clear(user.id);
+    await WhatsAppService.sendMessage(from, t('notReady', lang));
+    return true;
+  }
   const rest = id.slice(ID_PREFIX.length);
 
   if (rest === 'new') { await start({ user, from, language: lang }); return true; }
@@ -491,7 +509,7 @@ function _languageFromText(text) {
 async function handleText({ user, from, text, language }) {
   if (!user?.id || typeof text !== 'string') return false;
   const trimmed = text.trim();
-  if (!trimmed || trimmed.startsWith('/')) return false;
+  if (!trimmed || trimmed.startsWith('/') || !_enabled()) return false;
   const state = await Session.get(user.id);
   if (!state) return false;
   const lang = _lang(language);
@@ -575,7 +593,7 @@ async function handleText({ user, from, text, language }) {
  * @returns {Promise<boolean>} true when it was taken as the paper's source
  */
 async function handleDocument({ user, from, message, language }) {
-  if (!user?.id || !message?.document) return false;
+  if (!user?.id || !message?.document || !_enabled()) return false;
   const state = await Session.get(user.id);
   if (!state || state.step !== 'await_upload') return false;
   const lang = _lang(language);

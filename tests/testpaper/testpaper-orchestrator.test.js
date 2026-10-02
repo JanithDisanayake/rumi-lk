@@ -401,6 +401,64 @@ describe('my papers and editing', () => {
   });
 });
 
+describe('switched off by the operator (RUMI_FEATURE_TEST_PAPER=off)', () => {
+  // The operator switch, flipped while the bot runs (the admin toggle updates
+  // the same cache): old buttons and half-finished conversations stop too.
+  const switchOff = () => require('../../bot/shared/config/feature-availability').overrides.load({ RUMI_FEATURE_TEST_PAPER: 'off' });
+
+  async function readyPaper() {
+    const Store = require('../../bot/shared/services/testpaper/testpaper-store.service');
+    const request = await Store.createRequest({ userId: TEACHER.id, sourceKind: 'upload', sourceText: TEXT('x'), language: 'en', questionCount: 1 });
+    const paper = await Store.createPaper({ requestId: request.id });
+    await Store.markReady(paper.id, { title: 'T', examJson: { unseen: {} }, questionCount: 1, totalMarks: 1 });
+    return paper;
+  }
+
+  it('an Edit button from an earlier delivery queues no new job', async () => {
+    load();
+    const paper = await readyPaper();
+    switchOff();
+    expect(await pick(`tp_edit_${paper.id}`)).toBe(true);
+    expect(lastText()).toMatch(/not switched on/);
+    expect(await say('make it easier please')).toBe(false);
+    expect(queue.queueJob).not.toHaveBeenCalled();
+    expect(db.tables.test_papers).toHaveLength(1);
+  });
+
+  it('an edit asked for before the switch is not queued after it', async () => {
+    load();
+    const paper = await readyPaper();
+    await pick(`tp_edit_${paper.id}`);
+    switchOff();
+    expect(await say('make it easier please')).toBe(false);
+    expect(queue.queueJob).not.toHaveBeenCalled();
+  });
+
+  it('my papers and a re-send are refused', async () => {
+    load();
+    const paper = await readyPaper();
+    switchOff();
+    await O.showMyPapers({ user: TEACHER, from: FROM, language: 'en' });
+    await pick('tp_mine');
+    await pick(`tp_open_${paper.id}`);
+    expect(WA.sendInteractiveMessage).not.toHaveBeenCalled();
+    expect(WA.sendDocument).not.toHaveBeenCalled();
+    expect(lastText()).toMatch(/not switched on/);
+  });
+
+  it('a conversation in progress stops: picks, text and documents are not taken', async () => {
+    load();
+    await start();
+    await pick('tp_src_up');
+    switchOff();
+    expect(await say(TEXT('A pasted chapter about the water cycle and how rain forms.'))).toBe(false);
+    expect(await O.handleDocument({ user: TEACHER, from: FROM, language: 'en', message: { document: { id: 'm1', mime_type: 'application/pdf', filename: 'ch.pdf' } } })).toBe(false);
+    expect(WA.downloadMedia).not.toHaveBeenCalled();
+    await pick('tp_mix_quick');
+    expect(queue.queueJob).not.toHaveBeenCalled();
+  });
+});
+
 describe('text outside the conversation', () => {
   it('is not consumed when no pick is pending', async () => {
     load();
