@@ -46,7 +46,9 @@ describe('observe roster CLI', () => {
     // a user_channels row — so their first message finds THIS row, not a new one.
     const link = mockDb.tables.user_channels.find((c) => c.channel === 'matrix' && c.channel_user_id === '15550100002');
     expect(link).toBeTruthy();
-    expect(mockDb.tables.users.find((u) => u.id === link.user_id)).toMatchObject({ role: 'principal', phone_number: null });
+    // One role vocabulary across releases: principal / school_leader are READ
+    // aliases of head_teacher; a leader is always WRITTEN as head_teacher.
+    expect(mockDb.tables.users.find((u) => u.id === link.user_id)).toMatchObject({ role: 'head_teacher', phone_number: null });
     const o = out();
     expect(await Cli.main(['grant-coach', '15550100003', 'janitor'], o)).toBe(1);
     expect(o.lines.join('\n')).toMatch(/not a coach role/);

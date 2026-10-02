@@ -27,7 +27,7 @@
 const fs = require('fs');
 
 const db = () => require('../shared/config/supabase');
-const { leaderRoles, isSchoolLeader } = require('../shared/services/observe/observe-gate');
+const { leaderRoles, isSchoolLeader, writtenRole } = require('../shared/services/observe/observe-gate');
 
 const USAGE = [
   'Usage: node bot/scripts/observe-roster.js <command> …',
@@ -114,7 +114,8 @@ async function ensureSchool(extId, name = null) {
 }
 
 async function grantCoach(phone, role = 'coach') {
-  const r = String(role || 'coach').trim().toLowerCase();
+  // principal / school_leader are read aliases of head_teacher; never written.
+  const r = writtenRole(role || 'coach');
   if (!leaderRoles().includes(r)) throw new Error(`"${r}" is not a coach role (OBSERVE_LEADER_ROLES: ${leaderRoles().join(', ')})`);
   const user = await ensureUser(normalizeIdentity(phone));
   if (user.role !== r) await _update('users', user.id, { role: r });

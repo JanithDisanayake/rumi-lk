@@ -40,8 +40,8 @@ is a conversation everywhere, and an editable WhatsApp Flow on Meta when you pub
 |---|---|
 | `OBSERVE_ENABLED` | `true` turns `/observe` on (the console switch `RUMI_FEATURE_OBSERVE=off` pauses it). Off, everything behaves exactly as before. |
 | `OBSERVE_FRAMEWORK` | `teach` (default — the public TEACH classroom observation tool), `hots`, or `mewaka` |
-| `OBSERVE_LEADER_ROLES` | who may use `/observe` (users.role, comma list). Default `coach,school_leader,supervisor,principal` |
-| `OBSERVE_SELF_COACH_ROLES` | which of those also teach and may send their *own* lesson for self-coaching. Default `principal,school_leader` |
+| `OBSERVE_LEADER_ROLES` | who may use `/observe` (users.role, comma list). Default `head_teacher,principal,school_leader,coach,supervisor` (`principal` and `school_leader` are read as aliases of `head_teacher`, which is what the roster script writes) |
+| `OBSERVE_SELF_COACH_ROLES` | which of those also teach and may send their *own* lesson for self-coaching. Default `head_teacher,principal,school_leader` |
 | `OBSERVE_FORM_FLOW_ID` | Meta only, optional: the published editable-form Flow (see below). Blank = the chat form |
 | `OBSERVE_REVIEW_MODE` / `OBSERVE_REVIEW_NUMBER` | `operator` sends every report to a review number first (a pilot check) |
 | `OBSERVE_REPORT_TEMPLATE` / `OBSERVE_REPORT_TEMPLATE_LANG` | Meta only: the approved template that invites a teacher outside the 24-hour window |

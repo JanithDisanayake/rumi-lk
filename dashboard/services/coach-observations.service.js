@@ -30,7 +30,8 @@
  */
 
 // Mirror of observe-gate.js DEFAULT_LEADER_ROLES (drift-guarded by test).
-const DEFAULT_COACH_ROLES = Object.freeze(['coach', 'school_leader', 'supervisor', 'principal']);
+// The shared role vocabulary: principal / school_leader are read aliases of head_teacher.
+const DEFAULT_COACH_ROLES = Object.freeze(['head_teacher', 'principal', 'school_leader', 'coach', 'supervisor']);
 
 // Delivery states in which the report has left the coach's hands.
 const REPORT_OUT = ['sent', 'awaiting_teacher_tap', 'operator_review'];

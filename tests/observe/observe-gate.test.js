@@ -64,9 +64,10 @@ describe('observe gate', () => {
     expect(FEATURES.find((f) => f.id === 'observe')).toMatchObject({ keys: ['OBSERVE_ENABLED'] });
   });
 
-  test('canSelfCoach: a teacher always; of the coach family only OBSERVE_SELF_COACH_ROLES (default principal, school_leader)', () => {
+  test('canSelfCoach: a teacher always; of the coach family only OBSERVE_SELF_COACH_ROLES (default the head-teacher family)', () => {
     delete process.env.OBSERVE_SELF_COACH_ROLES;
     expect(canSelfCoach(COACH({ role: null }))).toBe(true);
+    expect(canSelfCoach(COACH({ role: 'head_teacher' }))).toBe(true);
     expect(canSelfCoach(COACH({ role: 'teacher' }))).toBe(true);
     expect(canSelfCoach(COACH({ role: 'principal' }))).toBe(true);
     expect(canSelfCoach(COACH({ role: 'coach' }))).toBe(false);
@@ -97,8 +98,8 @@ describe('observe gate', () => {
       .toEqual({ match: true, action: 'capture' });
   });
 
-  test('the role family defaults to coach, school_leader, supervisor, principal', () => {
-    expect(leaderRoles()).toEqual(['coach', 'school_leader', 'supervisor', 'principal']);
+  test('the role family defaults to the wave\'s one vocabulary: head_teacher (+ read aliases principal, school_leader), coach, supervisor', () => {
+    expect(leaderRoles()).toEqual(['head_teacher', 'principal', 'school_leader', 'coach', 'supervisor']);
     for (const role of leaderRoles()) expect(isSchoolLeader(COACH({ role }))).toBe(true);
     expect(isSchoolLeader(COACH({ role: 'teacher' }))).toBe(false);
     expect(isSchoolLeader(null)).toBe(false);

@@ -24,7 +24,20 @@ const OBSERVE_TRIGGER_RX = /^\/observe\b/i;
 // every capability check goes through leaderRoles(). Deployments name the
 // people who visit classrooms differently, so OBSERVE_LEADER_ROLES replaces
 // the list. Nothing outside this file should compare a role literal.
-const DEFAULT_LEADER_ROLES = Object.freeze(['coach', 'school_leader', 'supervisor', 'principal']);
+//
+// The role vocabulary is shared with the other features that read users.role:
+// NULL or 'teacher' = a teacher; 'head_teacher' = the person who runs a school;
+// 'coach'; 'supervisor'. 'principal' and 'school_leader' are accepted on READ
+// as aliases of 'head_teacher' (rows written before the vocabulary settled) —
+// never written (see writtenRole).
+const DEFAULT_LEADER_ROLES = Object.freeze(['head_teacher', 'principal', 'school_leader', 'coach', 'supervisor']);
+const HEAD_TEACHER_ALIASES = Object.freeze(['principal', 'school_leader']);
+
+/** The role to WRITE for a requested one: aliases become head_teacher. */
+function writtenRole(role) {
+  const r = String(role || '').trim().toLowerCase();
+  return HEAD_TEACHER_ALIASES.includes(r) ? 'head_teacher' : r;
+}
 
 /** Read at call time, so a changed env needs no restart and tests can flip it. */
 function leaderRoles() {
@@ -53,7 +66,7 @@ function isSchoolLeader(user) {
 // Leaders who also teach (a head teacher with their own class) may send their
 // OWN lesson for self-coaching; a full-time coach may not, so their classroom
 // recordings are always observations.
-const DEFAULT_SELF_COACH_ROLES = Object.freeze(['principal', 'school_leader']);
+const DEFAULT_SELF_COACH_ROLES = Object.freeze(['head_teacher', ...HEAD_TEACHER_ALIASES]);
 
 /**
  * May this user send their own lesson for self-coaching? Everyone outside the
@@ -108,6 +121,7 @@ module.exports = {
   OBSERVE_TRIGGER_RX,
   DEFAULT_LEADER_ROLES,
   leaderRoles,
+  writtenRole,
   isObserveEnabled,
   evaluateObserveTrigger,
   isSchoolLeader,
