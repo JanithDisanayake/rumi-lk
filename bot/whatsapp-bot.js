@@ -1635,7 +1635,7 @@ async function handleDocumentMessage(message, from, user) {
             from,
             audioId: documentId,
             sessionId: await observeSession(user.id),
-            isLongAudio: audioDurationRounded >= 900,
+            isLongAudio: audioDurationRounded >= require('./shared/config/coaching-audio').classroomAudioThresholdSeconds(),
             durationSeconds: audioDurationRounded || null,
             mimeType,
           });

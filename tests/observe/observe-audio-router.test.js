@@ -88,6 +88,19 @@ describe('observe audio router', () => {
     expect(await routeLeaderAudio(args({ durationSeconds: 20 }))).toBe(false);
   });
 
+  test('the classroom line follows COACHING_MIN_AUDIO_SECONDS, the one the self-coaching path uses', async () => {
+    // Lowered to 10 minutes: a 12-minute lesson is classroom audio for self-coaching,
+    // so it must be an observation here — or it would fall through and start the coach's own coaching.
+    process.env.COACHING_MIN_AUDIO_SECONDS = '600';
+    try {
+      expect(await routeLeaderAudio(args({ durationSeconds: 720 }))).toBe(true);
+      expect(mockBinding.parkAndAsk).toHaveBeenCalled();
+      expect(await routeLeaderAudio(args({ durationSeconds: 300 }))).toBe(false);   // still a voice note
+    } finally {
+      delete process.env.COACHING_MIN_AUDIO_SECONDS;
+    }
+  });
+
   test('a short clip with nothing armed is the coach talking — falls through to chat', async () => {
     expect(await routeLeaderAudio(args({ durationSeconds: 20 }))).toBe(false);
   });

@@ -25,7 +25,10 @@ const { t, observeLang } = require('./observe-strings');
 const { isObserveEnabled, isSchoolLeader, canSelfCoach } = require('./observe-gate');
 const { logToFile } = require('../../utils/logger');
 
-const CLASSROOM_SECONDS = 900;       // the same 15-minute line the self-coaching path draws
+// The same classroom line the self-coaching path draws (COACHING_MIN_AUDIO_SECONDS,
+// default 15 minutes), read at call time: anything that path would treat as a lesson
+// must be an observation here, or a coach's recording would start their own coaching.
+const { classroomAudioThresholdSeconds } = require('../../config/coaching-audio');
 const LARGE_FILE_BYTES = 500_000;    // the self-coaching path's "suspiciously large" line
 // A "send me your classroom recording" from the menu is an answer for a while,
 // not forever — after that the recording is an observation again.
@@ -118,7 +121,7 @@ async function routeLeaderAudio({
   // Classroom-recording test: resolved-long, OR unresolvable-but-large, OR the
   // caller already probed it long. A resolved-short small file is the coach
   // TALKING to Rumi — that stays chat.
-  const looksLikeClassroom = dur >= CLASSROOM_SECONDS
+  const looksLikeClassroom = dur >= classroomAudioThresholdSeconds()
     || (!dur && fileSize >= LARGE_FILE_BYTES)
     || isLongAudio;
   const media = { audioId, sha256, durationSeconds: dur || null, mimeType, sessionId };
@@ -180,4 +183,4 @@ async function routeLeaderAudio({
   return true;   // the invariant: never teacher coaching for a coach's classroom audio
 }
 
-module.exports = { routeLeaderAudio, hasDeclaredDcIntent, CLASSROOM_SECONDS, LARGE_FILE_BYTES };
+module.exports = { routeLeaderAudio, hasDeclaredDcIntent, LARGE_FILE_BYTES };
