@@ -106,6 +106,9 @@ bash infrastructure/local/down.sh --wipe    # stop and delete .local-stack/ (all
 ```
 
 `down.sh` only stops the processes `up.sh` started (it reads their pid files from the state dir).
+`--wipe` deletes only the files and folders `up.sh` creates; if you put anything else in the state dir,
+that stays, and so does the dir. `up.sh` refuses to use a state dir that already has other files in it
+(apart from `bin/`), so a mistyped `RUMI_LOCAL_STATE_DIR` cannot lead to a wipe of the wrong folder.
 
 ---
 
@@ -182,6 +185,7 @@ Supabase CLI's API and database (54321, 54322). If you change a port after the s
 | `Postgres binaries (initdb, pg_ctl, psql) were not found` | Install the Postgres server. Homebrew's `libpq` has `psql` and `pg_ctl` but no server, so it is skipped. Or set `PG_BIN`. |
 | `the postgrest binary was not found` | See [What you need](#what-you-need). |
 | `port 54330 is taken by another program` | Something else uses that port. Pick another, for example `RUMI_LOCAL_POSTGREST_PORT=55330 bash infrastructure/local/up.sh`, and pass the same setting to `down.sh`. |
+| `... is not empty and is not a Rumi local stack state dir` | `RUMI_LOCAL_STATE_DIR` points at a folder that already holds other files. Point it at a new or empty folder, or leave it unset. |
 | `the Postgres socket path is too long` | macOS limits socket paths to about 100 bytes. Set `RUMI_LOCAL_SOCKET_DIR=/tmp/rumi-pgsock`. |
 | `Postgres did not start` | Read `.local-stack/logs/postgres.log`. A data dir made by a different major version of Postgres will not start: `down.sh --wipe`, then `up.sh`. |
 | `applying the schema failed` | Read `.local-stack/logs/schema.log`; the first `ERROR` line is the cause. Nothing was applied, so fix it and re-run `up.sh`. |

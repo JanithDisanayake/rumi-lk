@@ -5,7 +5,7 @@
 #
 #   bash infrastructure/local/up.sh        start (or re-check) everything
 #   bash infrastructure/local/down.sh      stop everything
-#   bash infrastructure/local/down.sh --wipe   stop and delete the state dir
+#   bash infrastructure/local/down.sh --wipe   stop and delete what up.sh created
 #
 # Settings (environment variables, all optional):
 #   RUMI_LOCAL_STATE_DIR       where data, logs and pid files live (default ./.local-stack)
@@ -37,6 +37,9 @@ esac
 step "Checking tools"
 
 command -v node >/dev/null 2>&1 || die "node is not on PATH. Install Node.js 22 or newer (nodejs.org)."
+
+# Before anything is written there (chmod, marker): see _lib.sh.
+refuse_foreign_state_dir
 
 find_pg_bin || die "Postgres binaries (initdb, pg_ctl, psql) were not found.
   macOS:  brew install postgresql@17

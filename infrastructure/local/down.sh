@@ -3,7 +3,7 @@
 # Stop the Rumi local stack started by infrastructure/local/up.sh.
 #
 #   bash infrastructure/local/down.sh          stop the proxy, PostgREST, Redis, Postgres
-#   bash infrastructure/local/down.sh --wipe   also delete the state dir (all local data)
+#   bash infrastructure/local/down.sh --wipe   also delete the stack's data (pgdata, logs, keys)
 #
 # Uses the same RUMI_LOCAL_* settings as up.sh (state dir, ports). Only the
 # processes recorded in the state dir are stopped; nothing else is touched.
@@ -47,7 +47,18 @@ if [ "$WIPE" = "1" ]; then
   if [ -f "$PGDATA_DIR/postmaster.pid" ]; then
     die "Postgres still seems to be running ($PGDATA_DIR/postmaster.pid exists); not wiping."
   fi
-  rm -rf "$STATE_DIR"
-  say "    wiped $STATE_DIR"
+  # Only what up.sh created (STATE_CHILDREN in _lib.sh), never the whole dir:
+  # anything else in it was put there by someone else.
+  for child in $STATE_CHILDREN; do
+    rm -rf "${STATE_DIR:?}/$child"
+  done
+  rm -f "$STATE_DIR/bin/postgrest"
+  rmdir "$STATE_DIR/bin" 2>/dev/null || true
+  rm -f "$STATE_DIR/$MARKER_NAME"
+  if rmdir "$STATE_DIR" 2>/dev/null; then
+    say "    wiped $STATE_DIR"
+  else
+    say "    wiped the local stack; left $STATE_DIR in place because it holds files the stack did not create"
+  fi
 fi
 say "Done."

@@ -14,6 +14,12 @@ REDIS_PORT="${RUMI_LOCAL_REDIS_PORT:-63799}"
 # The marker that tells down.sh --wipe this directory really is a local stack.
 MARKER_NAME=".rumi-local-stack"
 
+# Everything up.sh creates directly in the state dir (bin/ is handled apart:
+# it may hold a postgrest copy the user put there). down.sh --wipe deletes
+# these and nothing else, so a state dir pointed at the wrong place loses at
+# most what the stack wrote into it.
+STATE_CHILDREN="pgdata pgsock run logs redis jwt-secret postgrest.conf redis.conf local.env 00_complete-schema.local.sql"
+
 say()  { printf '%s\n' "$*"; }
 step() { printf '\n==> %s\n' "$*"; }
 die()  { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
@@ -35,6 +41,23 @@ resolve_state_dir() {
   PGRST_CONF="$STATE_DIR/postgrest.conf"
   REDIS_CONF="$STATE_DIR/redis.conf"
   ENV_FILE="$STATE_DIR/local.env"
+}
+
+# Refuse to adopt a directory that already holds something else. Without
+# this, up.sh would drop the marker in e.g. ~/Documents and a later
+# down.sh --wipe would trust it. Allowed: a missing or empty dir, one that
+# already has the marker, or one holding only bin/ (docs/local-stack.md tells
+# people to copy postgrest to <state dir>/bin before the first run).
+refuse_foreign_state_dir() {
+  local entries
+  [ -d "$STATE_DIR" ] || return 0
+  [ -f "$STATE_DIR/$MARKER_NAME" ] && return 0
+  entries="$(ls -A "$STATE_DIR")"
+  if [ -n "$entries" ] && [ "$entries" != "bin" ]; then
+    die "$STATE_DIR is not empty and is not a Rumi local stack state dir (no $MARKER_NAME marker).
+  Refusing to use it: down.sh --wipe would later delete files in it.
+  Point RUMI_LOCAL_STATE_DIR at a new or empty directory, or leave it unset for ./.local-stack."
+  fi
 }
 
 # Find a directory holding postgres, initdb, pg_ctl and psql (a client-only
