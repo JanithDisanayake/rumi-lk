@@ -1,0 +1,260 @@
+#!/usr/bin/env node
+/**
+ * Roster management for /observe — who coaches which schools, and which
+ * teachers are at each school. A partner runs this; nobody fills a form.
+ *
+ *   node bot/scripts/observe-roster.js grant-coach <phone> [role]
+ *   node bot/scripts/observe-roster.js add-school  <coach-phone> <school-ext-id> <school name…>
+ *   node bot/scripts/observe-roster.js add-teacher <teacher-phone> <school-ext-id> [name…]
+ *   node bot/scripts/observe-roster.js import      <file.csv>
+ *          columns: coach_phone,school_ext_id,school_name,teacher_phone,teacher_name
+ *   node bot/scripts/observe-roster.js list        <coach-phone>
+ *   node bot/scripts/observe-roster.js set-email   <coach-phone> <email> [full name…]   (calendar invites)
+ *
+ * A "phone" is the person's channel identity as Rumi stores it in
+ * users.phone_number: digits for WhatsApp (spaces, dashes and "+" are
+ * stripped), or a prefixed identity kept as-is (mtx:…, slack:…, discord:…).
+ * Someone who has never messaged the bot gets a users row now; registration
+ * still runs when they first write.
+ *
+ * The roster is DERIVED: a coach holds schools (leader_schools); a teacher is
+ * at a school through users.school_id. School ids are namespaced with
+ * OBSERVE_SCHOOL_ID_PREFIX; leader_schools.source is OBSERVE_ROSTER_SOURCE.
+ * Every command is idempotent — re-running an import changes nothing.
+ */
+
+const fs = require('fs');
+
+const db = () => require('../shared/config/supabase');
+const { leaderRoles, isSchoolLeader } = require('../shared/services/observe/observe-gate');
+
+const USAGE = [
+  'Usage: node bot/scripts/observe-roster.js <command> …',
+  '  grant-coach <phone> [role]                        make someone a coach (default role: coach)',
+  '  add-school  <coach-phone> <school-ext-id> <name>  give a coach a school',
+  '  add-teacher <teacher-phone> <school-ext-id> [name] put a teacher at a school',
+  '  import      <file.csv>                            coach_phone,school_ext_id,school_name,teacher_phone,teacher_name',
+  '  list        <coach-phone>                         show a coach\'s schools and teachers',
+  '  set-email   <coach-phone> <email> [full name]     the coach\'s address for calendar invites',
+].join('\n');
+
+/** users.phone_number form of a phone or channel identity. Throws on junk. */
+function normalizeIdentity(raw) {
+  const s = String(raw == null ? '' : raw).trim();
+  if (/^[a-z][a-z0-9_-]*:\S+$/i.test(s)) return s;
+  const digits = s.replace(/[\s\-().+]/g, '');
+  if (!/^\d{6,15}$/.test(digits)) throw new Error(`not a phone number or channel identity: "${raw}"`);
+  return digits;
+}
+
+function schoolExtId(raw) {
+  const ext = String(raw == null ? '' : raw).trim();
+  if (!ext) throw new Error('a school id is required');
+  const prefix = process.env.OBSERVE_SCHOOL_ID_PREFIX || '';
+  return prefix && !ext.startsWith(prefix) ? `${prefix}${ext}` : ext;
+}
+
+const source = () => process.env.OBSERVE_ROSTER_SOURCE || 'manual';
+const now = () => new Date().toISOString();
+
+async function _one(q) {
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
+  return Array.isArray(data) ? data[0] || null : data || null;
+}
+
+async function findUser(identity) {
+  return _one(db().from('users').select('id, phone_number, name, role, school_id').eq('phone_number', identity).limit(1));
+}
+
+async function ensureUser(identity, { name = null } = {}) {
+  const existing = await findUser(identity);
+  if (existing) return existing;
+  return _one(db().from('users').insert({ phone_number: identity, name: name || null, source: 'observe_roster', created_at: now() }).select().single());
+}
+
+async function _update(table, id, patch) {
+  const { error } = await db().from(table).update({ ...patch, updated_at: now() }).eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+/** The schools row for an ext id, created when missing; a real name replaces a placeholder. */
+async function ensureSchool(extId, name = null) {
+  const existing = await _one(db().from('schools').select('id, ext_id, name').eq('ext_id', extId).limit(1));
+  if (existing) {
+    if (name && existing.name !== name && existing.name === extId) {
+      await _update('schools', existing.id, { name });
+      existing.name = name;
+    }
+    return existing;
+  }
+  return _one(db().from('schools').insert({ ext_id: extId, name: name || extId }).select().single());
+}
+
+async function grantCoach(phone, role = 'coach') {
+  const r = String(role || 'coach').trim().toLowerCase();
+  if (!leaderRoles().includes(r)) throw new Error(`"${r}" is not a coach role (OBSERVE_LEADER_ROLES: ${leaderRoles().join(', ')})`);
+  const user = await ensureUser(normalizeIdentity(phone));
+  if (user.role !== r) await _update('users', user.id, { role: r });
+  return { ...user, role: r };
+}
+
+async function addSchool(coachPhone, extIdRaw, name) {
+  const coach = await findUser(normalizeIdentity(coachPhone));
+  if (!coach || !isSchoolLeader(coach)) throw new Error(`${coachPhone} is not a coach yet — run grant-coach first`);
+  const extId = schoolExtId(extIdRaw);
+  const school = await ensureSchool(extId, name ? String(name).trim() : null);
+  const { error } = await db().from('leader_schools').upsert({
+    leader_user_id: coach.id,
+    school_id: school.id,
+    school_ext_id: extId,
+    school_name: school.name,
+    source: source(),
+  }, { onConflict: 'leader_user_id,school_id' });
+  if (error) throw new Error(error.message);
+  return { coach, school };
+}
+
+async function addTeacher(teacherPhone, extIdRaw, name = null) {
+  const school = await ensureSchool(schoolExtId(extIdRaw));
+  const teacher = await ensureUser(normalizeIdentity(teacherPhone), { name });
+  const patch = { school_id: school.id };
+  if (name && teacher.name !== name) patch.name = name;
+  await _update('users', teacher.id, patch);
+  return { teacher: { ...teacher, ...patch }, school };
+}
+
+/** RFC-4180-ish: quoted fields, doubled quotes, CRLF. */
+function parseCsv(text) {
+  const rows = [];
+  let field = '';
+  let row = [];
+  let quoted = false;
+  const s = String(text || '').replace(/^﻿/, '');
+  for (let i = 0; i < s.length; i += 1) {
+    const c = s[i];
+    if (quoted) {
+      if (c === '"' && s[i + 1] === '"') { field += '"'; i += 1; } else if (c === '"') quoted = false; else field += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ',') { row.push(field); field = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && s[i + 1] === '\n') i += 1;
+      row.push(field); rows.push(row); row = []; field = '';
+    } else field += c;
+  }
+  if (field || row.length) { row.push(field); rows.push(row); }
+  return rows.filter((r) => r.some((f) => f.trim() !== ''));
+}
+
+const CSV_COLUMNS = ['coach_phone', 'school_ext_id', 'school_name', 'teacher_phone', 'teacher_name'];
+
+async function importCsv(text) {
+  const [header, ...rows] = parseCsv(text);
+  const cols = (header || []).map((h) => h.trim().toLowerCase());
+  const missing = CSV_COLUMNS.filter((c) => !cols.includes(c));
+  if (missing.length) throw new Error(`CSV is missing column(s): ${missing.join(', ')}`);
+  const at = (r, c) => String(r[cols.indexOf(c)] || '').trim();
+  const result = { applied: 0, errors: [] };
+  for (let i = 0; i < rows.length; i += 1) {
+    const r = rows[i];
+    try {
+      const coachPhone = at(r, 'coach_phone');
+      const ext = at(r, 'school_ext_id');
+      if (coachPhone) {
+        const existing = await findUser(normalizeIdentity(coachPhone));
+        // Never demote: someone already in the coach family keeps their role.
+        if (!existing || !isSchoolLeader(existing)) await grantCoach(coachPhone);
+        await addSchool(coachPhone, ext, at(r, 'school_name') || null);
+      } else if (at(r, 'school_name')) {
+        await ensureSchool(schoolExtId(ext), at(r, 'school_name'));
+      }
+      if (at(r, 'teacher_phone')) await addTeacher(at(r, 'teacher_phone'), ext, at(r, 'teacher_name') || null);
+      result.applied += 1;
+    } catch (err) {
+      result.errors.push({ row: i + 2, error: err.message });   // +2: 1-based, after the header
+    }
+  }
+  return result;
+}
+
+async function listRoster(coachPhone) {
+  const coach = await findUser(normalizeIdentity(coachPhone));
+  if (!coach) throw new Error(`no user with ${coachPhone}`);
+  const Roster = require('../shared/services/observe/observe-roster.service');
+  const [schools, teachers] = await Promise.all([Roster.listSchools(coach.id), Roster.listTeachers(coach.id)]);
+  return { coach, schools, teachers };
+}
+
+async function setEmail(coachPhone, email, fullName) {
+  const coach = await findUser(normalizeIdentity(coachPhone));
+  if (!coach || !isSchoolLeader(coach)) throw new Error(`${coachPhone} is not a coach yet — run grant-coach first`);
+  const CoachDirectory = require('../shared/services/observe/coach-directory');
+  return CoachDirectory.setWorkEmail(coach.id, { email, fullName: fullName || coach.name });
+}
+
+/** @returns {Promise<number>} exit code */
+async function main(argv = process.argv.slice(2), out = console) {
+  const [cmd, ...args] = argv;
+  try {
+    switch (cmd) {
+      case 'grant-coach': {
+        if (!args[0]) break;
+        const u = await grantCoach(args[0], args[1]);
+        out.log(`✓ ${u.phone_number} is a ${u.role}`);
+        return 0;
+      }
+      case 'add-school': {
+        if (args.length < 3) break;
+        const { school } = await addSchool(args[0], args[1], args.slice(2).join(' '));
+        out.log(`✓ ${args[0]} now coaches ${school.name} (${school.ext_id})`);
+        return 0;
+      }
+      case 'add-teacher': {
+        if (args.length < 2) break;
+        const { teacher, school } = await addTeacher(args[0], args[1], args.slice(2).join(' ') || null);
+        out.log(`✓ ${teacher.name || teacher.phone_number} is at ${school.name} (${school.ext_id})`);
+        return 0;
+      }
+      case 'import': {
+        if (!args[0]) break;
+        const res = await importCsv(fs.readFileSync(args[0], 'utf8'));
+        out.log(`✓ ${res.applied} row(s) applied`);
+        for (const e of res.errors) out.error(`row ${e.row}: ${e.error}`);
+        return res.errors.length ? 1 : 0;
+      }
+      case 'list': {
+        if (!args[0]) break;
+        const { coach, schools, teachers } = await listRoster(args[0]);
+        out.log(`${coach.name || coach.phone_number} (${coach.role || 'no role'})`);
+        for (const s of schools) {
+          out.log(`  ${s.name} [${s.ext_id || s.id}]`);
+          for (const tc of teachers.filter((x) => x.school_id === s.id)) out.log(`    - ${tc.name} ${tc.phone || ''}`.trimEnd());
+        }
+        if (!schools.length) out.log('  (no schools)');
+        return 0;
+      }
+      case 'set-email': {
+        if (args.length < 2) break;
+        await setEmail(args[0], args[1], args.slice(2).join(' ') || null);
+        out.log(`✓ calendar invites for ${args[0]} go to ${args[1]}`);
+        return 0;
+      }
+      default:
+        break;
+    }
+  } catch (err) {
+    out.error(err.message);
+    return 1;
+  }
+  out.error(USAGE);
+  return 1;
+}
+
+if (require.main === module) {
+  require('dotenv').config();
+  main().then((code) => process.exit(code));
+}
+
+module.exports = {
+  main, normalizeIdentity, schoolExtId, parseCsv, importCsv, grantCoach, addSchool, addTeacher, listRoster, setEmail,
+};

@@ -23,6 +23,10 @@ jest.mock('../../bot/shared/services/whatsapp.service', () => ({
 jest.mock('../../bot/shared/services/audio.service', () => ({ getAudioDuration: jest.fn(async () => 1500) }));
 const mockCapture = { startFromAudio: jest.fn(async () => ({ id: 'obs-1' })) };
 jest.mock('../../bot/shared/services/observe/observe-capture.service', () => mockCapture);
+// The park is its own module (observe-binding.test.js runs it for real); here
+// only the router's decision is under test.
+const mockBinding = { parkAndAsk: jest.fn(async () => ({ action: 'asked' })), rememberCaptured: jest.fn(async () => {}) };
+jest.mock('../../bot/shared/services/observe/observe-binding.service', () => mockBinding);
 
 const WhatsAppService = require('../../bot/shared/services/whatsapp.service');
 const { routeLeaderAudio, hasDeclaredDcIntent } = require('../../bot/shared/services/observe/observe-audio-router');
@@ -52,10 +56,24 @@ describe('observe audio router', () => {
     expect(mockCapture.startFromAudio).toHaveBeenCalledWith(COACH, '15550100001', 'media-1', 'chat-1', 30);
   });
 
-  test('nothing armed + classroom length: handled, coach told, never self-coaching', async () => {
-    expect(await routeLeaderAudio(args({ durationSeconds: 1800 }))).toBe(true);
+  test('nothing armed + classroom length: parked and the coach asked whose it is — never self-coaching', async () => {
+    expect(await routeLeaderAudio(args({ durationSeconds: 1800, sha256: 'abc', mimeType: 'audio/ogg' }))).toBe(true);
     expect(mockCapture.startFromAudio).not.toHaveBeenCalled();
+    expect(mockBinding.parkAndAsk).toHaveBeenCalledWith(COACH, '15550100001', {
+      audioId: 'media-1', sha256: 'abc', durationSeconds: 1800, mimeType: 'audio/ogg', sessionId: 'chat-1',
+    });
+  });
+
+  test('the park failing (Redis down) still holds the invariant: the coach is told to start from /observe', async () => {
+    mockBinding.parkAndAsk.mockRejectedValueOnce(new Error('redis down'));
+    expect(await routeLeaderAudio(args({ durationSeconds: 1800 }))).toBe(true);
     expect(WhatsAppService.sendMessage.mock.calls[0][1]).toMatch(/type \/observe first/);
+  });
+
+  test('an armed capture is remembered, so an identical re-send is recognised later', async () => {
+    mockState.value = { state: 'awaiting_audio', boundTeacher: { name: 'Sam Taylor' } };
+    await routeLeaderAudio(args({ durationSeconds: 1800, sha256: 'abc' }));
+    expect(mockBinding.rememberCaptured).toHaveBeenCalledWith('coach-1', expect.objectContaining({ audioId: 'media-1', sha256: 'abc' }), { id: 'obs-1' }, 'Sam Taylor');
   });
 
   test('no duration from the channel but a large file: probes the bytes and still holds the invariant', async () => {

@@ -1,0 +1,127 @@
+## Keeping the coach organised
+
+Everything below happens in chat. A list is a native list on Meta and a
+numbered menu on Baileys, Matrix, Slack and Discord. The coach taps a row or
+types its number, and the same row id comes back either way.
+
+### The /observe menu
+
+After the gates and the one-time onboarding, `/observe` opens **one** list:
+
+1. **Pending work, oldest first.** Each row goes back to its own step:
+   - 📝 not at the debrief yet: re-opens the ratings form, offers
+     "Run it again" for an observation that stopped, or says it is still
+     working;
+   - 📋 debrief to do: the debrief offer;
+   - 📨 report not sent: the send offer.
+2. **🎙 New observation**: the visit picker.
+3. **📅 My schedule**: planned visits. The row shows how many are planned and
+   how many are overdue.
+4. **🗓 Plan a visit.**
+
+If there are more pending items than fit, a **More…** row shows the next page.
+A coach with no pending work and no schools gets the plain capture prompt.
+`/observe` also clears an old armed recording slot, so an earlier pick never
+binds a new lesson. If the debrief step is not installed, or a lookup fails,
+the menu opens without pending rows. If the menu itself fails, the coach gets
+the capture prompt.
+
+"Run it again" picks up from the stage that failed. With no transcript it
+transcribes again; with a transcript it analyses again. It runs once per tap
+(the status is compare-and-set) and at most twice per observation. After that
+the coach is told plainly that it will not go through.
+
+### Visit picker
+
+School → teacher → **brief** → recording slot armed with the teacher bound.
+The recording that follows belongs to that teacher.
+
+- With one school, the picker goes straight to its teachers. Long lists get a
+  **More…** row. **Not listed — record** records without a teacher, and Rumi
+  asks who it was afterwards.
+- The brief has the focus from the teacher's last observation (and what was
+  working), what to look for this time, and the footer *"guidance, not a
+  grade"*. It never shows a score. A first visit gets a short first-visit
+  note instead.
+- Row ids only point to a record. Every tap re-reads the coach's own roster,
+  so an old or forged id can never bind someone else's teacher.
+
+### Scheduling
+
+**Plan a visit** goes school → teacher → day. The coach picks one of the next
+six school days or **Type a date** (YYYY-MM-DD, today or later). A wrong date
+is asked for again. A reply with no digits is treated as ordinary chat.
+School days are Monday to Friday unless `OBSERVE_SCHOOL_DAYS` says otherwise
+(ISO weekdays, e.g. `7,1,2,3,4` for Sunday to Thursday).
+
+Each coach, school and teacher has at most one upcoming visit; planning again
+moves it. **My schedule** lists upcoming visits by date, overdue first and
+marked. Each one can be **started** (the teacher is bound, as in the
+picker), **moved** or **cancelled**. When the observation's recording is
+captured, the visit is marked done and leaves the schedule.
+
+### "Whose observation is this?" (several recordings in flight)
+
+A classroom-length recording from a coach with nothing armed is **parked**:
+the oldest is first in line, up to 5, kept for 6 hours. Rumi then asks the
+coach:
+
+- scheduled teachers first, then the rest of the roster;
+- **Another teacher** (the picker);
+- **This is a debrief**, only when a debrief is waiting;
+- **My own lesson**, only for leaders who also teach
+  (`OBSERVE_SELF_COACH_ROLES`); it goes to their own coaching;
+- **Not an observation**, which drops the recording.
+
+The oldest recording is bound first. A recording that arrives while a question
+is open waits its turn, and the question comes back for the next one. Each
+answer is tied to one recording, so a double tap or a retried webhook never
+creates a second session and never binds the next recording by mistake. If
+the coach sends the same recording again (same bytes or the same media id),
+the answer is "already got this one". A bound recording becomes a normal
+capture: the teacher owns the session, the visit is marked done and the coach
+gets the capture ack.
+
+### Roster management (for the partner)
+
+```
+node bot/scripts/observe-roster.js grant-coach <phone> [role]
+node bot/scripts/observe-roster.js add-school  <coach-phone> <school-ext-id> <school name>
+node bot/scripts/observe-roster.js add-teacher <teacher-phone> <school-ext-id> [name]
+node bot/scripts/observe-roster.js import      roster.csv
+node bot/scripts/observe-roster.js list        <coach-phone>
+node bot/scripts/observe-roster.js set-email   <coach-phone> <email> [full name]
+```
+
+- CSV columns: `coach_phone,school_ext_id,school_name,teacher_phone,teacher_name`.
+  Bad rows are reported and the rest are applied. Running an import again
+  changes nothing, and it never demotes a principal to coach.
+- A phone is the person's channel identity: digits for WhatsApp, or a
+  prefixed identity (`mtx:…`, `slack:…`, `discord:…`).
+- A teacher belongs to a school through `users.school_id`, so the roster is
+  never stored twice. School ids are prefixed with `OBSERVE_SCHOOL_ID_PREFIX`.
+  `leader_schools.source` comes from `OBSERVE_ROSTER_SOURCE`.
+
+### Calendar invites (optional, off by default)
+
+`OBSERVE_CALENDAR_ENABLED=true` turns invites on for every coach. A comma list
+of `users.id` turns them on for only those coaches. Also set
+`GOOGLE_SERVICE_ACCOUNT_JSON` and `GOOGLE_CALENDAR_ID`, plus
+`GOOGLE_CALENDAR_SUBJECT` if the service account needs domain-wide delegation
+to invite attendees. `OBSERVE_CALENDAR_TIMEZONE` defaults to UTC.
+
+- Only the coach is invited. The address comes from `coach_directory`
+  (`set-email` above) and is never guessed from a name.
+- Planning, moving and cancelling a visit creates, updates and deletes the
+  event.
+- A calendar outage never blocks scheduling.
+
+### Not ported (follow-ups)
+
+- The Meta-only visit Flow and the roster-admin Flows. The chat menu above
+  covers the same steps on every channel; a Meta Flow could be added later
+  on top of the same services.
+- Visit notices to the teacher (Meta templates for scheduled, rescheduled and
+  cancelled visits).
+- The stored per-coach teacher list, teacher levels, training-band
+  selection and soft delete.
