@@ -154,3 +154,20 @@ describe('voice verification', () => {
     expect(message).toContain('Fay Ng');
   });
 });
+
+describe('voice verification for staff', () => {
+  it('names staff attendance and uses the staff rate', () => {
+    const message = Conversation.generateVerificationMessage(
+      [
+        { studentName: 'Amara Okafor', status: 'present' },
+        { studentName: 'Ben Ito', status: 'leave' },
+      ],
+      { present: 1, absent: 0, leave: 1, attendancePercentage: 50 },
+      { class_name: 'Hillside Primary' },
+      '',
+      { subject: 'staff' },
+    );
+    expect(message).toMatch(/Staff attendance — Hillside Primary/);
+    expect(message).toMatch(/Attendance: 100%/);
+  });
+});

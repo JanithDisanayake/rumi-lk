@@ -577,7 +577,8 @@ class AttendanceConversationService {
                   sessionState.records,
                   sessionState.summary,
                   sessionState.selectedClass,
-                  sessionState.transcript
+                  sessionState.transcript,
+                  { subject: sessionState.subject }
                 )
               };
             default:
@@ -1029,7 +1030,8 @@ class AttendanceConversationService {
         records,
         result.summary,
         sessionState.selectedClass,
-        result.transcript
+        result.transcript,
+        { subject: sessionState.subject }
       );
 
       return {
@@ -1053,20 +1055,26 @@ class AttendanceConversationService {
   /**
    * Generate verification message for user to confirm/edit attendance
    */
-  static generateVerificationMessage(records, summary, selectedClass, transcript) {
+  static generateVerificationMessage(records, summary, selectedClass, transcript, { subject = 'class' } = {}) {
     const className = this.formatClassDisplayName(selectedClass);
+    const isStaff = subject === 'staff';
+    // The read-back uses the register's rule: for staff, approved leave is excused.
+    const worked = (summary.present || 0) + (summary.absent || 0);
+    const rate = isStaff
+      ? (worked ? (summary.present / worked) * 100 : 0)
+      : Number(summary.attendancePercentage || 0);
     const absentStudents = records.filter(r => r.status === 'absent');
     const leaveStudents = records.filter(r => r.status === 'leave');
     const leaveCount = summary.leave ?? leaveStudents.length;
 
     const lines = [
-      `*Attendance for ${className}*`,
+      isStaff ? `*Staff attendance — ${className}*` : `*Attendance for ${className}*`,
       '',
       `📊 *Summary:*`,
       `✅ Present: ${summary.present}`,
       `❌ Absent: ${summary.absent}`,
       `🟡 On leave: ${leaveCount}`,
-      `📈 Attendance: ${Number(summary.attendancePercentage || 0).toFixed(0)}%`,
+      `📈 Attendance: ${rate.toFixed(0)}%`,
       ''
     ];
 

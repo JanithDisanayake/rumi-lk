@@ -204,6 +204,12 @@ describe('the submission, end to end through the real handler and delivery', () 
     expect(rows.map((r) => [r.teacher_id, r.status]).sort()).toEqual([['t1', 'present'], ['t2', 'leave']]);
     expect(mockDb.rowsOf('attendance_sessions')).toHaveLength(0);
     expect(mockSent[0].fileName).toBe('Staff_Attendance_Hillside_Primary_September_2026.xlsx');
+
+    // The confirmation reads like the register it announces: a school, and the staff rate —
+    // approved leave excused, so one present of one working is 100%, not 50%.
+    const confirmation = mockSendMessage.mock.calls.map((c) => c[1]).join('\n');
+    expect(confirmation).toMatch(/School: Hillside Primary/);
+    expect(confirmation).toMatch(/Attendance Rate: 100%/);
   });
 
   it('a staff token from someone who is not a head teacher writes nothing', async () => {

@@ -523,7 +523,8 @@ async function handleAttendanceMarkingFlow(message, phoneNumber, userId) {
       : selectedClass.class_name;
     const confirmMessage = AttendanceFlowHandler.generateConfirmationMessage(
       displayName,
-      result.stats
+      result.stats,
+      { subject: isStaff ? 'staff' : 'class' }
     );
 
     await WhatsAppService.sendMessage(phoneNumber, confirmMessage);

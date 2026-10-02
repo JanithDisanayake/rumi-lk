@@ -85,7 +85,7 @@ async function handleMarkingExchange(userId, screen, screenData) {
   return {
     screen: 'SUCCESS',
     data: {
-      success_message: AttendanceFlowHandler.generateConfirmationMessage(classDisplay, stats),
+      success_message: AttendanceFlowHandler.generateConfirmationMessage(classDisplay, stats, { subject: sessionState.subject === 'staff' ? 'staff' : 'class' }),
       subject: sessionState.subject === 'staff' ? 'staff' : 'class',
       selectedClass: sessionState.selectedClass,
       selectedListId: sessionState.selectedListId,

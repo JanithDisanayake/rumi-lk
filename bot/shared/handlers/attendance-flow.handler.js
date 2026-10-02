@@ -165,16 +165,25 @@ class AttendanceFlowHandler {
    * @param {Object} stats - Attendance statistics
    * @returns {string} Formatted message
    */
-  static generateConfirmationMessage(className, stats) {
+  static generateConfirmationMessage(className, stats, { subject = 'class' } = {}) {
+    // The day's rate follows the register's rule: for staff, approved leave is
+    // excused (present ÷ present + absent); for a class it is present ÷ everyone.
+    let rate = stats.attendanceRate;
+    if (subject === 'staff') {
+      const worked = (stats.present || 0) + (stats.absent || 0);
+      const pct = worked ? (stats.present / worked) * 100 : 0;
+      rate = pct === 100 || pct === 0 ? `${pct}%` : `${pct.toFixed(2)}%`;
+    }
+
     const lines = [
       `*Attendance Recorded*`,
       ``,
-      `Class: ${className}`,
+      subject === 'staff' ? `School: ${className}` : `Class: ${className}`,
       `Total: ${stats.total}`,
       `Present: ${stats.present}`,
       `Absent: ${stats.absent}`,
       `On leave: ${stats.leave || 0}`,
-      `Attendance Rate: ${stats.attendanceRate}`,
+      `Attendance Rate: ${rate}`,
       ``,
       `Your Excel file is being generated...`
     ];
