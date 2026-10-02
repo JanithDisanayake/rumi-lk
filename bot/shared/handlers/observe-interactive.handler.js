@@ -15,7 +15,7 @@
  *   observe_debrief_now_<id> "Debrief now" — build the guide, arm the recording
  *   observe_debrief_later_<id> "Later" — leave it pending in the /observe list
  *   observe_debrief_<id>     a pending-debrief row in the /observe list
- *   observe_send_<action>_<id>  send report / later / send now / someone else / cancel
+ *   observe_send_<action>_<id>[.<previewId>]  send report / later / send now / someone else / cancel
  *   observe_pickt_<n|new|more_n> the report recipient pick list
  *   observe_menu_* / observe_pend_*      the /observe menu (observe-menu.service)
  *   observe_v* / observe_sched* / observe_s{start,move,cancel}_

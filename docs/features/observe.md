@@ -340,6 +340,13 @@ A worker job (`observe_teacher_report`, phase `preview`) prepares the report and
 
 Below the preview are three buttons: **Send now**, **Someone else** and **Cancel**.
 
+The buttons belong to that one preview:
+
+- **Only the coach who made the observation** can press them. Anyone else is told the observation isn't theirs, and nothing changes.
+- **Every preview has its own id**, and the buttons carry it. Choosing a recipient starts a new preview and clears the previous one's report, so a report prepared for one teacher can never be sent to another.
+- **Someone else** and **Cancel** retire the preview. A **Send now** tapped on a retired or older preview sends nothing; Rumi tells the coach the preview is out of date. The worker checks the id again before it sends, so a queued job for an old preview sends nothing either.
+- After a failed send, **Send now** on the same preview retries it. Tapping it twice in a row still sends once.
+
 ### Delivery
 
 Delivery depends on the recipient's identity, not on the deployment's channel driver.
@@ -392,7 +399,8 @@ Tuning: `OBSERVE_UNTAPPED_EXPIRE_DAYS`, `OBSERVE_UNTAPPED_MAX_PER_TICK`, `OBSERV
 
 ### Ids and states
 
-- **Buttons:** `observe_send_{start,later,confirm,other,cancel}_<sessionId>`
+- **Buttons:** `observe_send_{start,later}_<sessionId>`; the preview's `observe_send_{confirm,other,cancel}_<sessionId>.<previewId>`
+- **Delivery states** (`teacher_delivery.status`): `previewing` → `awaiting_confirm` → `sent`, `awaiting_teacher_tap`, `operator_review`, `send_failed`, `preview_failed` or `cancelled`. `teacher_delivery.preview_id` is the current preview (null once retired).
 - **Pick list:** `observe_pickt_<n>`, `observe_pickt_more_<offset>`, `observe_pickt_new`
 - **Template quick reply (Meta):** `observe_report_<sessionId>`
 - **Observe states:** `awaiting_teacher_pick`, `awaiting_teacher_details`, `awaiting_send_confirm`

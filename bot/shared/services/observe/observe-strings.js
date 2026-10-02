@@ -324,6 +324,7 @@ const EN = {
   send_undelivered_gave_up_fo:
     "{name}'s report still has not been sent, so I will stop reminding you about it. You can still send it any time from /observe.",
   send_not_yours: "Sorry — that observation isn't yours, so I can't send its report.",
+  send_confirm_stale: 'That preview is out of date, so nothing was sent. Use the buttons on the newest preview, or type /observe and pick that observation.',
   send_session_closed: 'That observation was cancelled, so its report can no longer be sent.',
   send_pick_stale: 'That list has expired. Type /observe and pick the observation again to send its report.',
   // Meta only: the teacher is outside the 24-hour window and no invite template is set up.
