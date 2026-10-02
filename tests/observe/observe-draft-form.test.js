@@ -48,7 +48,7 @@ jest.mock('../../bot/shared/services/whatsapp.service', () => ({
   sendInteractiveButtons: jest.fn(async () => true),
 }));
 const mockDebrief = { offerDebriefChoice: jest.fn(async () => true) };
-jest.mock('../../bot/shared/services/observe/observe-debrief.service', () => mockDebrief, { virtual: true });
+jest.mock('../../bot/shared/services/observe/observe-debrief.service', () => mockDebrief);
 
 const WhatsAppService = require('../../bot/shared/services/whatsapp.service');
 const ObserveState = require('../../bot/shared/services/observe/observe-state.service');

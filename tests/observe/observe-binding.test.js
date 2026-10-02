@@ -51,7 +51,7 @@ const mockDebrief = {
   listPendingDebriefs: jest.fn(async () => mockPending.debriefs),
   startDebriefFromAudio: jest.fn(async () => true),
 };
-jest.mock('../../bot/shared/services/observe/observe-debrief.service', () => mockDebrief, { virtual: true });
+jest.mock('../../bot/shared/services/observe/observe-debrief.service', () => mockDebrief);
 
 const WhatsAppService = require('../../bot/shared/services/whatsapp.service');
 const Debrief = mockDebrief;

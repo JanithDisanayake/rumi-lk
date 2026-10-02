@@ -41,7 +41,7 @@ jest.mock('../../bot/shared/services/coaching/transcription-processor.service', 
 const mockHtmlToImage = jest.fn(async () => Buffer.from([0x89, 0x50, 0x4e, 0x47]));
 jest.mock('../../bot/shared/utils/html-to-pdf', () => ({ htmlToImage: (...a) => mockHtmlToImage(...a) }));
 const mockOfferSend = jest.fn(async () => true);
-jest.mock('../../bot/shared/services/observe/observe-send.service', () => ({ offerSendReport: (...a) => mockOfferSend(...a) }), { virtual: true });
+jest.mock('../../bot/shared/services/observe/observe-send.service', () => ({ offerSendReport: (...a) => mockOfferSend(...a) }));
 
 const fs = require('fs');
 const WhatsAppService = require('../../bot/shared/services/whatsapp.service');

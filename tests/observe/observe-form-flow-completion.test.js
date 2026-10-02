@@ -14,6 +14,10 @@
 const fs = require('fs');
 const path = require('path');
 const { createFakeSupabase } = require('./_helpers/fake-supabase');
+const { mockBotDependency } = require('../_helpers/mock-bot-dependency');
+
+// The Flow router reaches the SQS driver, whose aws-sdk is a bot-only package.
+mockBotDependency('aws-sdk', () => ({ config: { update: jest.fn() }, SQS: jest.fn(() => ({})) }));
 
 const mockDb = createFakeSupabase({
   users: [
@@ -37,7 +41,7 @@ jest.mock('../../bot/shared/services/whatsapp.service', () => ({
   sendInteractiveButtons: jest.fn(async () => true),
 }));
 const mockDebrief = { offerDebriefChoice: jest.fn(async () => true) };
-jest.mock('../../bot/shared/services/observe/observe-debrief.service', () => mockDebrief, { virtual: true });
+jest.mock('../../bot/shared/services/observe/observe-debrief.service', () => mockDebrief);
 
 const WhatsAppService = require('../../bot/shared/services/whatsapp.service');
 const ObserveState = require('../../bot/shared/services/observe/observe-state.service');

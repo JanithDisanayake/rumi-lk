@@ -6,6 +6,11 @@
  *    each needs (a debrief job per recording; preview vs deliver per report).
  */
 
+const { mockBotDependency } = require('../_helpers/mock-bot-dependency');
+
+// jsonrepair is a bot-only package (the root CI job runs before bot deps
+// install): a minimal stand-in that repairs the one malformation tested here.
+mockBotDependency('jsonrepair', () => ({ jsonrepair: (s) => String(s).replace(/,\s*([}\]])/g, '$1') }));
 const mockCreate = jest.fn();
 jest.mock('../../bot/shared/services/llm-client', () => ({ getClient: () => ({ chat: { completions: { create: mockCreate } } }) }));
 jest.mock('../../bot/shared/config/supabase', () => ({}));
