@@ -447,6 +447,7 @@ async function startDebriefFromAudio(user, from, audioId, observeState, opts = {
       transcript_language: null,
       diarization_confidence: null,
       feedback: null,
+      opening_sent_at: null,
       attempts: 0,
       transcription_error: null,
       error_class: null,
@@ -494,12 +495,29 @@ async function _sendCardImage(sessionId, to, png, caption) {
  * after a silent failure would lose the feedback for good. A throw here keeps
  * status 'pending' and lets the queue retry; the feedback is already
  * persisted, so the retry is deliver-only.
+ *
+ * The opening is stamped (observer_debrief.opening_sent_at) as soon as it is
+ * confirmed sent, before the card goes, so a retry after a failed card sends
+ * only the card — the coach never gets the opening twice.
  */
-async function _deliverCoachFeedback(sessionId, coach, from, feedback, S, lang) {
+async function _deliverCoachFeedback(sessionId, coach, from, feedback, S, lang, { openingSentAt = null } = {}) {
   const { renderCoachFeedbackMessages } = require('./observe-coach-feedback');
   const { renderCoachCard } = require('./observe-coach-card');
   const [openingMsg, cardMsg] = renderCoachFeedbackMessages(feedback, S);
-  const sentOpening = await WhatsAppService.sendMessage(from, openingMsg);
+  let sentOpening = true;
+  if (openingSentAt) {
+    logToFile('🔁 observe debrief: opening already sent — card only', { sessionId });
+  } else {
+    sentOpening = await WhatsAppService.sendMessage(from, openingMsg);
+    if (sentOpening !== false) {
+      try {
+        await _mergeObserverDebrief(sessionId, { opening_sent_at: new Date().toISOString() });
+      } catch (stampErr) {
+        // Worst case a retry repeats the opening; never lose the card over it.
+        logToFile('⚠️ observe debrief: could not stamp the opening as sent', { sessionId, error: stampErr.message });
+      }
+    }
+  }
 
   // The card ships as an image; renderCoachCard returns null for a harmful
   // debrief and on any render failure — both fall back to the text card.
@@ -743,7 +761,9 @@ async function processDebriefRecording(sessionId, payload = {}) {
   }
   if (observerDebrief.feedback) {
     logToFile('🔭 observe debrief: feedback stored — deliver-only redelivery', { sessionId });
-    await _deliverCoachFeedback(sessionId, coach, from, observerDebrief.feedback, S, lang);
+    await _deliverCoachFeedback(sessionId, coach, from, observerDebrief.feedback, S, lang, {
+      openingSentAt: observerDebrief.opening_sent_at,
+    });
     return;
   }
 

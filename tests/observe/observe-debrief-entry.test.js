@@ -224,7 +224,7 @@ describe('the debrief recording', () => {
     seedSession({
       analysis_data: {
         strengths: [{ evidence: 'kept' }],
-        observer_debrief: { transcript: 'stale', feedback: { old: true }, attempts: 4, error_class: 'media_gone', keep_me: 1 },
+        observer_debrief: { transcript: 'stale', feedback: { old: true }, opening_sent_at: '2026-09-01T09:00:00Z', attempts: 4, error_class: 'media_gone', keep_me: 1 },
       },
     });
     await ObserveState.setState(COACH.id, 'awaiting_debrief_audio', { sessionId: 'obs-1', guide_snapshot: LLM_GUIDE });
@@ -233,7 +233,7 @@ describe('the debrief recording', () => {
     const ad = mockDb.tables.coaching_sessions[0].analysis_data;
     expect(ad.strengths).toEqual([{ evidence: 'kept' }]);
     expect(ad.observer_debrief).toMatchObject({
-      audio_id: 'media-9', audio_mime: 'audio/ogg', transcript: null, feedback: null, attempts: 0, error_class: null, keep_me: 1,
+      audio_id: 'media-9', audio_mime: 'audio/ogg', transcript: null, feedback: null, opening_sent_at: null, attempts: 0, error_class: null, keep_me: 1,
     });
     expect(ad.observer_debrief.guide_snapshot.steps).toHaveLength(6);
     expect(sent()).toEqual([S.debrief_audio_received]);
