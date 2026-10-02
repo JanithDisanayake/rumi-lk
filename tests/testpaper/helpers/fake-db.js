@@ -1,7 +1,7 @@
 /**
  * A small in-memory stand-in for the Supabase query builder, for the
  * test-paper suites. It implements only the chain shapes those services use —
- * insert/update/delete/select with eq/in/neq/gte/order/limit and the
+ * insert/update/delete/select with eq/in/neq/gte/lte/order/limit and the
  * single/maybeSingle terminals — and returns PostgREST's `{ data, error }`.
  *
  * Rows live in plain arrays (`db.tables.<name>`), so a test can seed state and
@@ -77,6 +77,7 @@ function createFakeDb(seed = {}) {
       neq(col, val) { state.filters.push((r) => r[col] !== val); return builder; },
       in(col, vals) { state.filters.push((r) => vals.includes(r[col])); return builder; },
       gte(col, val) { state.filters.push((r) => r[col] >= val); return builder; },
+      lte(col, val) { state.filters.push((r) => r[col] <= val); return builder; },
       not(col, op, val) { state.filters.push((r) => !(op === 'is' && val === null ? r[col] == null : r[col] === val)); return builder; },
       order(col, opts = {}) { state.order = { col, ascending: opts.ascending !== false }; return builder; },
       limit(n) { state.limit = n; return builder; },
