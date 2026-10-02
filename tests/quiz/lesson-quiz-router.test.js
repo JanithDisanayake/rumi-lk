@@ -32,6 +32,14 @@ function interactiveBody(interactive) {
     }],
   };
 }
+function textBody(text) {
+  const body = interactiveBody(null);
+  const m = body.entry[0].changes[0].value.messages[0];
+  delete m.interactive;
+  m.type = 'text';
+  m.text = { body: text };
+  return body;
+}
 const buttonBody = (id) => interactiveBody({ type: 'button_reply', button_reply: { id, title: 'x' } });
 const listBody = (id) => interactiveBody({ type: 'list_reply', list_reply: { id, title: 'x' } });
 
@@ -74,7 +82,7 @@ function mockBoundary() {
       const value = req.body.entry[0].changes[0].value;
       const message = value.messages[0];
       return {
-        entry: req.body.entry[0], message, from: message.from, messageBody: '',
+        entry: req.body.entry[0], message, from: message.from, messageBody: (message.text && message.text.body) || '',
         messageType: message.type, messageTimestamp: message.timestamp,
         phoneNumberId: value.metadata.phone_number_id,
       };
@@ -131,7 +139,9 @@ function mockBoundary() {
       enabled: jest.fn(() => true),
       handleOfferButton: jest.fn().mockResolvedValue(false),
       handleLanguageButton: jest.fn().mockResolvedValue(true),
+      handleTypedLanguageChoice: jest.fn().mockResolvedValue(false),
     },
+    text: { handleTextMessage: jest.fn().mockResolvedValue(undefined) },
     list: {
       isQuizCommand: jest.fn(() => false),
       handleActionButton: jest.fn().mockResolvedValue(false),
@@ -153,6 +163,7 @@ function mockBoundary() {
   jest.doMock('../../bot/shared/services/quiz/video-quiz-share.service', () => mocks.share);
   jest.doMock('../../bot/shared/services/quiz/video-quiz-invite.service', () => mocks.invite);
   jest.doMock('../../bot/shared/services/quiz/video-quiz-binge.service', () => mocks.binge);
+  jest.doMock('../../bot/shared/handlers/text-message.handler', () => mocks.text);
 }
 
 let app;
@@ -232,4 +243,33 @@ describe('webhook → lesson-quiz list rows', () => {
     await postWebhook(app, listBody('vq_a_q1_D'));
     expect(mocks.vq.handleAnswer).toHaveBeenCalledWith(PHONE, 'vq_a_q1_D');
   }, 5000);
+});
+
+describe('webhook → the language ask as a list, or as numbered text (review F-S12)', () => {
+  test('a tq_lang_ row picked from the list reaches handleLanguageButton', async () => {
+    await postWebhook(app, listBody(`tq_lang_ar_${QID}`));
+    await until(() => mocks.offer.handleLanguageButton.mock.calls.length);
+    expect(mocks.offer.handleLanguageButton).toHaveBeenCalledWith(`tq_lang_ar_${QID}`, PHONE, expect.objectContaining({ id: 'u-1' }));
+  });
+
+  test('a typed number answering the numbered ask is taken by the offer, never by chat', async () => {
+    mocks.offer.handleTypedLanguageChoice.mockResolvedValueOnce(true);
+    await postWebhook(app, textBody('3'));
+    await until(() => mocks.offer.handleTypedLanguageChoice.mock.calls.length);
+    expect(mocks.offer.handleTypedLanguageChoice).toHaveBeenCalledWith(PHONE, '3', expect.objectContaining({ id: 'u-1' }));
+    expect(mocks.text.handleTextMessage).not.toHaveBeenCalled();
+  });
+
+  test('any other text goes to the text handler as before', async () => {
+    await postWebhook(app, textBody('hello'));
+    await until(() => mocks.text.handleTextMessage.mock.calls.length);
+    expect(mocks.text.handleTextMessage).toHaveBeenCalledWith(expect.anything(), PHONE, 'hello', expect.objectContaining({ id: 'u-1' }));
+  });
+
+  test('the check failing never costs the message: the text handler still runs', async () => {
+    mocks.offer.handleTypedLanguageChoice.mockRejectedValueOnce(new Error('redis down'));
+    await postWebhook(app, textBody('hello again'));
+    await until(() => mocks.text.handleTextMessage.mock.calls.length);
+    expect(mocks.text.handleTextMessage).toHaveBeenCalledWith(expect.anything(), PHONE, 'hello again', expect.anything());
+  });
 });

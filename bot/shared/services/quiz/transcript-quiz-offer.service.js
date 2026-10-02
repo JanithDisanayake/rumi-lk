@@ -38,6 +38,7 @@ const Funnel = require('./quiz-funnel');
 const { quizLanguageFor, teacherLanguageFor, canonicalSubject, formatLessonDate, topicFor, lessonLabel,
   needsLanguageAsk, languageAskButtons, languageAskBody } = require('./transcript-quiz-language');
 const { isQuizLanguage } = require('../../config/quiz-languages');
+const PendingOptions = require('../messaging/pending-options');
 const {
   TRANSCRIPT, LP_GENERATED, isPlanQuiz, lpRemakeableQuiz, failureReasonOf, digestFailureReason, failureCopyKey,
 } = require('./quiz-sources');
@@ -466,10 +467,10 @@ async function handleOfferButton(buttonId, phone) {
       })
       .eq('id', quizId).eq('status', 'offered').select('id');
     if (!marked || !marked.length) return api.tellAlready(phone, quiz, lang);
-    await api.sendLanguageAsk(quizId, phone, lang, ruleLanguage, {
+    const asked = await api.sendLanguageAsk(quizId, phone, lang, ruleLanguage, {
       digest: quiz.meta && quiz.meta.digest, subject: quiz.subject,
     });
-    logEvent('transcript_quiz.language_asked', { quizId, userId: quiz.teacher_id, ruleLanguage, from: 'offer' });
+    logEvent('transcript_quiz.language_asked', { quizId, userId: quiz.teacher_id, ruleLanguage, from: 'offer', sent: asked });
     return true;
   }
 
@@ -483,18 +484,83 @@ async function tellAlready(phone, quiz, lang) {
   return true;
 }
 
+/** Meta's limits: three reply buttons, ten list rows of 24 characters. */
+const MAX_ASK_BUTTONS = 3;
+const MAX_ASK_ROWS = 10;
+const ASK_ROW_TITLE_MAX = 24;
+
 /**
  * The ask itself — shared with /quiz and the plan and topic providers, which
  * reach the same decision. `lesson` ({digest, subject}) is what its examples of
  * terms are taken from; a caller that knows neither gets an ask naming none,
- * never another subject's. One button per QUIZ_LANGUAGES entry
- * (`tq_lang_<code>_<quizId>`).
+ * never another subject's. One option per QUIZ_LANGUAGES entry
+ * (`tq_lang_<code>_<quizId>`):
+ *
+ *   - up to three: reply buttons;
+ *   - more: one list (Meta refuses a fourth button, and its driver returns
+ *     false without sending — the ask used to vanish there);
+ *   - a channel that refuses either: numbered text, its number (or name)
+ *     answering it as the tap would (pending-options; handleTypedLanguageChoice
+ *     on Meta, the inbound adapter on Baileys).
+ *
+ * @returns {Promise<boolean>} true when one of the three went out
  */
 async function sendLanguageAsk(quizId, phone, teacherLang, ruleLanguage, lesson = {}) {
-  await WhatsAppService.sendInteractiveButtons(phone, {
-    body: languageAskBody(lesson, teacherLang),
-    buttons: languageAskButtons(quizId, ruleLanguage),
-  });
+  const body = languageAskBody(lesson, teacherLang);
+  const options = languageAskButtons(quizId, ruleLanguage);
+  let sent = false;
+  if (options.length <= MAX_ASK_BUTTONS) {
+    sent = await WhatsAppService.sendInteractiveButtons(phone, { body, buttons: options });
+  } else if (options.length <= MAX_ASK_ROWS) {
+    sent = await WhatsAppService.sendInteractiveMessage(phone, {
+      body: { text: body },
+      action: {
+        button: resolveUx('tqMenuButton', { language: teacherLang }),
+        sections: [{ rows: options.map((o) => ({ id: o.id, title: String(o.title).slice(0, ASK_ROW_TITLE_MAX) })) }],
+      },
+    });
+  }
+  if (!sent) sent = await sendNumberedLanguageAsk(phone, body, options);
+  if (!sent) logToFile('❌ transcript quiz: the language ask could not be delivered', { quizId, options: options.length }, 'error');
+  return Boolean(sent);
+}
+
+async function sendNumberedLanguageAsk(phone, body, options) {
+  const lines = options.map((o, i) => `${i + 1}. ${o.title}`);
+  const ok = await WhatsAppService.sendMessage(phone, `${body}\n\n${lines.join('\n')}`);
+  if (ok) {
+    await PendingOptions.remember(phone, {
+      replyType: 'list_reply', options: options.map((o) => ({ id: o.id, title: o.title })),
+    });
+  }
+  return Boolean(ok);
+}
+
+/** ۲ / ٢ → 2: a teacher typing the number on an Urdu or Arabic keyboard. */
+function asciiDigits(text) {
+  return String(text || '')
+    .replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06F0))
+    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660));
+}
+
+/**
+ * A typed answer to the numbered language ask (Meta: the inbound text is not
+ * resolved against pending menus there; whatsapp-bot.js asks here first).
+ * Only a pending menu made of language-ask options is ever answered; anything
+ * else — no menu, another feature's menu, text that picks nothing — is left
+ * to ordinary handling. With the lesson quiz off nothing is read.
+ *
+ * @returns {Promise<boolean>} true when the text answered the ask
+ */
+async function handleTypedLanguageChoice(phone, text, user) {
+  if (!enabled() || !phone) return false;
+  const menu = await PendingOptions.get(phone);
+  const options = (menu && menu.options) || [];
+  if (!options.length || !options.every((o) => String(o.id || '').startsWith('tq_lang_'))) return false;
+  const picked = PendingOptions.resolveSelection(menu, asciiDigits(text));
+  if (!picked) return false;
+  await PendingOptions.clear(phone);
+  return module.exports.handleLanguageButton(picked.id, phone, user);
 }
 
 /**
@@ -719,6 +785,6 @@ async function handleLanguageButton(buttonId, phone, user) {
 module.exports = {
   enabled, offerMode, subjectAllowed, alreadyOffered, staleMs, isStaleGenerating, STALE_MINUTES,
   scheduleOffer, triggerEarly, processOffer, runReportFollowUps, handleOfferButton, handleLanguageButton, claimRow, reclaimStaleOffer, languageByPhone,
-  sendLanguageAsk, startGenerating, tellAlready, queueLpQuiz, remakeLpQuiz,
+  sendLanguageAsk, handleTypedLanguageChoice, startGenerating, tellAlready, queueLpQuiz, remakeLpQuiz,
   OFFER_YES, OFFER_NO, MIN_TRANSCRIPT_CHARS, OFFER_DELAY_SECONDS, OFFER_LEASE_MS, MIN_CONFIDENCE, MIN_SLOS, FEATURE_KEY, SESSION_SELECT,
 };

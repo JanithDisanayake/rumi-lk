@@ -165,10 +165,11 @@ function needsLanguageAsk(subject) {
 const LANGUAGE_BUTTON_PREFIX = 'tq_lang_';
 
 /**
- * One reply button per configured quiz language, the subject-rule language
- * first — the one the teacher would have been given silently, still the easy
- * tap. Buttons beyond the channel's limit are rendered as a list by the
- * channel driver.
+ * One option per configured quiz language, the subject-rule language first —
+ * the one the teacher would have been given silently, still the easy tap. The
+ * offer's sendLanguageAsk sends up to three as reply buttons and more as one
+ * list (no channel driver turns extra buttons into a list: Meta refuses a
+ * fourth button).
  *
  * Each title is the language's own name from the registry, so it cannot drift
  * from what /language and /settings show, and none is translated: a language

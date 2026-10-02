@@ -453,7 +453,19 @@ async function handleWebhookPost(req, res) {
 
     // Route to appropriate handler based on message type
     if (messageType === 'text' && messageBody) {
-      await handleTextMessage(message, from, messageBody, user);
+      // Lesson quiz: a typed number (or name) answering the numbered language
+      // ask, the fallback when a channel refused its buttons and its list.
+      // Meta's inbound text is never matched against pending menus, so it is
+      // asked here first; with the lesson quiz off it reads nothing, and a
+      // failure never costs the message.
+      let answeredAsk = false;
+      try {
+        const TranscriptQuizOffer = require('./shared/services/quiz/transcript-quiz-offer.service');
+        answeredAsk = await TranscriptQuizOffer.handleTypedLanguageChoice(from, messageBody, user);
+      } catch (askErr) {
+        logToFile('⚠️ lesson quiz: typed language answer check failed', { error: askErr.message });
+      }
+      if (!answeredAsk) await handleTextMessage(message, from, messageBody, user);
     } else if (messageType === 'audio' || messageType === 'voice') {
       await handleVoiceMessage(message, from, user);
     } else if (messageType === 'image' && message.image) {
@@ -1265,6 +1277,17 @@ async function handleWebhookPost(req, res) {
       if (listId.startsWith('vq_')) {
         const VideoQuizService = require('./shared/services/quiz/video-quiz.service');
         if (await VideoQuizService.handleAnswer(from, listId)) { ack(); return; }
+      }
+
+      // Lesson quiz: the language ask sent as a list (more than three quiz
+      // languages) — the same ids as its buttons.
+      if (listId.startsWith('tq_lang_')) {
+        const TranscriptQuizOffer = require('./shared/services/quiz/transcript-quiz-offer.service');
+        if (!(await TranscriptQuizOffer.handleLanguageButton(listId, from, user))) {
+          logToFile('⚠️ unrouted tq_lang_ list row', { listId });
+        }
+        ack();
+        return;
       }
 
       // Lesson quiz: a row tapped in the /quiz list (a lesson, a plan, an
