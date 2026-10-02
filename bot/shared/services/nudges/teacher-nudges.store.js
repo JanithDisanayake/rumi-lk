@@ -296,7 +296,7 @@ async function rowsFor(userId, { kind = null, status = null, limit = 50 } = {}) 
 async function rowsForUsers(userIds, { kind, sinceDate = null } = {}) {
   if (!userIds || !userIds.length) return [];
   let q = supabase.from(TABLE)
-    .select('id, user_id, nudge_date, status, context')
+    .select('id, user_id, nudge_date, status, skip_reason, context')
     .eq('kind', kind)
     .in('user_id', userIds);
   if (sinceDate) q = q.gte('nudge_date', sinceDate);

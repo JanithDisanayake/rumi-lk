@@ -14,7 +14,7 @@
  * A kind is a plain module:
  *
  *   { kind: 're_engage',                         // lower_snake_case, unique
- *     prepare: async (now) => { ... },           // optional; books cohort rows
+ *     prepare: async (now) => <rows booked>,      // optional; books cohort rows
  *     handle:  async (row, { now }) =>           // required; one claimed row
  *       ({ sent: true, context }) | ({ skipped: '<SKIP_REASON>', context }) }
  *
@@ -136,10 +136,10 @@ async function handleRow(kindModule, row, now) {
  * @param {Object} [opts]
  * @param {Date}   [opts.now]    the tick's clock, handed to every prepare/handle
  * @param {number} [opts.limit]  claim budget for this tick (default: maxPerTick())
- * @returns {Promise<{claimed, sent, skipped, failed, reclaimed, off?: true}>}
+ * @returns {Promise<{booked, claimed, sent, skipped, failed, reclaimed, off?: true}>}
  */
 async function runSweep({ now = new Date(), limit } = {}) {
-  const counts = { claimed: 0, sent: 0, skipped: 0, failed: 0, reclaimed: 0 };
+  const counts = { booked: 0, claimed: 0, sent: 0, skipped: 0, failed: 0, reclaimed: 0 };
 
   if (!isEnabled()) return { off: true, ...counts };
 
@@ -156,7 +156,8 @@ async function runSweep({ now = new Date(), limit } = {}) {
 
     if (kindModule.prepare) {
       try {
-        await kindModule.prepare(now);
+        const booked = await kindModule.prepare(now);
+        if (Number.isInteger(booked) && booked > 0) counts.booked += booked;
       } catch (error) {
         // The cohort may be short, but rows booked on an earlier tick are still
         // due — skipping the claim as well would strand them.
