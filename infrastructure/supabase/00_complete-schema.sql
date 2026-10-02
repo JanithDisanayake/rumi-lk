@@ -4134,7 +4134,6 @@ END $$;
 CREATE INDEX IF NOT EXISTS idx_test_papers_request ON test_papers (request_id, version DESC);
 CREATE INDEX IF NOT EXISTS idx_test_papers_inflight ON test_papers (created_at) WHERE status = 'generating';
 
-=======
 -- Attendance register (staff attendance + Leave).
 -- users.school_id links a teacher or head teacher to a school; users.role says
 -- which job they do there. NULL role is a teacher; 'head_teacher' (or the legacy
