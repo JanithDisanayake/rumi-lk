@@ -1478,8 +1478,16 @@ const SHARE_CODE_RX = /\bQUIZ-[A-Z0-9]{6}\b/i;
  * The positions a typed reply names, 0-based in the order shown, or null when
  * the reply is not a letter / number list at all.
  */
+// An Urdu keyboard types ۰-۹ and an Arabic one ٠-٩: "۲" is the child's "2".
+// The same mapping as text-format's normaliseDigits (not exported there).
+function asLatinDigits(s) {
+  return s
+    .replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06F0))
+    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660));
+}
+
 function typedPositions(text) {
-  const cleaned = String(text || '').trim().replace(/[.)!۔]+$/, '').trim();
+  const cleaned = asLatinDigits(String(text || '')).trim().replace(/[.)!۔]+$/, '').trim();
   if (!cleaned) return null;
   const tokens = cleaned.split(TYPED_SET_SPLIT_RX).map((t) => t.trim()).filter(Boolean);
   if (!tokens.length) return null;

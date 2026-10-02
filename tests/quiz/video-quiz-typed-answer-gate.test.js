@@ -226,3 +226,11 @@ describe('two fast typed replies (review F-S8)', () => {
     expect(asked).toHaveLength(1);
   });
 });
+
+describe('digits from an Urdu or Arabic keyboard (review F-N5)', () => {
+  test.each([['۲', 'Urdu'], ['٢', 'Arabic-Indic']])('"%s" (%s two) names B, like "2"', async (reply) => {
+    reset({ quizSource: 'transcript' });
+    expect(await settle(vq.answerTypedLetter(PHONE, reply))).toBe(true);
+    expect(answers()).toEqual([expect.objectContaining({ question_id: 'q-1', selected_option: 'B', is_correct: true })]);
+  });
+});
