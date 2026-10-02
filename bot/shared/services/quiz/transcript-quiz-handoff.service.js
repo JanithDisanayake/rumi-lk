@@ -120,7 +120,8 @@ async function sendHandoff(quizId, phone, { firstSend = false, prepared = null }
     logEvent('transcript_quiz.resend_without_code', { quizId });
     return { ok: false, reason: 'no_code_to_reuse' };
   } else {
-    const minted = await share.mintCode({ quizId, userId: quiz.teacher_id, videoId: null, language });
+    // The chat this goes to is kept on the code, where the class report reads it.
+    const minted = await share.mintCode({ quizId, userId: quiz.teacher_id, videoId: null, language, teacherTo: phone });
     if (!minted) {
       await updateQuiz(quizId, { meta: { ...meta, step: 'ready', handoff_error: 'mint_failed' } });
       await WhatsAppService.sendMessage(phone, resolveUx('tqCouldNotSend', { language: teacherLang }));
@@ -225,9 +226,11 @@ async function sendHandoff(quizId, phone, { firstSend = false, prepared = null }
 
   // ── bookkeeping — only the first send owns status/sent_at/the nudge ────────
   if (firstSend) {
-    // `teacher_to` is the chat this went to. The nudge and the class report are
-    // sent hours later, by jobs that only have the quiz: users.phone_number is a
-    // WhatsApp number (or empty) for a teacher on Matrix, Slack or Discord.
+    // `teacher_to` is the chat this went to. The nudge is sent hours later, by a
+    // job that only has the quiz: users.phone_number is a WhatsApp number (or
+    // empty) for a teacher on Matrix, Slack or Discord. A lesson quiz is one row
+    // per teacher, so the row can carry it; the class report reads the same chat
+    // off the share code (mintCode `teacherTo`).
     const newMeta = {
       ...meta, step: 'sent', share_code: code, share_code_id: shareCodeId, link, join_kind: joinKind, teacher_to: phone,
       student_message: forwardable, pdf_key: pdfKey, pdf_sent: pdfSent, link_sent: linkSent, sent_at: new Date().toISOString(),

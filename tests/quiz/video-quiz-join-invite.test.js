@@ -105,13 +105,16 @@ describe('deliverClassLink uses the channel-aware line', () => {
     expect(text).not.toContain('wa.me');
   });
 
-  test('the class report finds the teacher in the same chat: the quiz row records it', async () => {
+  test('the class report finds the teacher in the same chat: the share code records it', async () => {
     process.env.MATRIX_USER_ID = '@quizbot:example.org';
     const mem = memWithTeacher();
     supabase.from.mockImplementation(mem.from);
     await share.deliverClassLink({ quizId: 'q1', userId: 't1', videoId: 'v1', language: 'en' }, 'mtx:15550100001');
+    const { data: code } = await mem.from('quiz_share_codes').select('teacher_to').eq('teacher_user_id', 't1').maybeSingle();
+    expect(code.teacher_to).toBe('mtx:15550100001');
+    // Never on the quiz row, which every teacher sent this video shares.
     const { data: quiz } = await mem.from('quizzes').select('meta').eq('id', 'q1').maybeSingle();
-    expect(quiz.meta).toEqual(expect.objectContaining({ teacher_to: 'mtx:15550100001' }));
+    expect((quiz.meta || {}).teacher_to).toBeUndefined();
   });
 
   test('a WhatsApp teacher with no bot number gets the code to forward, not a dead link', async () => {

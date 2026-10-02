@@ -3784,7 +3784,12 @@ CREATE TABLE IF NOT EXISTS quiz_share_codes (
     invited_by_student_id UUID REFERENCES students(id),
     parent_share_code_id  UUID REFERENCES quiz_share_codes(id),
     expires_at      TIMESTAMPTZ,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- The chat the class link was sent to (a phone on WhatsApp, a prefixed id on
+    -- Matrix/Slack/Discord), where the class report goes. Per CODE, not per quiz:
+    -- a video quiz row is shared by every teacher who is sent that video.
+    -- NULL = minted before this was recorded: users.phone_number of the teacher.
+    teacher_to      TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_quiz_share_codes_teacher ON quiz_share_codes(teacher_user_id);
@@ -3983,6 +3988,10 @@ ALTER TABLE quiz_sessions ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 
 -- A solo run by a teacher, and a child arriving via a share link, have no
 -- roster row. The original table made student_id mandatory.
 ALTER TABLE quiz_sessions ALTER COLUMN student_id DROP NOT NULL;
+
+-- quiz_share_codes: the chat the class link was sent to (see the table above),
+-- for the same upgraded-database reason. Lesson quiz, V2.9.0.
+ALTER TABLE quiz_share_codes ADD COLUMN IF NOT EXISTS teacher_to TEXT;
 
 -- The two CHECKs that ship inline in the CREATE TABLE, added here for the same
 -- upgraded-database reason. Guarded by name: ADD CONSTRAINT has no IF NOT EXISTS.

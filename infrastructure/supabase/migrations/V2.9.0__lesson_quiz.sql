@@ -4,7 +4,8 @@
 -- planned (a Rumi lesson plan), shared with the class by one link.
 --
 -- ADDITIVE ONLY. Three nullable/defaulted columns on quizzes, three more
--- statuses on its CHECK, two indexes. Nothing here changes existing rows or
+-- statuses on its CHECK, two indexes, one nullable column on
+-- quiz_share_codes. Nothing here changes existing rows or
 -- existing code paths; the feature stays off until TRANSCRIPT_QUIZ_ENABLED=true.
 -- Fresh installs get the same shape from 00_complete-schema.sql.
 -- =============================================================================
@@ -44,3 +45,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS quizzes_one_transcript_quiz_per_session
   ON quizzes(coaching_session_id) WHERE quiz_source = 'transcript';
 CREATE UNIQUE INDEX IF NOT EXISTS quizzes_one_lesson_plan_quiz
   ON quizzes(lesson_plan_id) WHERE quiz_source = 'lp_generated';
+
+-- The chat each class link was sent to, where that code's class report goes.
+-- On the share CODE, not the quiz: a video quiz is one row shared by every
+-- teacher who is sent that video. NULL (every existing code) = the teacher's
+-- users.phone_number, as before.
+ALTER TABLE quiz_share_codes ADD COLUMN IF NOT EXISTS teacher_to TEXT;

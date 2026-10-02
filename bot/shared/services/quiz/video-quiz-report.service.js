@@ -340,6 +340,29 @@ function classesTaught(sessions) {
 }
 
 /**
+ * The chat the class report goes to, for ONE share code:
+ *   1. the chat the class link was sent to, recorded on the code at mint time
+ *      (`quiz_share_codes.teacher_to`) — a teacher on Matrix, Slack or Discord
+ *      has no WhatsApp number to reach them at;
+ *   2. for a lesson quiz minted before that column, the chat its hand-off went
+ *      to (`quizzes.meta.teacher_to`) — but only on the quiz's own teacher's
+ *      code. A video quiz is one row shared by every teacher who is sent that
+ *      video, so nothing on that row can name one teacher's chat;
+ *   3. the code's teacher's `users.phone_number`.
+ */
+async function reportRecipient(sc, teacher) {
+  if (sc.teacher_to) return sc.teacher_to;
+  if (sc.quiz_id) {
+    const { data: quizRow } = await supabase.from('quizzes')
+      .select('meta, quiz_source, teacher_id').eq('id', sc.quiz_id).maybeSingle();
+    const perTeacher = quizRow && quizRow.quiz_source && quizRow.quiz_source !== 'video'
+      && quizRow.teacher_id && quizRow.teacher_id === sc.teacher_user_id;
+    if (perTeacher && quizRow.meta && quizRow.meta.teacher_to) return quizRow.meta.teacher_to;
+  }
+  return (teacher && teacher.phone_number) || null;
+}
+
+/**
  * Build and send the report. Safe to call twice — genuinely guarded on
  * `report_sent_at` (the previous version of this comment claimed a
  * guard that was never implemented and no column that existed).
@@ -348,7 +371,7 @@ async function generate(shareCodeId, { reason = 'scheduled', force = false } = {
   const { data: sc } = await supabase
     .from('quiz_share_codes')
     .select('id, code, quiz_id, teacher_user_id, teacher_name, topic, language, '
-            + 'created_at, report_sent_at')
+            + 'created_at, report_sent_at, teacher_to')
     .eq('id', shareCodeId)
     .maybeSingle();
   if (!sc) return false;
@@ -386,14 +409,7 @@ async function generate(shareCodeId, { reason = 'scheduled', force = false } = {
   const { data: teacher } = await supabase
     .from('users').select('phone_number, preferred_language, name')
     .eq('id', sc.teacher_user_id).maybeSingle();
-  // A lesson quiz records the chat its hand-off went to (transcript-quiz-handoff
-  // `teacher_to`): a teacher on Matrix, Slack or Discord has no WhatsApp number
-  // to reach them at. A video quiz has none, and goes to users.phone_number.
-  let teacherTo = teacher && teacher.phone_number;
-  if (sc.quiz_id) {
-    const { data: quizRow } = await supabase.from('quizzes').select('meta').eq('id', sc.quiz_id).maybeSingle();
-    if (quizRow && quizRow.meta && quizRow.meta.teacher_to) teacherTo = quizRow.meta.teacher_to;
-  }
+  const teacherTo = await reportRecipient(sc, teacher);
   if (!teacherTo) {
     logToFile('⚠️ video-quiz report: no teacher phone', { shareCodeId });
     Funnel.emit('report_failed', { quiz_id: sc.quiz_id, share_code_id: shareCodeId, reason: 'no_teacher_phone' });

@@ -223,7 +223,7 @@ describe('the report goes to the chat the quiz was sent to', () => {
         teacher_name: 'Sample Teacher', topic: 'Magnets', language: 'en', report_sent_at: null,
       },
       teacher: { phone_number: '15550100001' },
-      quiz: { id: 'q1', meta: { teacher_to: 'mtx:15550100001' } },
+      quiz: { id: 'q1', quiz_source: 'transcript', teacher_id: 'u1', meta: { teacher_to: 'mtx:15550100001' } },
       sessions: [{ id: 's1', student_name: 'Child One', status: 'completed',
         total_questions_answered: 8, correct_answers: 6, mastery_percentage: 75 }],
     });

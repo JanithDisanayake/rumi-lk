@@ -155,7 +155,15 @@ function classMessage(invite, lang, { teacher, topic }) {
 
 // ─── Minting ────────────────────────────────────────────────────────────────
 
-async function mintCode({ quizId, userId, videoId, language = 'en' }) {
+/**
+ * Mint a teacher's share code. `teacherTo` is the chat the class link is being
+ * sent to: the next-morning report is sent by a job that only has the share
+ * code, and a teacher on Matrix, Slack or Discord has no WhatsApp number to
+ * reach them at. It is kept on the CODE, never on the quiz row — a video quiz
+ * is one row shared by every teacher who is sent that video, so a chat on the
+ * row would send one teacher's class report to whoever shared it last.
+ */
+async function mintCode({ quizId, userId, videoId, language = 'en', teacherTo = null }) {
   const { data: user } = await supabase
     .from('users').select('name').eq('id', userId).maybeSingle();
   // The fallback is read by CHILDREN in the quiz language ("*your teacher* نے…" was
@@ -171,6 +179,7 @@ async function mintCode({ quizId, userId, videoId, language = 'en' }) {
     const { data, error } = await supabase.from('quiz_share_codes').insert({
       code, quiz_id: quizId, teacher_user_id: userId, video_id: videoId,
       teacher_name: teacherName, topic: quiz?.topic || null, language,
+      teacher_to: teacherTo || null,
       expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     }).select('id, code').single();
     if (!error && data) return { ...data, teacherName, topic: quiz?.topic };
@@ -254,28 +263,11 @@ async function handleShareButton(buttonId, phone) {
  * this would drift, and the copy the teacher sees is the copy thirty children
  * read.
  */
-/**
- * The chat the class link went to, kept on the quiz row (`meta.teacher_to`):
- * the next-morning report is sent by a job that only has the share code, and a
- * teacher on Matrix, Slack or Discord has no WhatsApp number to reach them at.
- * The lesson-quiz hand-off records the same key. Best effort.
- */
-async function rememberTeacherChat(quizId, to) {
-  if (!quizId || !to) return;
-  try {
-    const { data: row } = await supabase.from('quizzes').select('meta').eq('id', quizId).maybeSingle();
-    if (!row || (row.meta && row.meta.teacher_to === to)) return;
-    await supabase.from('quizzes').update({ meta: { ...(row.meta || {}), teacher_to: to } }).eq('id', quizId);
-  } catch (err) {
-    logToFile('⚠️ share: could not record the teacher chat on the quiz', { quizId, error: err.message });
-  }
-}
-
 async function deliverClassLink(ctx, phone) {
   // The forwarded message is read by every child in the class, so it is in the
   // quiz's language; the lines around it follow the same language.
   const lang = clampLanguage(ctx && ctx.language);
-  const minted = await mintCode(ctx);
+  const minted = await mintCode({ ...ctx, teacherTo: phone });
   if (!minted) {
     await WhatsAppService.sendMessage(phone, ux('vqShareLinkFailed', lang));
     return true;
@@ -292,7 +284,6 @@ async function deliverClassLink(ctx, phone) {
     topic: minted.topic || ux('vqTodaysVideo', lang),
   }));
   await WhatsAppService.sendMessage(phone, reportPromise(lang));
-  await rememberTeacherChat(ctx.quizId, phone);
 
   logEvent('video_quiz.share_code_minted', {
     userId: ctx.userId, quizId: ctx.quizId, code: minted.code, join: invite.kind,
