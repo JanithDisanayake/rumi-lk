@@ -195,6 +195,37 @@ async function claimRow({ session, source }) {
   return { claimed: true, quizId: data.id };
 }
 
+/**
+ * How long an offer job's claim is its own: the quiz queue's receive lease
+ * (600 s, see sqs-worker quiz_offer). Past it the queue has handed the message
+ * on, so a claim that old with its digest unfinished is a job that died.
+ */
+const OFFER_LEASE_MS = 600 * 1000;
+
+/**
+ * Take over this session's offer row when it is a dead offer job's claim:
+ * still `generating` at the digest step, never accepted (a /quiz row carries
+ * `accepted_at`), claimed longer ago than the lease. Compare-and-set on the
+ * claim time, so two redeliveries cannot both take it.
+ *
+ * @returns {Promise<string|null>} the quiz id when taken over
+ */
+async function reclaimStaleOffer(coachingSessionId) {
+  const { data: row } = await supabase.from('quizzes')
+    .select('id, status, meta')
+    .eq('coaching_session_id', coachingSessionId).eq('quiz_source', TRANSCRIPT).maybeSingle();
+  const meta = (row && row.meta) || {};
+  if (!row || row.status !== 'generating' || meta.step !== 'digest' || meta.accepted_at || !meta.claimed_at) return null;
+  const claimedMs = Date.parse(meta.claimed_at);
+  if (!Number.isFinite(claimedMs) || Date.now() - claimedMs < OFFER_LEASE_MS) return null;
+  const now = new Date().toISOString();
+  const { data: taken } = await supabase.from('quizzes')
+    .update({ meta: { ...meta, claimed_at: now, reclaimed_at: now } })
+    .eq('id', row.id).eq('status', 'generating').eq('meta->>claimed_at', meta.claimed_at)
+    .select('id');
+  return taken && taken.length ? row.id : null;
+}
+
 async function markSkipped(quizId, reason, extra = {}) {
   await supabase.from('quizzes')
     .update({ status: 'skipped', meta: { step: 'skipped', skip_reason: reason, ...extra } })
@@ -225,11 +256,18 @@ async function processOffer(coachingSessionId, payload = {}) {
   }
 
   const claim = await claimRow({ session, source: payload.source || 'offer' });
+  let quizId = claim.quizId;
   if (!claim.claimed) {
-    logEvent('transcript_quiz.offer_skipped', { coachingSessionId, reason: 'already_claimed' });
-    return { skipped: 'already_claimed' };
+    // 23505: a row exists. When it is THIS step's own claim from a job that
+    // died mid-digest (the queue redelivered it), take it over; anything else
+    // — a live job, an offer already made, a /quiz quiz — is left alone.
+    quizId = await module.exports.reclaimStaleOffer(session.id);
+    if (!quizId) {
+      logEvent('transcript_quiz.offer_skipped', { coachingSessionId, reason: 'already_claimed' });
+      return { skipped: 'already_claimed' };
+    }
+    logEvent('transcript_quiz.offer_reclaimed', { coachingSessionId, quizId });
   }
-  const quizId = claim.quizId;
 
   let result;
   try {
@@ -421,11 +459,11 @@ async function startGenerating({ quizId, quiz, phone, teacherLang, language, sou
   // A plan or topic quiz reaches here with no digest yet (the author digests
   // the plan or the topic first), so its next step is the digest, not the author.
   const next = quiz.meta && quiz.meta.digest ? 'author' : 'digest';
+  const acceptedMeta = {
+    ...(quiz.meta || {}), step: next, awaiting_language: false, language_choice: language, accepted_at: new Date().toISOString(),
+  };
   const { data: flipped } = await supabase.from('quizzes')
-    .update({
-      status: 'generating', language, topic,
-      meta: { ...(quiz.meta || {}), step: next, awaiting_language: false, language_choice: language, accepted_at: new Date().toISOString() },
-    })
+    .update({ status: 'generating', language, topic, meta: acceptedMeta })
     .eq('id', quizId).eq('status', 'offered').select('id');
   if (!flipped || !flipped.length) return api.tellAlready(phone, quiz, teacherLang);
 
@@ -444,8 +482,29 @@ async function startGenerating({ quizId, quiz, phone, teacherLang, language, sou
     return true;
   }
 
-  const SQSQueueService = require('../queue');
-  await SQSQueueService.queueJob(quizId, 'quiz_generate', { quizId, phone, language: teacherLang }, { delaySeconds: 0 });
+  // Queued the way queueLpQuiz queues: a refusal fails the row (remakeable
+  // from /quiz, the digest kept) and says so. Left `generating` with no job,
+  // the row read "still making" for ever.
+  try {
+    const SQSQueueService = require('../queue');
+    await SQSQueueService.queueJob(quizId, 'quiz_generate', { quizId, phone, language: teacherLang }, { delaySeconds: 0 });
+  } catch (err) {
+    logToFile('❌ transcript quiz: quiz_generate could not be queued', { quizId, error: err.message }, 'error');
+    const quizSource = quiz.quiz_source || TRANSCRIPT;
+    const failedMeta = {
+      ...acceptedMeta, step: 'failed', error: 'queue_failed', error_detail: `queue: ${err.message}`, failed_at: new Date().toISOString(),
+    };
+    const { error: writeErr } = await supabase.from('quizzes')
+      .update({ status: 'failed', meta: failedMeta })
+      .eq('id', quizId).eq('status', 'generating');
+    if (writeErr) logToFile('❌ transcript quiz: could not mark the quiz failed', { quizId, error: writeErr.message }, 'error');
+    Funnel.emit('generation_failed', {
+      quiz_id: quizId, source: quizSource, channel: Funnel.channelOf(acceptedMeta.source), reason: 'queue_failed',
+    });
+    await WhatsAppService.sendMessage(phone, resolveUx(failureCopyKey('queue_failed', quizSource, { meta: failedMeta }), { language: teacherLang }));
+    // Handled: the tap was answered, nothing else should route it.
+    return true;
+  }
   await WhatsAppService.sendMessage(phone, resolveUx('tqMaking', { language: teacherLang }));
   logEvent('transcript_quiz.accepted', { quizId, userId: quiz.teacher_id, language, source });
   return true;
@@ -606,7 +665,7 @@ async function handleLanguageButton(buttonId, phone, user) {
 
 module.exports = {
   enabled, offerMode, subjectAllowed, alreadyOffered, staleMs, isStaleGenerating, STALE_MINUTES,
-  scheduleOffer, triggerEarly, processOffer, handleOfferButton, handleLanguageButton, claimRow, languageByPhone,
+  scheduleOffer, triggerEarly, processOffer, handleOfferButton, handleLanguageButton, claimRow, reclaimStaleOffer, languageByPhone,
   sendLanguageAsk, startGenerating, tellAlready, queueLpQuiz, remakeLpQuiz,
-  OFFER_YES, OFFER_NO, MIN_TRANSCRIPT_CHARS, OFFER_DELAY_SECONDS, MIN_CONFIDENCE, MIN_SLOS, FEATURE_KEY, SESSION_SELECT,
+  OFFER_YES, OFFER_NO, MIN_TRANSCRIPT_CHARS, OFFER_DELAY_SECONDS, OFFER_LEASE_MS, MIN_CONFIDENCE, MIN_SLOS, FEATURE_KEY, SESSION_SELECT,
 };

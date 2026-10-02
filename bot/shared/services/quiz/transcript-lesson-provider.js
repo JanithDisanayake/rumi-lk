@@ -19,7 +19,7 @@ const { logEvent } = require('../../utils/structured-logger');
 const { resolveUx } = require('../../config/ux-strings');
 const { normaliseTopic } = require('./transcript-quiz-rows');
 const { teacherLanguageFor, formatLessonDate, quizLanguageFor, needsLanguageAsk } = require('./transcript-quiz-language');
-const { MIN_TRANSCRIPT_CHARS, sendLanguageAsk } = require('./transcript-quiz-offer.service');
+const { MIN_TRANSCRIPT_CHARS, sendLanguageAsk, isStaleGenerating } = require('./transcript-quiz-offer.service');
 const { isSelfTest } = require('./teacher-self-test');
 const { oneAttemptPerChild } = require('./one-attempt-per-child');
 const { TRANSCRIPT } = require('./quiz-sources');
@@ -202,7 +202,12 @@ async function startTranscriptLesson(user, sessionId, { phone, quizLanguage = nu
     return true;
   }
 
-  switch (quiz.status) {
+  // A `generating` row nothing has touched for the stale window (a run that
+  // died, a job that was never queued) is made again, as a failed one is
+  // (the default branch); anything fresher is still being made.
+  const stale = isStaleGenerating(quiz);
+  if (stale) logEvent('transcript_quiz.stale_remade', { userId: user.id, quizId: quiz.id });
+  switch (stale ? 'stale' : quiz.status) {
     case 'generating':
     case 'ready':
       await WhatsAppService.sendMessage(phone, resolveUx('tqStillMaking', { language: lang }));
@@ -233,7 +238,8 @@ async function startTranscriptLesson(user, sessionId, { phone, quizLanguage = nu
       return true;
     }
     default: {
-      // offered / declined / skipped / failed / cancelled → (re)make it, after
+      // offered / declined / skipped / failed / cancelled / a stale
+      // generating row → (re)make it, after
       // the language ask where the subject leaves a real choice.
       if (ask) {
         await supabase.from('quizzes')
