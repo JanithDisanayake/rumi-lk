@@ -36,14 +36,17 @@ const ENV_APP_PATH = path.join(__dirname, '..', '..', '.env.app');
 // Java package name: two or more dot-separated identifiers.
 const PACKAGE_RE = /^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$/;
 
-/** KEY=value lines → object. Comments, blanks and junk are skipped. */
+/** KEY=value lines → object. Comments (whole-line or inline), blanks and junk are skipped. */
 function parseEnvFile(text) {
   const out = {};
   if (typeof text !== 'string') return out;
   for (const line of text.split('\n')) {
     const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
     if (!m) continue;
-    out[m[1]] = m[2].replace(/^(['"])(.*)\1$/, '$2');
+    // Same as Vite's dotenv: a quoted value is taken whole ('#' and all), an
+    // unquoted one ends at '#' (an inline comment).
+    const quoted = m[2].match(/^(['"])(.*)\1\s*(?:#.*)?$/);
+    out[m[1]] = quoted ? quoted[2] : m[2].replace(/#.*$/, '').trim();
   }
   return out;
 }

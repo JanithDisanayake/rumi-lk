@@ -11,7 +11,10 @@ if (envAppFile.exists()) {
     envAppFile.eachLine { line ->
         def m = (line =~ '^\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*(.*?)\\s*$')
         if (m.find()) {
-            envApp[m.group(1)] = m.group(2).replaceAll('^[\'"]|[\'"]$', '').trim()
+            // Same as Vite's dotenv and app-config.cjs: a quoted value is taken
+            // whole, an unquoted one ends at '#' (an inline comment).
+            def quoted = (m.group(2) =~ /^(['"])(.*)\1\s*(?:#.*)?$/)
+            envApp[m.group(1)] = quoted.find() ? quoted.group(2) : m.group(2).replaceAll('#.*$', '').trim()
         }
     }
 }

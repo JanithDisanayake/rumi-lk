@@ -30,6 +30,24 @@ describe('parseEnvFile', () => {
     expect(parseEnvFile(`A="x"\nB='y'`)).toEqual({ A: 'x', B: 'y' });
   });
 
+  // Vite reads the same file with dotenv, which ends an unquoted value at '#'.
+  // Reading "1 # on" as the value would silently build with OTA off.
+  it('drops an inline comment after an unquoted value, as dotenv does', () => {
+    expect(parseEnvFile('PORTAL_APP_OTA=1 # on\nVITE_API_BASE_URL=https://portal.example.org/api/portal  # prod')).toEqual({
+      PORTAL_APP_OTA: '1',
+      VITE_API_BASE_URL: 'https://portal.example.org/api/portal',
+    });
+  });
+
+  it('keeps a # inside quotes, and drops a comment after the closing quote', () => {
+    expect(parseEnvFile(`A="x # y"  # note\nB='p#q'`)).toEqual({ A: 'x # y', B: 'p#q' });
+  });
+
+  it('agrees with readAppConfig: an inline comment does not switch OTA off', () => {
+    const cfg = readAppConfig({ env: {}, envFileText: 'VITE_API_BASE_URL=https://portal.example.org/api/portal\nPORTAL_APP_OTA=1 # on\n' });
+    expect(cfg.ota).toBe(true);
+  });
+
   it('tolerates junk without throwing', () => {
     expect(parseEnvFile('not a pair\n=novalue\n')).toEqual({});
     expect(parseEnvFile(undefined)).toEqual({});
