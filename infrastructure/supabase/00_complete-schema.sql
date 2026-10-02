@@ -3673,17 +3673,37 @@ CREATE TABLE IF NOT EXISTS quizzes (
     grade                    TEXT,
     subject                  TEXT,
     source_content           TEXT,
+    -- Lesson quiz offer lifecycle: 'offered' = the yes/no was sent; 'declined' =
+    -- the teacher said no; 'skipped' = the lesson could not carry a quiz
+    -- (reason in meta.skip_reason).
     status                   TEXT NOT NULL DEFAULT 'generating'
-                             CHECK (status = ANY (ARRAY['generating','ready','sent','report_sent','failed','cancelled'])),
+                             CHECK (status = ANY (ARRAY['generating','ready','sent','report_sent','failed','cancelled',
+                                                        'offered','declined','skipped'])),
     total_students_sent      INTEGER DEFAULT 0,
     total_students_completed INTEGER,
     report_scheduled_at      TIMESTAMPTZ,
     report_sent_at           TIMESTAMPTZ,
     report_pdf_url           TEXT,
+    -- Lesson quiz (quiz_source transcript | lp_generated | topic): the coaching
+    -- session a transcript quiz was written from, the language its questions are
+    -- written in, and everything else the pipeline carries (digest, model, cost,
+    -- PDF key, share code, student message, lesson date, error) in meta.
+    coaching_session_id      UUID REFERENCES coaching_sessions(id) ON DELETE SET NULL,
+    language                 TEXT,
+    meta                     JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at               TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_quizzes_teacher_id ON quizzes(teacher_id);
+-- /quiz lists a teacher's recent quizzes newest-first.
+CREATE INDEX IF NOT EXISTS quizzes_teacher_recent ON quizzes(teacher_id, created_at DESC);
+-- One transcript quiz per coaching session, one lesson-plan quiz per plan: the
+-- idempotency anchors. The offer job, an early trigger and a /quiz tap all
+-- INSERT, and exactly one wins (23505 for the others).
+CREATE UNIQUE INDEX IF NOT EXISTS quizzes_one_transcript_quiz_per_session
+    ON quizzes(coaching_session_id) WHERE quiz_source = 'transcript';
+CREATE UNIQUE INDEX IF NOT EXISTS quizzes_one_lesson_plan_quiz
+    ON quizzes(lesson_plan_id) WHERE quiz_source = 'lp_generated';
 CREATE INDEX IF NOT EXISTS idx_quizzes_status ON quizzes(status);
 -- One bank quiz per video. Partial-unique so ordinary /quiz rows (video_id
 -- NULL) are unaffected.
