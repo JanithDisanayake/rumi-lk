@@ -1,6 +1,6 @@
 /**
  * Attendance Generator Service
- * Excel generation for attendance records matching Pakistani register format
+ * Excel generation for attendance records in the shape of a paper class register
  *
  * Created: January 24, 2026
  */
@@ -10,7 +10,7 @@ const { logToFile } = require('../utils/logger');
 const AttendanceRegister = require('./attendance-register.service');
 
 /**
- * Column definitions for Pakistani attendance register
+ * Column definitions for the daily attendance sheet
  */
 const COLUMNS = {
   rollNumber: { header: 'Roll #', key: 'rollNumber', width: 8 },

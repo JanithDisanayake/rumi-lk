@@ -150,7 +150,24 @@ function formatDisplayDate(dateString) {
   return `${weekday} ${d} ${MONTH_NAMES[m - 1]} ${y}`;
 }
 
+/**
+ * The academic year a day falls in, as "YYYY-YYYY" (the shape student_lists keeps).
+ *
+ * School years start in different months in different places, so the start month is
+ * ATTENDANCE_ACADEMIC_YEAR_START_MONTH (1-12). The default, 4 (April), is the
+ * behaviour this feature always had, so an existing install's class rows keep
+ * matching. A January-start school still gets a pair: the year it starts, and the next.
+ */
+function academicYear(now = new Date()) {
+  const configured = Number(process.env.ATTENDANCE_ACADEMIC_YEAR_START_MONTH);
+  const startMonth = Number.isInteger(configured) && configured >= 1 && configured <= 12 ? configured : 4;
+  const [year, month] = localDateString(now).split('-').map(Number);
+  const startYear = month >= startMonth ? year : year - 1;
+  return `${startYear}-${startYear + 1}`;
+}
+
 module.exports = {
+  academicYear,
   attendanceTimeZone,
   localDateString,
   todayString,

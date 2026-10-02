@@ -91,3 +91,23 @@ describe('formatDisplayDate', () => {
     expect(dates.formatDisplayDate('2026-09-30')).toBe('Wednesday 30 September 2026');
   });
 });
+
+describe('the academic year', () => {
+  afterEach(() => { delete process.env.ATTENDANCE_ACADEMIC_YEAR_START_MONTH; });
+
+  it('starts in April by default — the behaviour existing installs already have', () => {
+    expect(dates.academicYear(new Date('2026-03-15T12:00:00Z'))).toBe('2025-2026');
+    expect(dates.academicYear(new Date('2026-04-01T12:00:00Z'))).toBe('2026-2027');
+  });
+
+  it('starts in the month a deployment configures', () => {
+    process.env.ATTENDANCE_ACADEMIC_YEAR_START_MONTH = '9';
+    expect(dates.academicYear(new Date('2026-08-31T12:00:00Z'))).toBe('2025-2026');
+    expect(dates.academicYear(new Date('2026-09-01T12:00:00Z'))).toBe('2026-2027');
+  });
+
+  it('a calendar-year school (January start) is one year, still written as a pair', () => {
+    process.env.ATTENDANCE_ACADEMIC_YEAR_START_MONTH = '1';
+    expect(dates.academicYear(new Date('2026-06-01T12:00:00Z'))).toBe('2026-2027');
+  });
+});

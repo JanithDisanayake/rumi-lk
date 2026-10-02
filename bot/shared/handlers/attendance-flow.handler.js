@@ -10,26 +10,16 @@ const supabase = require('../config/supabase');
 const StudentListService = require('../services/student-list.service');
 const AttendanceGeneratorService = require('../services/attendance-generator.service');
 const { logToFile } = require('../utils/logger');
+const AttendanceDates = require('../services/attendance-dates');
 
 /**
- * Get current academic year based on Pakistan school calendar
- * Academic year runs April to March:
- * - January-March 2026 → 2025-2026
- * - April-December 2026 → 2026-2027
+ * The current academic year ("YYYY-YYYY"); the start month is configurable
+ * (ATTENDANCE_ACADEMIC_YEAR_START_MONTH, default April) — see attendance-dates.
  *
  * @returns {string} Academic year in format "YYYY-YYYY"
  */
 function getCurrentAcademicYear() {
-  const now = new Date();
-  const month = now.getMonth() + 1; // 1-12
-  const year = now.getFullYear();
-
-  // If we're in Jan-March, we're in the second half of previous academic year
-  if (month >= 1 && month <= 3) {
-    return `${year - 1}-${year}`;
-  }
-  // April onwards = new academic year
-  return `${year}-${year + 1}`;
+  return AttendanceDates.academicYear();
 }
 
 // Flow IDs - configurable via env for staging vs production
