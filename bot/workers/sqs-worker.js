@@ -491,6 +491,17 @@ class SQSCoachingWorker {
         // hour is one we do not message teachers in (quiet hours). SQS caps
         // DelaySeconds at 900, so a long hold is a chain of short hops.
         const decision = TranscriptQuizNudge.nudgeDispatch({ targetAt: p.targetAt });
+        // A FIFO queue (the main queue, when SQS_QUIZ_QUEUE_URL is unset) drops
+        // DelaySeconds: every hop would come straight back, a tight loop until
+        // the target. Never hop there; the nudge is dropped, said in the log.
+        // (The BullMQ driver honours delays and has no honoursDelay.)
+        if (decision.action === 'requeue' && typeof SQSQueueService.honoursDelay === 'function'
+          && !SQSQueueService.honoursDelay('quiz_nudge_teacher')) {
+          logToFile('⚠️ lesson quiz: nudge dropped, the queue cannot delay it (set SQS_QUIZ_QUEUE_URL)', {
+            quizId, targetAt: decision.targetAt,
+          }, 'warn');
+          break;
+        }
         if (decision.action === 'requeue') {
           await SQSQueueService.queueJob(quizId, 'quiz_nudge_teacher',
             { quizId, targetAt: decision.targetAt }, {
