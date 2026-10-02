@@ -22,6 +22,27 @@ The rest of this page is the messenger. The portal app has its own step-by-step 
 
 ---
 
+## In programme terms
+
+**Your programme's own app: branded, school-hosted, with Rumi as a contact.**
+
+Many programmes reach teachers on low-cost Android phones, and the cost-effective uses of devices in the evidence put them in the hands of the support system. Tusome's coaches had tablets, for example [Piper-ICT16; Piper-JEC18]. This guide and its tooling let a school system publish its own Android apps, under its own name. The first is a branded messenger that signs in to the system's own server. It gives teachers colleagues, groups and calls, end-to-end encrypted, with Rumi as one of the contacts. The second is optional: the teacher portal (dashboard, lesson plans, coaching, reading results) wrapped as an app. Whenever the portal is updated, the app updates too, with no reinstall. Teachers stay signed in after closing the app. If the portal cannot be reached, they see a clear "try again" page instead of an error. The guide explains the open-source licence duties in plain words.
+
+**Where it sits in a structured-pedagogy programme:** **delivery infrastructure** for the whole chain. The portal app also shows teachers their own lesson plans and coaching history.
+
+### Honest limits
+
+- **Needs the messenger channel.** The chat app needs a server running Rumi Messenger ([docs/channels/matrix.md](channels/matrix.md), v2.7.0).
+- **Not yet proven.** Calls and notifications when the app is closed have not been shown to work.
+- **Platform.** Android only; there is no iOS version.
+- **Cost.** No cost per message or server cost was measured.
+- **Licence duties.** A branded build's source code must stay public under the open-source licence.
+
+### Sources
+
+- [Piper-ICT16] Piper, B., Zuilkowski, S. S., Kwayumba, D., & Strigel, C., 2016, "Does technology improve reading outcomes?…", *International Journal of Educational Development* 49:204–214. https://doi.org/10.1016/j.ijedudev.2016.03.006
+- [Piper-JEC18] Piper, B., DeStefano, J., Kinyanjui, E. M., & Ong'ele, S., 2018, "Scaling up successfully: Lessons from Kenya's Tusome national literacy program", *Journal of Educational Change* 19(3):293–321. https://doi.org/10.1007/s10833-018-9325-4
+
 ## Rumi Messenger for Android
 
 A branded fork of [Element X Android](https://github.com/element-hq/element-x-android), the Matrix client.

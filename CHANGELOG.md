@@ -5,6 +5,55 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.0] - 2026-10-03
+
+**Your programme's own app.** A school system can now publish its own Android apps under its own name, rather
+than renting the channel from a commercial platform whose per-message prices keep rising. The first is **Rumi
+Messenger**, a branded chat app (a fork of Element X) that signs in to the system's own server: teachers get
+colleagues, groups and calls, end-to-end encrypted, with Rumi as one of their contacts. The second is optional:
+the teacher **portal** (dashboard, lesson plans, coaching, reading results) wrapped as an app that updates
+whenever the portal does, with no reinstall.
+
+> **Needs the Rumi Messenger channel (v2.7.0)** for the chat app: a Matrix homeserver with Rumi on it,
+> set up from [docs/channels/matrix.md](docs/channels/matrix.md). The portal app needs only your deployed
+> portal. Tested on an Android emulator against a local homeserver and portal: 7 of 8 scenarios pass;
+> a call ringing with the app closed is not yet proven. Android only.
+
+### Added
+
+- **`docs/android-app.md`** — the adopter guide for Rumi Messenger for Android (`Orenda-Project/element-x-android`,
+  branch `rumi-brand`, AGPL-3.0): what it is and what it needs (a Matrix server with Rumi on it), the white-label
+  checklist (every value to change, with its path in the fork), debug and signed release builds, publishing an
+  APK on GitHub Releases, optional Google Play, keystore custody, the AGPL-3.0 obligations in plain words, and
+  sign-in troubleshooting.
+- **The portal as an Android app** — `portal/android/` (Capacitor 8) and `portal/capacitor.config.ts`, driven by
+  one config, `portal/.env.app` (environment wins): package id (neutral default `org.example.rumi.portal`),
+  launcher label, portal API url, and an over-the-air switch. `npm run android:debug` / `android:release`.
+  Runtime: the portal decides "portal or marketing site?" and "where is the API?" through
+  `src/lib/app-target.cjs` instead of hostname sniffing; tapped `/portal/dashboard` and `/portal/login` links open
+  the app (Android App Links); the hardware back key closes dialogs, goes back, or leaves from a home page; the
+  session survives a force-close; `/` and `/portal/login` forward a signed-in teacher to the dashboard.
+- **Over-the-air updates** (`PORTAL_APP_OTA=1`): the app loads the portal from your server on launch, so a web
+  deploy updates every installed app; if the portal is unreachable at launch, a bundled "Can't reach the portal"
+  page offers Try again.
+- **Guards that make the wrong build unbuildable** — an app-mode bundle without an absolute https API url refuses
+  to build; Gradle refuses without an https App Links host, and refuses a release build with the placeholder
+  package id.
+- **Portal API** — with `PORTAL_APP_ENABLED=true`, the Capacitor app origins (`https://localhost`,
+  `capacitor://localhost`) join the portal's CORS allow-list, and a portal login made from the app gets a
+  `SameSite=None` cookie for that session only; web and admin sessions always stay `SameSite=Lax`;
+  `/.well-known/assetlinks.json` is published from `ANDROID_APP_PACKAGE` + `ANDROID_APP_SHA256_FINGERPRINTS`.
+- `portal/ANDROID.md`, `docs/features/android-portal-app.md`, README and SETUP sections, a portal-app block in
+  `.env.template`, vitest for the portal's components, and `.github/workflows/portal-android-debug.yml`, which
+  builds a debug APK on every PR that touches `portal/**`.
+
+### Fixed
+
+- The reading-assessment PDF link no longer hard-codes `http://localhost:4000` outside production; every portal
+  request goes through one API base.
+- The portal login placeholder is a fictional `1555…` number.
+- Eleven compiled Python files (`.pyc`) under `curriculum/` are no longer tracked; a test keeps them out.
+
 ## [2.7.0] - 2026-10-03
 
 **Rumi Messenger — run Rumi on your own messenger.** A school system can now run Rumi on a Matrix homeserver
