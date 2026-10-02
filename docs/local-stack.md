@@ -54,9 +54,15 @@ SUPABASE_URL=http://127.0.0.1:54331
 SUPABASE_SERVICE_ROLE_KEY=<a long key starting with eyJ>
 REDIS_URL=redis://127.0.0.1:63799
 QUEUE_DRIVER=bullmq
+# The dashboard and portal talk to Postgres directly (over its socket, no SSL):
+SUPABASE_DB_HOST=<the stack's socket directory>
+SUPABASE_DB_PORT=54329
+SUPABASE_DB_USER=postgres
+SUPABASE_DB_NAME=postgres
+SUPABASE_DB_SSL=off
 ```
 
-Copy those four lines into `.env` at the repo root (start from `.env.template` if you have no `.env`
+Copy those lines into `.env` at the repo root (start from `.env.template` if you have no `.env`
 yet), replacing any existing lines with the same names. Then add the rest of what Rumi needs: at least
 `OPENROUTER_API_KEY`, and the channel block (`CHANNEL_DRIVER=baileys` needs nothing else). The
 `rumi setup` wizard can fill those in too; when it asks about the database, keep the values above.
