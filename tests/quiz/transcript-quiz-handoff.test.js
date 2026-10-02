@@ -110,6 +110,8 @@ describe('the forwardable message follows the teacher\'s channel', () => {
     expect(meta.link).toBe('https://matrix.to/#/@rumi:example.org');
     expect(meta.join_kind).toBe('matrix');
     expect(meta.student_message).toBe(forwardable);
+    // The later sends (the nudge, the class report) go to the chat this went to.
+    expect(meta.teacher_to).toBe(MX_TEACHER);
   });
 
   test('a WhatsApp teacher gets the wa.me link that opens the chat with the code typed', async () => {

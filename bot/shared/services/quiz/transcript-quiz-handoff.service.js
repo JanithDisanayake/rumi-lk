@@ -225,8 +225,11 @@ async function sendHandoff(quizId, phone, { firstSend = false, prepared = null }
 
   // ── bookkeeping — only the first send owns status/sent_at/the nudge ────────
   if (firstSend) {
+    // `teacher_to` is the chat this went to. The nudge and the class report are
+    // sent hours later, by jobs that only have the quiz: users.phone_number is a
+    // WhatsApp number (or empty) for a teacher on Matrix, Slack or Discord.
     const newMeta = {
-      ...meta, step: 'sent', share_code: code, share_code_id: shareCodeId, link, join_kind: joinKind,
+      ...meta, step: 'sent', share_code: code, share_code_id: shareCodeId, link, join_kind: joinKind, teacher_to: phone,
       student_message: forwardable, pdf_key: pdfKey, pdf_sent: pdfSent, link_sent: linkSent, sent_at: new Date().toISOString(),
     };
     await updateQuiz(quizId, { status: 'sent', meta: newMeta });

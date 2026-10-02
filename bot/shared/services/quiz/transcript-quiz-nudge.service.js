@@ -199,8 +199,11 @@ async function process(quizId) {
 
   const { data: teacher } = await supabase.from('users')
     .select('phone_number, preferred_language').eq('id', quiz.teacher_id).maybeSingle();
-  if (!teacher?.phone_number) return { skipped: 'no_phone' };
-  const lang = teacherLanguageFor({ preferredLanguage: teacher.preferred_language });
+  // The chat the hand-off went to (see transcript-quiz-handoff `teacher_to`);
+  // users.phone_number only for a quiz sent before that was recorded.
+  const to = (quiz.meta || {}).teacher_to || (teacher && teacher.phone_number);
+  if (!to) return { skipped: 'no_phone' };
+  const lang = teacherLanguageFor({ preferredLanguage: teacher && teacher.preferred_language });
 
   const body = quiet.length === 1
     ? resolveUx(nudgeKeyFor(started), { language: lang, params: { started, topic: titled(quiz.topic, lang) } })
@@ -214,7 +217,7 @@ async function process(quizId) {
           .join(resolveUx('vqLetterSep', { language: lang })),
       },
     });
-  const ok = await WhatsAppService.sendMessage(teacher.phone_number, body);
+  const ok = await WhatsAppService.sendMessage(to, body);
 
   const at = new Date().toISOString();
   await supabase.from('quizzes')

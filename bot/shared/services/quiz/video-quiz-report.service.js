@@ -386,7 +386,15 @@ async function generate(shareCodeId, { reason = 'scheduled', force = false } = {
   const { data: teacher } = await supabase
     .from('users').select('phone_number, preferred_language, name')
     .eq('id', sc.teacher_user_id).maybeSingle();
-  if (!teacher?.phone_number) {
+  // A lesson quiz records the chat its hand-off went to (transcript-quiz-handoff
+  // `teacher_to`): a teacher on Matrix, Slack or Discord has no WhatsApp number
+  // to reach them at. A video quiz has none, and goes to users.phone_number.
+  let teacherTo = teacher && teacher.phone_number;
+  if (sc.quiz_id) {
+    const { data: quizRow } = await supabase.from('quizzes').select('meta').eq('id', sc.quiz_id).maybeSingle();
+    if (quizRow && quizRow.meta && quizRow.meta.teacher_to) teacherTo = quizRow.meta.teacher_to;
+  }
+  if (!teacherTo) {
     logToFile('⚠️ video-quiz report: no teacher phone', { shareCodeId });
     Funnel.emit('report_failed', { quiz_id: sc.quiz_id, share_code_id: shareCodeId, reason: 'no_teacher_phone' });
     return false;
@@ -419,7 +427,7 @@ async function generate(shareCodeId, { reason = 'scheduled', force = false } = {
         : { shareCodeId, reason, why: 'already_reported' });
       return force;   // the teacher's ask was answered by the report that just went to them
     }
-    sent = await buildAndSend(shareCodeId, sc, teacher, { reason, isFollowUp, stamp });
+    sent = await buildAndSend(shareCodeId, sc, { ...teacher, phone_number: teacherTo }, { reason, isFollowUp, stamp });
     return sent;
   } finally {
     // Kept only when a report went out but report_sent_at could not be stamped:

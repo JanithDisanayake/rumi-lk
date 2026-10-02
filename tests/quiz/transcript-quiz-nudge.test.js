@@ -103,6 +103,16 @@ describe('who is nudged', () => {
     expect(db.refused).toEqual([]);
   });
 
+  test('a teacher on Matrix is nudged in the chat the quiz was sent to, not at users.phone_number', async () => {
+    // users.phone_number is a bare number (a WhatsApp recipient) or empty for a
+    // Matrix teacher; the hand-off records the recipient it sent to.
+    install({ quizzes: [sentQuiz(1, { meta: { sent_at: new Date(Date.now() - 7 * 3600 * 1000).toISOString(), teacher_to: 'mtx:15550100001' } })], sessions: kids(Q(1), 1) });
+    db.table('users')[0].phone_number = null;
+    const out = await Nudge.process(Q(1));
+    expect(out.ok).toBe(true);
+    expect(WhatsAppService.sendMessage.mock.calls[0][0]).toBe('mtx:15550100001');
+  });
+
   test('never twice', async () => {
     install({ quizzes: [sentQuiz(1)], sessions: kids(Q(1), 1) });
     await Nudge.process(Q(1));
