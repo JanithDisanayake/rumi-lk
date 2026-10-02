@@ -46,7 +46,7 @@ beforeEach(() => {
       },
     };
     return api;
-  });
+  }, { virtual: true });
 
   ({ getOrCreateUser } = require('../../bot/shared/database/bot-helpers'));
 });
