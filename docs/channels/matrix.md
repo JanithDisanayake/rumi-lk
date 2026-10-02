@@ -57,7 +57,7 @@ trip with one account. Stop the bot first: it opens its own connection.
 | `MATRIX_STORAGE_DIR` | no | `./.matrix-storage` | Sync position and the encryption store |
 | `MATRIX_E2EE` | no | `on` | Only `off` runs without encryption |
 | `MATRIX_WELCOME_ROOM_ALIAS` | no | `#rumi-announcements:<server>` | The room new accounts are auto-joined to; Rumi greets each newcomer in a DM |
-| `RUMI_FEATURE_CHANNEL_MATRIX` | no | — | `off` pauses the channel without deleting its keys (the console's Features page writes it) |
+| `RUMI_FEATURE_CHANNEL_MATRIX` | no | — | `off` pauses the channel without deleting its keys: the bot does not connect to Matrix and does not send to it, from the next restart (the console's Features page writes it) |
 
 **Matrix only, or alongside WhatsApp.** With `CHANNEL_DRIVER=none` there is no WhatsApp at all: no Meta
 account, no linked phone, and `rumi doctor` and the console say Rumi is answering on Rumi Messenger. Anything

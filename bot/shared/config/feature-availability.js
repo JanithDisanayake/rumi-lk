@@ -225,16 +225,41 @@ function availableFeatures(env = process.env) {
 }
 
 /**
+ * Has the operator switched this additive channel off (the console's
+ * `channel_<name>` switch, RUMI_FEATURE_CHANNEL_<NAME>=off)? Only a channel
+ * with such a switch can be off; the default is on.
+ *
+ * Read from `env` as well as the overrides cache: messaging/index.js resolves
+ * its channels when it is first required, which in whatsapp-bot.js is before
+ * the cache is loaded. The console writes both (the cache, then `.env` and
+ * `process.env`), so the two agree after a toggle.
+ *
+ * @param {string} name e.g. 'matrix'
+ * @param {object} [env]
+ * @returns {boolean}
+ */
+function isChannelSwitchedOff(name, env = process.env) {
+  const id = `channel_${name}`;
+  if (!FEATURES.some((f) => f.id === id)) return false;
+  const stored = String((env && env[overrides.envVarFor(id)]) || '').trim().toLowerCase();
+  return stored === 'off' || !overrides.isEnabled(id);
+}
+
+/**
  * Which additive channels (Slack, Discord, ...) are active — i.e. every var
- * ADDITIVE_CHANNEL_REQUIRED_VARS lists for that channel is present. Distinct
- * from resolveChannelDriver: that resolves the ONE mutually-exclusive
- * WhatsApp-family driver (meta|baileys); this resolves the SET of additional
- * channels running concurrently alongside it. A deployment with none
- * configured gets [] — byte-identical behavior to before this existed.
+ * ADDITIVE_CHANNEL_REQUIRED_VARS lists for that channel is present, and the
+ * operator has not switched it off. Distinct from resolveChannelDriver: that
+ * resolves the ONE mutually-exclusive WhatsApp-family driver
+ * (meta|baileys|none); this resolves the SET of additional channels running
+ * concurrently alongside it. A deployment with none configured gets [] —
+ * byte-identical behavior to before this existed.
+ *
+ * The bot connects (Discord, Matrix) and the router routes from this at
+ * startup, so a switch flipped in the console applies at the next restart.
  */
 function resolveActiveChannels(env = process.env) {
   return Object.keys(ADDITIVE_CHANNEL_REQUIRED_VARS).filter((name) =>
-    ADDITIVE_CHANNEL_REQUIRED_VARS[name].every((k) => isSet(env[k]))
+    ADDITIVE_CHANNEL_REQUIRED_VARS[name].every((k) => isSet(env[k])) && !isChannelSwitchedOff(name, env)
   );
 }
 
@@ -246,6 +271,7 @@ module.exports = {
   isSet,
   resolveChannelDriver,
   resolveActiveChannels,
+  isChannelSwitchedOff,
   requiredVarsFor,
   missingRequired,
   isFeatureAvailable,
