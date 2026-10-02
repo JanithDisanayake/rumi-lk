@@ -60,6 +60,7 @@ portal filters coaches' observations out of a teacher's own pages and reads the 
 and the Morning Brief check for the column and work either way: a teacher's own coaching (score trend, prior
 feedback, chat context, `/status`) leaves observations out when the column exists, and without it the bot
 logs an error at start-up asking for the migration and computes teachers' coaching exactly as before.
+The bot checks once, when it starts: after applying the migration, restart the bot and the worker.
 
 ### Set up your coaches
 
