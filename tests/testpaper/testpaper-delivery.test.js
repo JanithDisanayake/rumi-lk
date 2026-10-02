@@ -86,7 +86,9 @@ it('an Urdu paper is printed right to left', async () => {
 it('a non-Latin title still gives a usable file name', async () => {
   setup();
   await Delivery.deliverPaper({ to: '15550100001', paper: { ...PAPER, title: 'اعداد — امتحان' }, request: { ...REQUEST, language: 'ur' }, chatLanguage: 'ur' });
-  expect(WA.sendDocument.mock.calls[0][2]).toMatch(/^TestPaper_Math_.*v2\.pdf$/);
+  // Falls back to the source's (Latin) chapter name, so two Urdu papers do not
+  // both arrive as "TestPaper_Math.pdf".
+  expect(WA.sendDocument.mock.calls[0][2]).toBe('TestPaper_Math_Chapter_1_Numbers_up_to_999_v2.pdf');
 });
 
 it('no Chromium: says so plainly, sends no document, reports failure', async () => {

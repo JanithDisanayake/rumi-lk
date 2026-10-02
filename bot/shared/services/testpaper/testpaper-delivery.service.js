@@ -37,9 +37,15 @@ function _ascii(s, max) {
     .replace(/_+$/, '');
 }
 
-/** "TestPaper_Math_Numbers_up_to_999_v2.pdf" — ASCII, because not every phone shows other file names. */
-function fileNameFor({ subject, title, version, answerKey = false }) {
-  const parts = ['TestPaper', _ascii(Renderer.subjectName(subject), 24) || 'Paper', _ascii(title, 40)].filter(Boolean);
+/**
+ * "TestPaper_Math_Numbers_up_to_999_v2.pdf" — ASCII, because not every phone
+ * shows other file names. A title in a non-Latin script has no ASCII left, so
+ * the source's chapter name stands in (without its leading subject).
+ */
+function fileNameFor({ subject, title, version, answerKey = false, sourceLabel = '' }) {
+  const fromSource = String(sourceLabel || '').replace(/^[^·]*·\s*/, '');
+  const name = _ascii(title, 40) || _ascii(fromSource, 40);
+  const parts = ['TestPaper', _ascii(Renderer.subjectName(subject), 24) || 'Paper', name].filter(Boolean);
   if (Number(version) > 1) parts.push(`v${Number(version)}`);
   if (answerKey) parts.push('AnswerKey');
   return `${parts.join('_')}.pdf`;
@@ -88,8 +94,9 @@ async function deliverPaper({ to, paper, request, chatLanguage = 'en' }) {
   }
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'testpaper-'));
-  const paperName = fileNameFor({ subject: request.subject, title, version: paper.version });
-  const keyName = fileNameFor({ subject: request.subject, title, version: paper.version, answerKey: true });
+  const naming = { subject: request.subject, title, version: paper.version, sourceLabel: request.source_label };
+  const paperName = fileNameFor(naming);
+  const keyName = fileNameFor({ ...naming, answerKey: true });
   const paperPath = path.join(dir, paperName);
   const keyPath = path.join(dir, keyName);
 
