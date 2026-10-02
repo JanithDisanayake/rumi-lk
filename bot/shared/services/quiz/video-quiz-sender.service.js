@@ -149,8 +149,10 @@ async function sendPhase(phone, msgs, phase, ctx = {}) {
     messages += 1;
     kinds.push(m.kind);
     // The tap surface becomes lettered text where the child answers by typing
-    // (Baileys, Matrix) — see sendLetteredAsk.
-    const typed = (m.role === 'ask' || m.role === 'picture_flow') && answersByTyping(phone);
+    // (Baileys, Matrix) — see sendLetteredAsk — and only when the quiz reads a
+    // typed letter (ctx.typedAnswers: a lesson quiz, the lesson quiz on).
+    const typed = (m.role === 'ask' || m.role === 'picture_flow')
+      && ctx.typedAnswers === true && answersByTyping(phone);
 
     let ok = false;
     try {

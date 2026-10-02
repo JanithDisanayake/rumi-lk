@@ -605,7 +605,13 @@ async function sendNextQuestion(phone, state) {
   const msgs = render.build(q, {
     questionNumber: state.index + 1, totalQuestions: state.questionIds.length,
   });
-  const ctx = { questionId: q.id, sessionId: state.sessionId, language: state.language };
+  // Asked as lettered text only where answerTypedLetter reads the letter: a
+  // lesson quiz with the lesson quiz on. A v1.2.0 video quiz keeps its taps
+  // (numbered text on Baileys and Matrix, answered by number, as on main).
+  const typedAnswers = lessonQuizOn() && await isLessonQuizState(state);
+  const ctx = {
+    questionId: q.id, sessionId: state.sessionId, language: state.language, typedAnswers,
+  };
 
   await sender.sendPhase(phone, msgs, 'question', ctx);
   const res = await sender.sendPhase(phone, msgs, 'interaction', ctx);
