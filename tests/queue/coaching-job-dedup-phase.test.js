@@ -9,6 +9,8 @@
  * "duplicate" and the report never reached the teacher.
  */
 
+const { mockBotDependency } = require('../_helpers/mock-bot-dependency');
+
 // The first test pays for a cold resetModules() load of the queue driver; under a
 // full parallel run that alone can take several seconds.
 jest.setTimeout(30000);
@@ -20,9 +22,9 @@ function loadSqs() {
   jest.resetModules();
   sendMessage = jest.fn(() => ({ promise: () => Promise.resolve({ MessageId: 'm1' }) }));
   redisGet = jest.fn().mockResolvedValue(null);
-  jest.doMock('aws-sdk', () => ({ config: { update: jest.fn() }, SQS: jest.fn(() => ({ sendMessage })) }), { virtual: true });
+  mockBotDependency('aws-sdk', () => ({ config: { update: jest.fn() }, SQS: jest.fn(() => ({ sendMessage })) }));
   jest.doMock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn() }));
-  jest.doMock('../../bot/shared/services/cache/railway-redis.service', () => ({ get: redisGet, set: jest.fn() }), { virtual: true });
+  jest.doMock('../../bot/shared/services/cache/railway-redis.service', () => ({ get: redisGet, set: jest.fn() }));
   jest.doMock('../../bot/shared/utils/structured-logger', () => ({ getCurrentCorrelationId: () => 'c1', logEvent: jest.fn() }));
   process.env.SQS_QUEUE_URL = 'https://sqs/main.fifo';
   return require('../../bot/shared/services/queue/sqs-queue.service');
