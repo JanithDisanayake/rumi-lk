@@ -262,7 +262,7 @@ function classSetupFlow() {
           body: 'Now send me your students — *one per line*.\n\n'
             + "Add the parent's WhatsApp number if you have it, so I can send "
             + 'quizzes and reports to them.\n\nFor example:\n'
-            + 'Ahmed Khan +923001234567\nZara s/o Abdul 03007654321\nBilal Hussain',
+            + 'Ahmed Khan +15550101234\nZara s/o Abdul +15550104321\nBilal Hussain',
         }),
       },
     ],

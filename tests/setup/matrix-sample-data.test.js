@@ -20,6 +20,8 @@ function matrixFiles() {
     ...pick(`${MESSAGING}/inbound`, /^matrix-.*\.js$/),
     ...pick('tests/messaging', /^matrix-.*\.test\.js$/),
     'bot/scripts/matrix-smoke.js',
+    // The text-flow copy is what a Matrix (or Baileys) teacher reads.
+    `${MESSAGING}/text-flow-definitions.js`,
     '.env.template',
   ];
 }
