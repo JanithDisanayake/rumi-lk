@@ -86,7 +86,7 @@ describe('buildRows', () => {
 
   it('builds the textbook row on the UNIQUE (province, grade, subject) scope', () => {
     expect(rows.textbook).toMatchObject({
-      province: 'default',
+      province: 'corpus',
       curriculum: 'corpus',
       grade: 2,
       subject: 'math',
@@ -175,6 +175,14 @@ describe('buildRows', () => {
     expect(built.toc).toEqual([expect.objectContaining({ chapter_number: 3, page_start: 9, page_end: 20 })]);
   });
 
+  it('two curricula of the same grade and subject are kept apart, not one replacing the other', () => {
+    const a = buildRows(sample, { curriculum: 'board_a' }).textbook;
+    const b = buildRows(sample, { curriculum: 'board_b' }).textbook;
+    // textbooks is UNIQUE (province, grade, subject): the scope follows the curriculum unless --province is given.
+    expect([a.province, a.grade, a.subject]).not.toEqual([b.province, b.grade, b.subject]);
+    expect(a).toMatchObject({ curriculum: 'board_a', province: 'board_a' });
+  });
+
   it('honours --curriculum/--province/--subject/--grade overrides', () => {
     const built = buildRows(sample, { curriculum: 'my_board', province: 'north', subject: 'Mathematics', grade: 3 });
     expect(built.textbook).toMatchObject({ curriculum: 'my_board', province: 'north', subject: 'mathematics', grade: 3 });
@@ -229,7 +237,7 @@ describe('writeRows', () => {
 describe('parseArgs', () => {
   it('reads the folder and flags with their defaults', () => {
     expect(parseArgs(['some/dir'])).toEqual({
-      dirs: ['some/dir'], curriculum: 'corpus', province: 'default', dryRun: false, subject: null, grade: null,
+      dirs: ['some/dir'], curriculum: 'corpus', province: null, dryRun: false, subject: null, grade: null,
     });
     expect(parseArgs(['d', '--dry-run', '--curriculum', 'k', '--province', 'p', '--subject', 'Math', '--grade', '4']))
       .toEqual({ dirs: ['d'], curriculum: 'k', province: 'p', dryRun: true, subject: 'Math', grade: 4 });

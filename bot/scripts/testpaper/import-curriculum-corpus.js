@@ -28,9 +28,10 @@
  * Usage:
  *   node bot/scripts/testpaper/import-curriculum-corpus.js <corpus-dir> [--dry-run]
  *     [--curriculum <key>]   textbook_toc / textbooks curriculum key (default: corpus)
- *     [--province <key>]     the textbooks UNIQUE scope column (default: default).
- *                            It is only a namespace, not a geography: use it to keep
- *                            two editions of the same grade+subject apart.
+ *     [--province <key>]     the textbooks UNIQUE scope column (default: the curriculum
+ *                            key, so two curricula of the same grade+subject are kept
+ *                            apart rather than one replacing the other). It is only a
+ *                            namespace, not a geography.
  *     [--subject <name>]     override the book's subject (stored lower-cased)
  *     [--grade <n>]          override the book's grade (1-12)
  *
@@ -54,7 +55,7 @@ const BATCH = 200;
  */
 const TEXTBOOK_UPSERT = { onConflict: 'province,grade,subject' };
 
-const DEFAULTS = { curriculum: 'corpus', province: 'default' };
+const DEFAULTS = { curriculum: 'corpus', province: null };
 
 // ── Reading ─────────────────────────────────────────────────────────────────
 
@@ -169,7 +170,10 @@ function normaliseSubject(subject) {
 function buildRows(corpusBook, opts = {}) {
   const { book, toc = { chapters: [] }, pages: srcPages = [] } = corpusBook;
   const curriculum = opts.curriculum || DEFAULTS.curriculum;
-  const province = opts.province || DEFAULTS.province;
+  // The UNIQUE scope follows the curriculum: with one fixed default, importing
+  // a second curriculum for the same grade and subject would upsert over the
+  // first and replace its chapters and pages.
+  const province = opts.province || curriculum;
   const subject = normaliseSubject(opts.subject || book.subject);
   const grade = Number(opts.grade || book.grade);
   if (!subject) throw new Error(`${book.book_stem}: no subject in _book.json — pass --subject`);

@@ -106,7 +106,7 @@ On by default: test papers need only the LLM key every deployment already has (`
 | Variable | Default | What it does |
 |---|---|---|
 | `TESTPAPER_MODEL` | `google/gemini-2.5-pro` (`gpt-4.1` with `LLM_PROVIDER=openai`) | The model that writes and revises papers. Any OpenRouter id. |
-| `TESTPAPER_CURRICULUM` | _blank — every loaded textbook_ | Offer only textbooks of these curriculum keys (comma-separated; the importer's `--curriculum`). |
+| `TESTPAPER_CURRICULUM` | _blank — every loaded textbook_ | Offer only textbooks of these curriculum keys (comma-separated; the importer's `--curriculum`). Books of different curricula are kept apart on import, even for the same grade and subject. |
 | `RUMI_FEATURE_TEST_PAPER` | _blank_ | Set to `off` to switch test papers off without touching anything else. Off covers every way in: commands, buttons from earlier papers, a conversation in progress, and jobs already queued (the worker closes them without a model call). |
 
 ## Data
