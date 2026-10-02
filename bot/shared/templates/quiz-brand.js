@@ -235,7 +235,7 @@ const FONTS = {
  * in. `'ur'` when any Perso-Arabic letter is present, `'en'` otherwise.
  *
  * The two are independent facts and conflating them is the bug this exists to
- * kill: a child types "Ali" into an Urdu quiz and a child types "عائشہ" into
+ * kill: a child types "Child One" into an Urdu quiz and a child types "نام" into
  * an English one, and both are ordinary. Keying a name's font and direction
  * off the quiz's language puts Latin letters through Nastaliq metrics (which
  * lays them out as if they joined) and Perso-Arabic through a Latin-first

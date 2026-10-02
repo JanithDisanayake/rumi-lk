@@ -34,7 +34,7 @@ const {
  *   - Names and the topic line clip SIDEWAYS only (the ellipsis). A plain
  *     overflow:hidden also cut off the Nastaliq ink above and below the line
  *     box, and the stroke a word-initial ک or گ throws past the start of its
- *     line — «کنول» printed as «لنول», «گنتی» as «لنتی». An Urdu name or topic
+ *     line — «کتاب» printed as «لتاب», «گنتی» as «لنتی». An Urdu name or topic
  *     keeps NASTALIQ.startRoom inside its clip on the start side; the negative
  *     margin puts the text back exactly where it was.
  *   - A name drawn whole needs its row to hold it: a list holding any Urdu name

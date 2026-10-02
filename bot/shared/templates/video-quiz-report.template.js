@@ -335,8 +335,8 @@ function renderVideoQuizReportHtml(d) {
   }).join('');
 
   // A roster is a list of names people wrote themselves, so the quiz's
-  // language decides none of their scripts: in an Urdu class "Ali" is still
-  // Latin, and in an English one "عائشہ" is still Perso-Arabic. Each name is
+  // language decides none of their scripts: in an Urdu class "Child One" is
+  // still Latin, and in an English one "نام" is still Perso-Arabic. Each name is
   // therefore isolated and faced by ITS OWN script, not by contentLanguage —
   // keyed off the quiz, half of a real roster is set in the wrong face.
   const nameCell = (raw) => {

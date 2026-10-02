@@ -178,7 +178,7 @@ function classHeading(values, language = 'en') {
  * Open every line of a data-built text block with a paragraph mark.
  *
  * WhatsApp lays each line out from its first strong character. A line built
- * from data — "• \u2068Ayesha\u2069 — \u20667/8 (88%)\u2069", or an Urdu title that opens on the
+ * from data — "• \u2068Child One\u2069 — \u20667/8 (88%)\u2069", or an Urdu title that opens on the
  * Latin term "quiz" — has the wrong first strong character, or none outside
  * its isolates, so it lands flush against the wrong side of an otherwise
  * consistent block. `mark` is the document language's own (the catalog's

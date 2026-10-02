@@ -56,7 +56,7 @@ afterAll(() => { process.env = ENV; });
 
 describe('when the nudge may speak — the school\'s clock', () => {
   test('a job arriving inside the quiet hours in SCHOOL_TIMEZONE is held to 07:00 school time', () => {
-    // 19:30 UTC = 22:30 in Nairobi (UTC+3): quiet. In Karachi (UTC+5) it would be 00:30.
+    // 19:30 UTC = 22:30 at a UTC+3 school: quiet. At a UTC+5 school it would be 00:30.
     const decision = Nudge.nudgeDispatch({ now: new Date('2026-10-01T19:30:00Z') });
     expect(decision.action).toBe('requeue');
     expect(decision.targetAt).toBe('2026-10-02T04:00:00.000Z');
@@ -141,7 +141,7 @@ describe('who is nudged', () => {
   });
 
   test('yesterday\'s nudge, by the school\'s calendar, does not hold today\'s back', async () => {
-    // 21:30 UTC on 1 Oct is 00:30 on 2 Oct in Nairobi; a nudge at 20:00 UTC (23:00 on 1 Oct) was yesterday.
+    // 21:30 UTC on 1 Oct is 00:30 on 2 Oct at the school (UTC+3); a nudge at 20:00 UTC (23:00 on 1 Oct) was yesterday.
     jest.useFakeTimers({ now: new Date('2026-10-01T21:30:00Z') });
     install({
       quizzes: [

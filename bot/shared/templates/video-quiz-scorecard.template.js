@@ -13,8 +13,8 @@
  *  2. THE CARD SPEAKS THE QUIZ'S LANGUAGE, BUT A NAME KEEPS ITS OWN SCRIPT.
  *     The eyebrow, the badge and the message come from the catalog in the
  *     language they just answered in. Their NAME and the TOPIC are text
- *     somebody wrote, so they follow scriptOf() instead: "Ali" typed into an Urdu quiz
- *     is Latin and left-to-right, "عائشہ" typed into an English quiz is
+ *     somebody wrote, so they follow scriptOf() instead: "Child One" typed into an Urdu quiz
+ *     is Latin and left-to-right, "نام" typed into an English quiz is
  *     Nastaliq and right-to-left. Keying either off the quiz language runs
  *     Latin letters through Nastaliq metrics or Perso-Arabic through a
  *     Latin-first stack that has no glyphs for it.

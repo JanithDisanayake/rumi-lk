@@ -21,8 +21,8 @@
  *   `language` alone still works for a single-language caller.
  *
  *   The ONE exception is a person's NAME, which keeps the script it was typed
- *   in — `scriptOf()` — because "عائشہ" in an English document is still
- *   "عائشہ", and Latin letters put through Nastaliq metrics lay out as if they
+ *   in — `scriptOf()` — because "نام" in an English document is still
+ *   "نام", and Latin letters put through Nastaliq metrics lay out as if they
  *   joined.
  *
  * Fonts are STILL dual-stacked everywhere. A single-language document is a

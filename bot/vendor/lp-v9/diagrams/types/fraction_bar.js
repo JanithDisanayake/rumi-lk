@@ -10,7 +10,7 @@
 //     point: 2/3 next to 3/4 only teaches anything if the wholes match.
 //
 //   unit mode (`unitLabel` or `model:'unit'`) — the Singapore bar model. One
-//     unit is a fixed width, so Ali's 5 units is visibly longer than Sara's 3,
+//     unit is a fixed width, so one child's 5 units is visibly longer than another's 3,
 //     and a brace on the outside carries the total.
 //
 //   circle mode (`model:'circle'`) — a roti/pizza: every circle in the spec is
