@@ -30,7 +30,7 @@
 
 const path = require('path');
 const { renderDiagram, checkOverlaps } = require('../../../vendor/lp-v9/diagrams');
-const { SIZE } = require('../../../vendor/lp-v9/diagrams/lib/tokens');
+const { SIZE, C } = require('../../../vendor/lp-v9/diagrams/lib/tokens');
 const MANIFEST = require('../../../vendor/lp-v9/diagrams/types_manifest.json');
 const { fontCss } = require('../../../vendor/lp-v9/lib/fonts');
 const { logToFile } = require('../../utils/logger');
@@ -633,10 +633,39 @@ const GEOMETRY_KEYS = {
 /** Only mathematics draws shapes; every other subject that reached for geometry drew a scene. */
 const MATHS_ONLY_TYPES = new Set(['geometry', 'base_ten']);
 
-/** A colour token the page never defines paints grey (or nothing). */
+/**
+ * A colour the quiz page cannot paint, or a colour field that is not a colour.
+ *
+ * A token the page never defines paints grey (or nothing). Worse, a colour
+ * field is model-written text that the engine writes into a style attribute on
+ * the Urdu path, so `red"><img onerror=…>` is markup, not a colour. Every
+ * string under a colour key must therefore be a quiz token (bare word, as the
+ * pattern type takes it), `var(--token)` / `var(--token, #hex)`, or a `#hex`.
+ * Any other var(--name) anywhere in the spec is still an unknown token.
+ * Returns the offending values (as written), or null.
+ */
+const COLOUR_KEYS = new Set(['color', 'colour', 'fill', 'stroke', 'bg', 'background']);
+const NAMED_COLOURS = new Set([...Object.keys(QUIZ_TOKENS), ...Object.keys(C)]);
+const HEX_RX = /^#[0-9a-f]{3}([0-9a-f]{3})?$/i;
+const VAR_RX = /^var\(--([a-z0-9-]+)(\s*,\s*#[0-9a-f]{3}([0-9a-f]{3})?)?\s*\)$/i;
+function legalColour(v) {
+  const s = String(v).trim();
+  if (HEX_RX.test(s) || NAMED_COLOURS.has(s)) return true;
+  const m = s.match(VAR_RX);
+  return !!m && m[1] in QUIZ_TOKENS;
+}
 function unknownColourToken(spec) {
   const found = new Set();
-  JSON.stringify(spec).replace(/var\(--([a-z0-9-]+)/gi, (m, name) => { if (!(name in QUIZ_TOKENS)) found.add(name); return m; });
+  const walk = (node, key) => {
+    if (typeof node === 'string') {
+      if (COLOUR_KEYS.has(key)) { if (!legalColour(node)) found.add(node); return; }
+      node.replace(/var\(--([a-z0-9-]+)/gi, (m, name) => { if (!(name in QUIZ_TOKENS)) found.add(`var(--${name})`); return m; });
+      return;
+    }
+    if (Array.isArray(node)) { node.forEach((x) => walk(x, key)); return; }
+    if (node && typeof node === 'object') Object.entries(node).forEach(([k, x]) => walk(x, k));
+  };
+  walk(spec, null);
   return found.size ? [...found] : null;
 }
 

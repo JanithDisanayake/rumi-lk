@@ -679,7 +679,7 @@ function validate(rawQuestions, ctx = {}) {
     }
     const badTokens = unknownColourToken(q.figure);
     if (badTokens) {
-      errs.push(`q${i}: FIGURE_TYPE — unknown colour token(s) ${badTokens.map((t) => `var(--${t})`).join(', ')}; use only the tokens in the minimal specs, or none`);
+      errs.push(`q${i}: FIGURE_TYPE — unknown colour token(s) ${badTokens.map((t) => JSON.stringify(t)).join(', ')}; use only the tokens in the minimal specs, or none`);
       return;
     }
     // The engine draws whatever it is given and never checks the science: an

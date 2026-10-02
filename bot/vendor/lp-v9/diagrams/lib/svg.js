@@ -35,6 +35,20 @@ function hashId(spec) {
   return "d" + crypto.createHash("sha1").update(JSON.stringify(spec ?? {})).digest("hex").slice(0, 7);
 }
 
+// A colour that goes into a CSS style (the Urdu foreignObject path) must be a
+// colour and nothing else: a spec value such as `red"><img …>` or
+// `red;background:url(http://…)` would otherwise close the attribute or add a
+// declaration that fetches a URL. Allowed: #hex, var(--token) with an optional
+// #hex fallback, a bare colour word, rgb()/hsl() with numbers only. Anything
+// else falls back to the caller's default.
+const COLOUR_RX =
+  /^(#[0-9a-f]{3,8}|var\(--[a-z0-9-]+(,\s*#[0-9a-f]{3,8})?\)|[a-z]+|(rgb|rgba|hsl|hsla)\([\d.,%\s]+\))$/i;
+const safeColour = (v, fallback) => {
+  const s = String(v ?? "").trim();
+  return s && COLOUR_RX.test(s) ? s : fallback;
+};
+const WEIGHT_RX = /^([1-9]00|normal|bold|bolder|lighter)$/;
+
 function attrs(o) {
   return Object.entries(o)
     .filter(([, v]) => v !== undefined && v !== null && v !== false)
@@ -74,8 +88,10 @@ class Svg {
   /* ---------------- shapes ---------------- */
   _paint(o = {}) {
     return {
-      fill: o.fill ?? "none",
-      stroke: o.stroke,
+      // Escaped by attrs(), but still only a colour: a spec "colour" of
+      // url(http://…) would otherwise become a paint-server reference.
+      fill: o.fill == null ? "none" : safeColour(o.fill, "none"),
+      stroke: o.stroke == null ? undefined : safeColour(o.stroke, C.ink),
       "stroke-width": o.sw,
       "stroke-dasharray": o.dash,
       "stroke-linecap": o.cap,
@@ -215,7 +231,7 @@ class Svg {
         "font-weight": o.weight,
         "font-style": o.italic ? "italic" : undefined,
         "letter-spacing": o.letterSpacing,
-        fill: o.fill ?? C.text,
+        fill: safeColour(o.fill, C.text),
         opacity: o.opacity,
         transform: o.transform,
       })}>${esc(s)}</text>`
@@ -251,8 +267,8 @@ class Svg {
       // clamped line box clips ک/گ. LEADING.urdu is used for *layout arithmetic*
       // only; the browser picks the real line box from the font's own metrics.
       `line-height:normal`,
-      `color:${o.fill ?? C.text}`,
-      o.weight ? `font-weight:${o.weight}` : "",
+      `color:${safeColour(o.fill, C.text)}`,
+      o.weight && WEIGHT_RX.test(String(o.weight)) ? `font-weight:${o.weight}` : "",
       `overflow:visible`,
       `white-space:normal`,
     ]
@@ -266,7 +282,7 @@ class Svg {
         height: n(boxH),
         overflow: "visible",
         transform: o.transform,
-      })}><div xmlns="http://www.w3.org/1999/xhtml" lang="ur" dir="rtl" style="${style}">${esc(s)}</div></foreignObject>`
+      })}><div xmlns="http://www.w3.org/1999/xhtml" lang="ur" dir="rtl" style="${esc(style)}">${esc(s)}</div></foreignObject>`
     );
   }
 
@@ -547,4 +563,4 @@ function requiredBox(svg, o = {}) {
   };
 }
 
-module.exports = { Svg, requiredBox, esc, n, hashId, attrs, measure, wrap, hasUrdu, urduLines, urduBoxH, textBox, checkOverlaps, elementBoxes, C, FONT, SIZE, LEADING };
+module.exports = { Svg, requiredBox, esc, safeColour, n, hashId, attrs, measure, wrap, hasUrdu, urduLines, urduBoxH, textBox, checkOverlaps, elementBoxes, C, FONT, SIZE, LEADING };
