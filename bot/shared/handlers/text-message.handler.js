@@ -196,7 +196,10 @@ async function handleTextMessage(message, from, messageBody, user = null) {
   // ============================================================
   if (user) {
     try {
-      const isPendingName = await FeatureRegistrationService.isPendingName(user.id);
+      // A command (/menu, /reading test) still runs while a name is pending;
+      // it is not the name. The name question comes back after a feature.
+      const isPendingName = !String(messageBody || '').trim().startsWith('/')
+        && await FeatureRegistrationService.isPendingName(user.id);
       if (isPendingName) {
         logToFile('📝 User is pending name registration, handling name response', { userId: user.id });
 

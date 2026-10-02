@@ -20,6 +20,12 @@ const AudioService = require('./audio.service');
 const { TEMP_DIR } = require('../utils/constants');
 const { nativeFlowIdFor } = require('./messaging/channel-capabilities');
 
+// Greetings and acknowledgements that are not names (English, and the
+// romanized forms teachers commonly type in the supported languages).
+const GREETINGS = 'hi|hello|hey|hiya|salam|salaam|assalam(?:u|o)?\\s*(?:o\\s*)?alaikum|aoa|good\\s+(?:morning|afternoon|evening)|hola|marhaba';
+const GREETING_PREFIX_RE = new RegExp(`^(?:${GREETINGS})\\b[\\s,.!]*`, 'i');
+const NOT_A_NAME_RE = new RegExp(`^(?:${GREETINGS}|ok|okay|yes|no|thanks|thank\\s+you|sure|fine)[.!?]*$`, 'i');
+
 class FeatureRegistrationService {
   /**
    * Check if user needs registration and trigger the name question if so
@@ -334,6 +340,14 @@ class FeatureRegistrationService {
     // Clean up the response
     let name = response.trim();
 
+    // A greeting is not a name. Rumi asks for the name after a feature, and
+    // the next message is read as the answer, so a teacher's "Hi" used to
+    // become their name (reports then said "Teacher: Hi null"). Strip a
+    // greeting in front of a name; a reply that is only a greeting or an
+    // acknowledgement gives no name, and the caller asks again.
+    name = name.replace(GREETING_PREFIX_RE, '').trim();
+    if (!name || NOT_A_NAME_RE.test(name) || name.startsWith('/')) return null;
+
     // Common patterns to strip
     const prefixes = [
       // English
@@ -349,6 +363,7 @@ class FeatureRegistrationService {
     for (const prefix of prefixes) {
       name = name.replace(prefix, '');
     }
+    if (!name || NOT_A_NAME_RE.test(name.replace(/[.!,?]+$/, ''))) return null;
 
     // Remove trailing punctuation and common suffixes
     name = name.replace(/[.!,?]+$/, '').trim();
