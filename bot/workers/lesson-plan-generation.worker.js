@@ -18,6 +18,7 @@ const LessonPlanQueueService = require('../shared/services/lesson-plan-queue.ser
 const FeatureLinkerService = require('../shared/services/feature-linker.service');
 const FeatureRegistrationService = require('../shared/services/feature-registration.service');
 const { storeLessonPlan } = require('../shared/database/bot-helpers');
+const { planContentFromPdfFile } = require('../shared/services/coaching/fidelity/lesson-plan-text');
 
 // Temp directory for PDF downloads
 const TEMP_DIR = process.env.TEMP_DIR || '/tmp';
@@ -133,6 +134,7 @@ class LessonPlanGenerationWorker {
       });
 
       // 3. Download and send PDF if available
+      let planContent = null;
       if (result.pdfUrl) {
         const safeTopic = topic.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_').substring(0, 50);
         const pdfFilename = `${contentType}_${safeTopic}.pdf`;
@@ -140,6 +142,12 @@ class LessonPlanGenerationWorker {
 
         try {
           await ContentService.downloadPDF(result.pdfUrl, pdfFilename, TEMP_DIR);
+
+          // Keep the plan's text on its row: a teacher can later say "this is the plan I taught" for a lesson
+          // recording, and lesson-plan fidelity reads the plan from this text.
+          if (contentType === 'lesson_plan') {
+            planContent = await planContentFromPdfFile(pdfPath);
+          }
 
           await WhatsAppService.sendDocument(
             phoneNumber,
@@ -174,7 +182,7 @@ class LessonPlanGenerationWorker {
 
       // 4. Store in lesson_plans table
       try {
-        await storeLessonPlan(userId, topic, contentType, result.gammaUrl, result.pdfUrl);
+        await storeLessonPlan(userId, topic, contentType, result.gammaUrl, result.pdfUrl, planContent);
         logToFile('Lesson plan stored in database', { requestId, userId });
       } catch (storeError) {
         logToFile('Warning: Failed to store lesson plan', {

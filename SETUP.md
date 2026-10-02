@@ -202,6 +202,18 @@ Required if you want voice message support (Urdu, English, Arabic, Spanish).
 SONIOX_API_KEY=your-soniox-key
 ```
 
+### Lesson-plan fidelity (optional, off by default)
+
+With Soniox set, classroom coaching can also check whether a lesson followed the teacher's plan, move by move. It
+needs no new key — it uses `OPENROUTER_API_KEY` and Soniox's timestamped transcripts:
+
+```env
+LP_FIDELITY_ENABLED=true
+```
+
+`rumi doctor` then shows how many recent classroom recordings came back with speech timings. See
+[docs/features/lesson-plan-fidelity.md](docs/features/lesson-plan-fidelity.md).
+
 ### ElevenLabs (Tier 3 — Full, for Voice Responses)
 
 Required if you want the bot to respond with voice messages.
@@ -419,6 +431,49 @@ There are **no tiers** — each feature turns on the moment its key(s) are prese
 2. Add to your environment: `SONIOX_API_KEY=your-key`
 3. Set up the stale session cron job (Step 11)
 4. Redeploy
+
+### Set test papers from your own textbooks
+
+Test papers (`/testpaper`) are on with the LLM key you already have; teachers can build them from their own
+lesson plans or an uploaded chapter straight away. To let them pick chapters of **your** textbooks, run the
+[curriculum pipeline](curriculum/README.md) over the books, then load its page-truth output:
+
+```bash
+node bot/scripts/testpaper/import-curriculum-corpus.js path/to/curriculum-project --dry-run   # what it would write
+node bot/scripts/testpaper/import-curriculum-corpus.js path/to/curriculum-project
+```
+
+Printing needs Chromium on the bot's host (`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`), and papers are written by
+the background worker. Existing databases: apply `infrastructure/supabase/migrations/V2.4.0__test_papers.sql`.
+See [docs/features/test-papers.md](docs/features/test-papers.md).
+### Add staff attendance for a head teacher (optional)
+
+Class attendance needs nothing. For a head teacher's **staff** attendance and register:
+
+1. Apply the attendance migration on an existing database: `node infrastructure/scripts/migrate.js`
+   (fresh installs already have it from `00_complete-schema.sql`)
+2. Set the school's timezone: `ATTENDANCE_TZ=Africa/Nairobi` (any IANA name; default UTC)
+3. Link the school, its head teacher and staff (from `bot/`):
+   `node scripts/attendance/link-school.js --school "Your School" --head <phone or channel id> --staff <…> --staff-name "…"`
+4. The head teacher says "attendance". See [docs/features/attendance.md](docs/features/attendance.md).
+
+### Add teacher nudges (optional)
+
+1. Set `TEACHER_NUDGES_ENABLED=true` (and `TEACHER_NUDGES_TZ` to your timezone)
+2. Run the worker (`node bot/workers/sqs-worker.js`) — it sweeps every `TEACHER_NUDGES_SWEEP_MINUTES` — or
+   schedule `node bot/workers/teacher-nudges.worker.js` from cron. See [docs/features/teacher-nudges.md](docs/features/teacher-nudges.md).
+
+### Add Observe — the coach's assistant
+
+1. Make sure voice transcription is on (`SONIOX_API_KEY`, above) and the background worker runs (Step 11).
+2. Existing database: apply `infrastructure/supabase/migrations/V2.6.0__observe_coach_assistant.sql`
+   (fresh installs already have it from `00_complete-schema.sql`).
+3. Add to your environment: `OBSERVE_ENABLED=true` (optionally `OBSERVE_FRAMEWORK`, default `teach`).
+   Set `OBSERVE_ENABLED=true` on the dashboard service as well: the portal's coach view ("My observations") reads its own environment and stays off without it.
+4. Give your coaches their schools and teachers:
+   `node bot/scripts/observe-roster.js import roster.csv` (columns `coach_phone,school_ext_id,school_name,teacher_phone,teacher_name`),
+   or one at a time with `grant-coach`, `add-school` and `add-teacher`.
+5. Redeploy. A coach types `/observe`. Details: [docs/features/observe.md](docs/features/observe.md).
 
 ### Add regional-language speech-to-text (optional)
 

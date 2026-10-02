@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { User, DashboardStats, LessonPlan, CoachingSession, SessionDetail, CoachingAnalytics, Pagination, VideoRequest, VideoDetail } from '../types/portal';
+import type { User, DashboardStats, LessonPlan, CoachingSession, SessionDetail, CoachingAnalytics, Pagination, VideoRequest, VideoDetail, CoachObservationsData, CoachTeacher, CoachObservation } from '../types/portal';
 import type { ReadingAssessment, ReadingAssessmentDetail, ReadingStats } from '../types/readingAssessment';
 
 // Use relative URL since frontend and backend are on same domain
@@ -158,6 +158,27 @@ export const portal = {
     video: VideoDetail;
   }> => {
     const response = await api.get(`/video/${id}`);
+    return response.data;
+  }
+};
+
+// Coach's view — the server answers 403 to anyone outside the observe role family.
+export const coach = {
+  getObservations: async (): Promise<{ observations: CoachObservationsData }> => {
+    const response = await api.get('/coach/observations');
+    return response.data;
+  },
+
+  getTeachers: async (): Promise<{ teachers: CoachTeacher[] }> => {
+    const response = await api.get('/coach/teachers');
+    return response.data;
+  },
+
+  getTeacher: async (id: string): Promise<{
+    teacher: { id: string; name: string; schoolName: string | null };
+    observations: CoachObservation[];
+  }> => {
+    const response = await api.get(`/coach/teacher/${encodeURIComponent(id)}`);
     return response.data;
   }
 };

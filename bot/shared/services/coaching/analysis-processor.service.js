@@ -20,6 +20,8 @@ const CoachingSessionService = require('./coaching-session.service');
 const { PEDAGOGICAL_ANALYSIS_MEDIA_ID } = require('../../utils/constants');
 const { selectFramework } = require('./frameworks/framework-selector');
 const { getCoachingMessage } = require('../../config/coaching-messages');
+const { isFidelityEnabled } = require('./fidelity/fidelity-orchestrator');
+const { computeFidelityForSession, applyFrameworkFidelity } = require('./fidelity/fidelity-session');
 
 /**
  * Look up the teacher's preferred language for a coaching session.
@@ -63,6 +65,10 @@ class AnalysisProcessorService {
       }
 
       const from = payload.from || session.users.phone_number;
+      // A coach's observation of a teacher (/observe), read from the ROW. The
+      // chat belongs to the coach; the analysis becomes the coach's draft to
+      // review, so the teacher-facing steps of this pipeline are skipped.
+      const isObservation = session.observation_type === 'leader_observation';
 
       // Update status
       await CoachingSessionService.updateStatus(coachingSessionId, 'analyzing', {
@@ -70,14 +76,14 @@ class AnalysisProcessorService {
       });
 
       // Send progress update
-      await this.sendProgressUpdate(from, 2);
+      if (!isObservation) await this.sendProgressUpdate(from, 2);
 
-      // Fetch and compress prior feedback
+      // Fetch and compress prior feedback — the teacher's OWN reflections. An
+      // observation is rated on what the coach saw today, not on those.
       const ReportGeneratorService = require('./report-generator.service');
-      const priorFeedbackData = await ReportGeneratorService.fetchAndCompressPriorFeedback(
-        session.user_id,
-        coachingSessionId
-      );
+      const priorFeedbackData = isObservation
+        ? { exists: false }
+        : await ReportGeneratorService.fetchAndCompressPriorFeedback(session.user_id, coachingSessionId);
 
       // Format prior feedback for prompt
       let priorFeedbackText = null;
@@ -110,28 +116,34 @@ class AnalysisProcessorService {
         lessonPlanExcerpt: session.lesson_plan_excerpt || null,
         lessonPlanStatus: session.lesson_plan_extraction_status || null,
         lessonPlanSubject: session.lesson_plan_structured?.subject || null,
-        lessonPlanTopic: session.lesson_plan_structured?.topic || null
+        lessonPlanTopic: session.lesson_plan_structured?.topic || null,
+        ...(isObservation ? { teacherName: session.users.first_name || null } : {})
       };
 
       logToFile('Analysis metadata', metadata);
 
-      // Resolve pedagogical framework for this user
-      const framework = await selectFramework(session.user_id);
+      // Resolve pedagogical framework: an observation is pinned to the observe
+      // pack (the coach's form is shaped by it); otherwise this user's framework.
+      const { pickObservationFramework } = require('../observe/observe-gate');
+      const framework = await pickObservationFramework(session, { selectFramework });
       logToFile('Framework resolved', { userId: session.user_id, framework: framework.name });
 
-      // The pedagogy analysis and the v12 reflective corpus extraction run CONCURRENTLY.
-      // allSettled (NOT all) keeps the corpus extraction NON-BLOCKING — if it rejects, the
-      // critical-path analysis persist still proceeds and the report falls back gracefully
-      // (the rest of the coaching flow doesn't depend on the corpus being present).
+      // The pedagogy analysis, the v12 reflective corpus extraction and lesson-plan fidelity
+      // (LP_FIDELITY_ENABLED) run CONCURRENTLY. allSettled (NOT all) keeps the corpus and
+      // fidelity tasks NON-BLOCKING — if either rejects, the critical-path analysis persist
+      // still proceeds and the report falls back gracefully.
       const langCode = session.transcript_language || metadata.language || 'en';
-      const [analysisSettled, corpusSettled] = await Promise.allSettled([
+      const [analysisSettled, corpusSettled, fidelitySettled] = await Promise.allSettled([
         GPT5MiniService.analyzePedagogy(
           session.transcript_text,
           metadata,
           session.lesson_plan_structured || null,
           framework,
         ),
-        GPT5MiniService.extractReflectiveCorpus(session.transcript_text, langCode),
+        // The reflective corpus feeds the teacher's own reflective chat, and lesson-plan
+        // fidelity checks the teacher's own plan: an observation runs neither.
+        isObservation ? Promise.resolve(null) : GPT5MiniService.extractReflectiveCorpus(session.transcript_text, langCode),
+        !isObservation && isFidelityEnabled() ? computeFidelityForSession(session, { waitForPlan: true }) : Promise.resolve(null),
       ]);
       if (analysisSettled.status === 'rejected') throw analysisSettled.reason;
       const analysisResult = analysisSettled.value;
@@ -150,6 +162,24 @@ class AnalysisProcessorService {
         });
       }
 
+      // Lesson-plan fidelity: every outcome is persisted (lp_absent, lp_unparseable, fidelity_unavailable, not
+      // assessed, scored) so "never ran" stays distinguishable from each way it fell short.
+      let lpFidelity = null;
+      if (fidelitySettled.status === 'fulfilled') {
+        lpFidelity = fidelitySettled.value;
+      } else {
+        lpFidelity = { status: 'fidelity_unavailable', error: fidelitySettled.reason && fidelitySettled.reason.message, graded_at: new Date().toISOString() };
+      }
+      if (lpFidelity) {
+        logToFile('[lp-fidelity] graded', {
+          coachingSessionId,
+          status: lpFidelity.status,
+          source: lpFidelity.source || null,
+          fidelity_pct: lpFidelity.fidelity_pct ?? null,
+          unusable_guard: lpFidelity.unusable_guard || null,
+        });
+      }
+
       logToFile('Analysis completed', {
         coachingSessionId,
         inputTokens: analysisResult.usage.input_tokens,
@@ -159,13 +189,18 @@ class AnalysisProcessorService {
         hasReflectiveCorpus: !!reflectiveCorpus,
       });
 
-      // Update database — merge reflective_corpus into analysis_data when present.
+      // Update database — merge reflective_corpus and lp_fidelity into analysis_data when present,
+      // and let the framework map a measured fidelity onto its own indicator (optional hook).
+      let analysisData = reflectiveCorpus
+        ? { ...analysisResult.analysis, reflective_corpus: reflectiveCorpus }
+        : analysisResult.analysis;
+      if (lpFidelity) {
+        analysisData = applyFrameworkFidelity(framework, { ...analysisData, lp_fidelity: lpFidelity }, lpFidelity);
+      }
       await supabase
         .from('coaching_sessions')
         .update({
-          analysis_data: reflectiveCorpus
-            ? { ...analysisResult.analysis, reflective_corpus: reflectiveCorpus }
-            : analysisResult.analysis,
+          analysis_data: analysisData,
           status: 'analysis_complete',
           analysis_completed_at: new Date().toISOString(),
           analysis_cost: analysisResult.usage.cost,
@@ -174,6 +209,15 @@ class AnalysisProcessorService {
           gpt5_cached_tokens: analysisResult.usage.cached_tokens,
         })
         .eq('id', coachingSessionId);
+
+      // An observation's result is the coach's draft: freeze it and send the
+      // pre-filled ratings to the coach (observe-draft). No reflective chat.
+      if (isObservation) {
+        const ObserveDraft = require('../observe/observe-draft.service');
+        await ObserveDraft.onAnalysisReady(coachingSessionId, from);
+        logToFile('✅ Analysis processing complete (observation draft sent)', { coachingSessionId });
+        return;
+      }
 
       // Send progress update - Step 3
       const lang3 = await _resolveSessionLanguage(coachingSessionId);

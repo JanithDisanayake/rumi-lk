@@ -21,6 +21,7 @@ const AWS = require('aws-sdk');
 const { logToFile } = require('../../utils/logger');
 const RedisService = require('../cache/railway-redis.service');
 const { getCurrentCorrelationId, logEvent } = require('../../utils/structured-logger');
+const { dedupVariant } = require('./dedup-variant');
 
 class SQSQueueService {
   constructor() {
@@ -66,8 +67,12 @@ class SQSQueueService {
         throw new Error('SQS Queue not configured');
       }
 
-      // Check Redis for duplicate job (idempotency check)
-      const idempotencyKey = `${this.JOB_PREFIX}${sessionId}:${jobType}`;
+      // Check Redis for duplicate job (idempotency check). A job that runs more
+      // than once per session on purpose (a report preview, then its delivery;
+      // a re-recorded debrief) carries a phase / nonce, and that is part of its
+      // identity — otherwise the second run is dropped as a "duplicate".
+      const variant = dedupVariant(payload);
+      const idempotencyKey = `${this.JOB_PREFIX}${sessionId}:${jobType}${variant ? `:${variant}` : ''}`;
 
       try {
         const existingMessageId = await RedisService.get(idempotencyKey);
@@ -109,7 +114,7 @@ class SQSQueueService {
 
         // FIFO queue parameters
         MessageGroupId: sessionId,  // Ensures all jobs for a session are processed in order
-        MessageDeduplicationId: `${sessionId}-${jobType}`,  // Stable deduplication ID (no timestamp)
+        MessageDeduplicationId: `${sessionId}-${jobType}${variant ? `-${variant}` : ''}`,  // Stable deduplication ID (no timestamp)
 
         // Message attributes for filtering/monitoring
         MessageAttributes: {

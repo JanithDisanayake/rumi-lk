@@ -329,6 +329,29 @@ const defaultProbes = {
     }
     return { ok: true, detail: `connected as ${body.user_id}, end-to-end encrypted` };
   },
+
+  // Lesson-plan fidelity: on/off, plus how many classroom recordings came back with the [MM:SS] timings it needs
+  // (diarization-health.js counts them in Redis). A silent loss of timings shows here as a falling rate.
+  async diarization(env) {
+    const { FEATURES, isFeatureAvailable } = require('../../shared/config/feature-availability');
+    const entry = FEATURES.find((f) => f.id === 'lp_fidelity');
+    if (!isFeatureAvailable(entry, env)) {
+      return { ok: false, detail: 'set: LP_FIDELITY_ENABLED=true and SONIOX_API_KEY' };
+    }
+    if (!isSet(env.REDIS_URL)) return { ok: true, detail: 'on (set REDIS_URL to see how many recordings carry timings)' };
+    const IORedis = require('ioredis');
+    const client = new IORedis(env.REDIS_URL, { lazyConnect: true, maxRetriesPerRequest: 1 });
+    client.on('error', () => {});
+    try {
+      await client.connect();
+      const { diarizationStats, describeDiarization } = require('../../shared/services/coaching/diarization-health');
+      return describeDiarization(await diarizationStats(7, { redis: client }));
+    } catch (err) {
+      return { ok: true, detail: `on (timing counts unavailable: ${err.message})` };
+    } finally {
+      client.disconnect();
+    }
+  },
   async redis(env) {
     // Lazy require so the bot's redis lib is optional at doctor time.
     const IORedis = require('ioredis');

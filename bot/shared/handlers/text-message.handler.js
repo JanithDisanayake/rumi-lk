@@ -20,10 +20,9 @@ const RegionFeaturesService = require('../services/region-features.service');
 const { getUserRegion, getUserLanguageRegion } = require('../utils/region');
 const VideoOrchestrator = require('../services/video/video-orchestrator.service');
 const AttendanceDetectorService = require('../services/attendance-detector.service');
-const AttendanceConversationService = require('../services/attendance-conversation.service');
-const AttendanceDeliveryService = require('../services/attendance-delivery.service');
+const AttendanceEntryService = require('../services/attendance-entry.service');
 const { logToFile } = require('../utils/logger');
-const { TEMP_DIR, LOADING_STICKER_PATH, LOADING_STICKER_MEDIA_ID, OPENAI_API_KEY, ATTENDANCE_SETUP_FLOW_ID, ATTENDANCE_MARKING_FLOW_ID } = require('../utils/constants');
+const { TEMP_DIR, LOADING_STICKER_PATH, LOADING_STICKER_MEDIA_ID, OPENAI_API_KEY, ATTENDANCE_SETUP_FLOW_ID } = require('../utils/constants');
 const { getClient } = require('../services/llm-client');
 
 const openai = getClient();
@@ -95,6 +94,8 @@ async function tryCurriculumLessonPlanServe(from, topic, user, language) {
 
 const { evaluateHomeworkTrigger } = require('./homework-trigger');
 const { detectEditClassIntent } = require('./edit-class-trigger');
+const { routeTestPaperText } = require('./testpaper-trigger');
+const { ownCoaching } = require('../services/coaching/own-coaching');
 
 async function handleTextMessage(message, from, messageBody, user = null) {
   logToFile(`Processing TEXT message: ${messageBody}`);
@@ -179,6 +180,19 @@ async function handleTextMessage(message, from, messageBody, user = null) {
 
   // NOTE: Funnel tracking (chat start) is handled centrally in whatsapp-bot.js
   // before routing to this handler
+
+  // ============================================================
+  // LESSON PLAN PASTED AS TEXT — while a coaching session waits for its plan
+  // (lesson-plan fidelity on), a long message is the plan, not chat.
+  // ============================================================
+  if (user && messageBody) {
+    try {
+      const { handlePastedLessonPlan } = require('../services/coaching/lp-coaching/lp-text-paste.service');
+      if (await handlePastedLessonPlan(user, from, messageBody)) return;
+    } catch (error) {
+      logToFile('⚠️ Pasted lesson plan check failed (non-fatal)', { error: error.message });
+    }
+  }
 
   // Get or create session for this user
   let sessionId = null;
@@ -337,6 +351,14 @@ async function handleTextMessage(message, from, messageBody, user = null) {
     }
   }
 
+  // Test papers: /testpaper, /paper, /mypapers — and, while a pick is pending,
+  // the teacher's numbers, typed mix, pasted chapter or edit request. Slash
+  // commands other than these always pass through (see testpaper-trigger.js).
+  if (messageBody && await routeTestPaperText({ user, from, messageBody, language: responseLanguage })) {
+    typingController.stop();
+    return;
+  }
+
   // When user taps ice breaker, WhatsApp sends the ice breaker text as message
   const iceBreakers = {
     'show menu - see all features i can help with': 'menu',
@@ -440,6 +462,19 @@ async function handleTextMessage(message, from, messageBody, user = null) {
     }
 
     return; // Stop further processing
+  }
+
+  // ============================================================
+  // OBSERVE (the coach's assistant): /observe, and any reply a pending
+  // observe step is waiting for. Off unless OBSERVE_ENABLED=true; for anyone
+  // outside the coach role family only /observe itself is looked at. The
+  // original-case message is passed — a teacher's name keeps its capitals.
+  // ============================================================
+  try {
+    const { handleObserveText } = require('./observe-command.handler');
+    if (await handleObserveText(user, from, messageBody)) return;
+  } catch (error) {
+    logToFile('❌ Error in observe text handling', { userId: user?.id, error: error.message });
   }
 
   // ============================================================
@@ -1051,10 +1086,10 @@ async function handleTextMessage(message, from, messageBody, user = null) {
   // Detect stuck sessions but DON'T block user - store reminder for later
   if (user) {
     try {
-      const { data: stuckSession } = await supabase
+      const { data: stuckSession } = await ownCoaching(supabase
         .from('coaching_sessions')
         .select('id, status, updated_at, conversation_state')
-        .eq('user_id', user.id)
+        .eq('user_id', user.id)) // a coach's observation of this teacher is not their unfinished session
         .in('status', ['conducting_conversation', 'analyzing'])
         .order('updated_at', { ascending: false })
         .limit(1)
@@ -1106,10 +1141,10 @@ async function handleTextMessage(message, from, messageBody, user = null) {
         });
 
         // Fetch the stuck session
-        const { data: stuckSession } = await supabase
+        const { data: stuckSession } = await ownCoaching(supabase
           .from('coaching_sessions')
           .select('*')
-          .eq('id', stuckSessionId)
+          .eq('id', stuckSessionId)) // the reply below can fail or re-run it: never a coach's observation
           .single();
 
         if (stuckSession) {
@@ -1528,247 +1563,10 @@ async function handleTextMessage(message, from, messageBody, user = null) {
   // ============================================================
   // ATTENDANCE SYSTEM INTEGRATION
   // ============================================================
-  // Check if user is in an active attendance session
-  if (user?.id) {
-    try {
-      const isInAttendanceSession = await AttendanceConversationService.isInAttendanceSession(user.id);
-
-      if (isInAttendanceSession) {
-        logToFile('📋 User in active attendance session, routing message', { userId: user.id });
-
-        // Get current session state
-        const sessionState = await AttendanceConversationService.getSessionState(user.id);
-
-        // Handle cancel command
-        if (messageBody.toLowerCase() === 'cancel' || messageBody.toLowerCase() === 'منسوخ') {
-          typingController.stop();
-          const result = await AttendanceConversationService.cancelSession(user.id);
-          await WhatsAppService.sendMessage(from, result.message);
-          return;
-        }
-
-        let result;
-
-        // A fresh attendance trigger ("attendance", "حاضری", ...) sent while
-        // already mid-flow means the teacher wants to start over, not answer
-        // whatever state-specific prompt is pending — without this, a stuck
-        // or half-abandoned session (e.g. a channel that silently dropped a
-        // step) has no way back in except explicitly typing "cancel" first,
-        // and instead gets misread as an answer to that prompt (e.g.
-        // AWAITING_VERIFICATION's yes/edit/cancel check). Excluded from
-        // PROCESSING, which already has its own wait/timeout handling and
-        // shouldn't be interrupted mid-generation by this.
-        const attendanceRetrigger = AttendanceDetectorService.detectAttendanceIntent(messageBody);
-        if (sessionState.state !== AttendanceConversationService.STATES.PROCESSING && attendanceRetrigger.detected) {
-          logToFile('📋 Attendance trigger received mid-session, restarting', { userId: user.id, previousState: sessionState.state });
-          await AttendanceConversationService.clearSessionState(user.id);
-          result = await AttendanceConversationService.startAttendanceSession(user.id);
-        } else {
-        // Route based on current state
-        switch (sessionState.state) {
-          case AttendanceConversationService.STATES.AWAITING_CLASS_SELECTION:
-            result = await AttendanceConversationService.handleClassSelection(user.id, messageBody);
-            break;
-
-          case AttendanceConversationService.STATES.AWAITING_MARKING_METHOD:
-            // Check for "everyone present" shortcut
-            const everyonePresentKeywords = ['everyone present', 'all present', 'سب حاضر', 'سب موجود', '3'];
-            if (everyonePresentKeywords.some(kw => messageBody.toLowerCase().includes(kw))) {
-              result = await AttendanceConversationService.handleEveryonePresent(user.id);
-            } else {
-              result = await AttendanceConversationService.handleMarkingMethodSelection(user.id, messageBody);
-            }
-            break;
-
-          case AttendanceConversationService.STATES.AWAITING_VOICE_INPUT:
-            // User sent text when expecting voice - prompt them
-            result = {
-              action: 'PROMPT_VOICE',
-              message: 'Please send a *voice message* with your roll call.\n\nOr reply "2" to switch to Tap to Mark.'
-            };
-            // Allow switching to tap method
-            if (messageBody === '2' || messageBody.toLowerCase().includes('tap')) {
-              result = await AttendanceConversationService.handleMarkingMethodSelection(user.id, '2');
-            }
-            break;
-
-          case AttendanceConversationService.STATES.AWAITING_VERIFICATION:
-            // User is verifying attendance results (yes/edit/cancel)
-            result = await AttendanceConversationService.handleVerificationResponse(user.id, messageBody);
-            break;
-
-          case AttendanceConversationService.STATES.AWAITING_DATE_SELECTION:
-            // User selecting date for attendance
-            result = await AttendanceConversationService.handleDateSelection(user.id, messageBody);
-            break;
-
-          case AttendanceConversationService.STATES.AWAITING_SESSION_TYPE:
-            // User selecting AM/PM session type
-            result = await AttendanceConversationService.handleSessionTypeSelection(user.id, messageBody);
-            break;
-
-          case AttendanceConversationService.STATES.IDLE:
-          case AttendanceConversationService.STATES.COMPLETED:
-            // Session is idle or completed - restart fresh
-            logToFile('📋 Attendance session idle/completed, restarting', { userId: user.id, state: sessionState.state });
-            await AttendanceConversationService.clearSessionState(user.id);
-            result = await AttendanceConversationService.startAttendanceSession(user.id);
-            break;
-
-          case AttendanceConversationService.STATES.PROCESSING:
-            // Check if processing has timed out
-            if (AttendanceConversationService.isProcessingTimedOut(sessionState)) {
-              logToFile('⚠️ Processing timeout detected, clearing stuck state', { userId: user.id, processingStartedAt: sessionState.processingStartedAt });
-              await AttendanceConversationService.clearSessionState(user.id);
-              result = {
-                action: 'ERROR',
-                message: 'Your previous attendance session timed out. Say "attendance" to start a new one.'
-              };
-            } else {
-              // Still processing - ask user to wait
-              result = {
-                action: 'PROCESSING',
-                message: 'Your attendance is being processed. Please wait a moment...'
-              };
-            }
-            break;
-
-          default:
-            // Unknown state - log and restart
-            logToFile('⚠️ Unknown attendance state, clearing session', { userId: user.id, state: sessionState?.state });
-            await AttendanceConversationService.clearSessionState(user.id);
-            result = {
-              action: 'ERROR',
-              message: 'Something went wrong with attendance. Say "attendance" to start again.'
-            };
-        }
-        }
-
-        typingController.stop();
-
-        // Handle the result
-        if (result.action === 'ASK_MARKING_METHOD' || result.action === 'ASK_CLASS_SELECTION') {
-          await WhatsAppService.sendMessage(from, result.message);
-        } else if (result.action === 'AWAIT_VOICE_INPUT' || result.action === 'PROMPT_VOICE') {
-          await WhatsAppService.sendMessage(from, result.message);
-        } else if (result.action === 'SEND_MARKING_FLOW') {
-          // Slack has a real Flow-equivalent (attendance_mark's checkbox
-          // modal — see slack-flow-registry.js), not sendFlow()'s Meta/
-          // Baileys-shaped {flowId, flowToken} contract. Same
-          // driverForIdentifier() branch shape as the addClassDetection
-          // block below and /settings above. The roster this modal needs
-          // is already sitting in the Redis session handleMarkingMethodSelection
-          // just saved — the modal's own INIT reads it back by userId.
-          if (driverForIdentifier(from) === 'slack') {
-            await WhatsAppService.sendInteractiveButtons(from, {
-              body: result.message,
-              buttons: [{ id: 'open_modal:attendance_mark', title: 'Mark Attendance' }],
-            });
-          } else if (driverForIdentifier(from) === 'discord') {
-            await WhatsAppService.sendInteractiveButtons(from, {
-              body: result.message,
-              buttons: [{ id: 'discord_start_flow:attendance_mark', title: 'Mark Attendance' }],
-            });
-          } else {
-            const sessionState = await AttendanceConversationService.getSessionState(user.id);
-            const today = new Date().toISOString().split('T')[0];
-            // Flow token format: userId:classId:date:sessionType:className - all data for response handling
-            const sessionType = sessionState?.selectedSession || 'morning';
-            const className = result.selectedClass?.class_name || 'Class';
-            const section = result.selectedClass?.section || '';
-            const flowToken = `${user.id}:${sessionState?.selectedListId}:${today}:${sessionType}:${encodeURIComponent(className)}`;
-            // Dynamic header with class + section (e.g., "5A Attendance")
-            const displayName = section ? `${className}${section}` : className;
-
-            // Baileys has no real Flow support at all — sendFlow() degrades
-            // to the 'attendance-mark' text-flow definition
-            // (text-flow-definitions.js) via flowKind, exactly like
-            // class-setup's own sendFlow() call above already does. Meta
-            // simply ignores flowKind and uses flowId for the real Flow.
-            // Called unconditionally (not gated behind ATTENDANCE_MARKING_FLOW_ID)
-            // so Baileys gets tap-to-mark even with no Meta Flow registered —
-            // the boolean return value decides whether to fall back.
-            const markingSent = await WhatsAppService.sendFlow(from, {
-              flowId: ATTENDANCE_MARKING_FLOW_ID,
-              flowKind: 'attendance-mark',
-              header: `📋 ${displayName} Attendance`,
-              body: result.message,
-              buttonText: 'Mark Attendance',
-              // Note: Don't specify screen for data_api_version 3.0+ flows with endpoint
-              // The endpoint determines first screen via INIT response
-              flowToken: flowToken
-            });
-
-            if (markingSent) {
-              logToFile('📋 Sent attendance marking flow', {
-                userId: user.id,
-                flowId: ATTENDANCE_MARKING_FLOW_ID,
-                classId: sessionState?.selectedListId,
-                studentCount: result.students?.length,
-                className: className
-              });
-            } else {
-              await WhatsAppService.sendMessage(from, 'The marking form is not configured. Please use voice marking instead.\n\nSay something like: "Everyone is here except Ali and Sara"');
-              logToFile('⚠️ Attendance marking flow unavailable on this channel', { userId: user.id });
-            }
-          }
-        } else if (result.action === 'GENERATE_ATTENDANCE') {
-          // Send initial "generating" message
-          await WhatsAppService.sendMessage(from, result.message);
-
-          // Generate, upload, and deliver Excel
-          try {
-            const sessionState = await AttendanceConversationService.getSessionState(user.id);
-            const deliveryResult = await AttendanceDeliveryService.processAndDeliver(
-              user.id,
-              from,
-              {
-                selectedClass: result.selectedClass,
-                selectedListId: sessionState?.selectedListId,
-                records: result.records,
-                summary: sessionState?.summary,
-                transcript: sessionState?.transcript,
-                markingMethod: sessionState?.markingMethod || 'voice'
-              }
-            );
-
-            if (!deliveryResult.success) {
-              // Clear state on delivery failure to prevent stuck PROCESSING
-              await AttendanceConversationService.clearSessionState(user.id);
-              logToFile('📋 Cleared session state after delivery failure', { userId: user.id, error: deliveryResult.error });
-              await WhatsAppService.sendMessage(from, `Sorry, there was an error generating your attendance file: ${deliveryResult.error}\n\nSay "attendance" to try again.`);
-            } else {
-              // Clear state on successful completion
-              await AttendanceConversationService.clearSessionState(user.id);
-              logToFile('📋 Cleared session state after successful delivery', { userId: user.id });
-            }
-          } catch (deliveryError) {
-            // Clear state on exception to prevent stuck PROCESSING
-            await AttendanceConversationService.clearSessionState(user.id);
-            logToFile('Attendance delivery error - state cleared', { error: deliveryError.message, userId: user.id });
-            await WhatsAppService.sendMessage(from, 'Sorry, something went wrong delivering your attendance file. Say "attendance" to try again.');
-          }
-        } else if (result.action === 'VERIFY_ATTENDANCE') {
-          // Verification message already sent by handleVoiceInput
-          await WhatsAppService.sendMessage(from, result.message);
-        } else if (result.action === 'SESSION_CANCELLED') {
-          await WhatsAppService.sendMessage(from, result.message);
-        } else if (result.action === 'INVALID_SELECTION' || result.action === 'INVALID_STATE') {
-          await WhatsAppService.sendMessage(from, result.message);
-        } else if (result.action === 'PROCESSING') {
-          await WhatsAppService.sendMessage(from, result.message);
-        } else if (result.action === 'SESSION_COMPLETED') {
-          await WhatsAppService.sendMessage(from, result.message);
-        } else if (result.action === 'ERROR') {
-          await WhatsAppService.sendMessage(from, result.message);
-        }
-
-        return; // Exit early - handled by attendance system
-      }
-    } catch (error) {
-      logToFile('Error checking attendance session', { error: error.message, userId: user?.id });
-      // Continue with normal flow if attendance check fails
-    }
+  // A message from someone mid-session is attendance's to route by state
+  // (attendance-entry.service owns both attendance doors and the messages).
+  if (await AttendanceEntryService.handleInSession({ user, from, messageBody, typingController })) {
+    return; // Exit early - handled by attendance system
   }
 
   // ============================================================
@@ -1817,63 +1615,10 @@ async function handleTextMessage(message, from, messageBody, user = null) {
     return;
   }
 
-  // Check for attendance keyword trigger
-  const attendanceDetection = AttendanceDetectorService.detectAttendanceIntent(messageBody);
-  if (user?.id && attendanceDetection.detected) {
-    logToFile('📋 Attendance keyword detected, starting session', { userId: user.id, message: messageBody, confidence: attendanceDetection.confidence });
-    typingController.stop();
-
-    try {
-      const result = await AttendanceConversationService.startAttendanceSession(user.id);
-
-      if (result.action === 'SEND_SETUP_FLOW') {
-        // Slack/Discord have a real Flow-equivalent for attendance/class-setup
-        // — same driverForIdentifier() branch shape as /settings and the
-        // "add class" keyword branch above.
-        if (driverForIdentifier(from) === 'slack') {
-          await WhatsAppService.sendInteractiveButtons(from, {
-            body: result.message,
-            buttons: [{ id: 'open_modal:attendance', title: 'Set Up Class' }],
-          });
-          return;
-        }
-        if (driverForIdentifier(from) === 'discord') {
-          await WhatsAppService.sendInteractiveButtons(from, {
-            body: result.message,
-            buttons: [{ id: 'discord_start_flow:attendance', title: 'Set Up Class' }],
-          });
-          return;
-        }
-
-        // User has no classes — set one up, as a Flow or as the text equivalent.
-        const setupSent = await WhatsAppService.sendFlow(from, {
-          flowId: ATTENDANCE_SETUP_FLOW_ID,
-          flowKind: 'class-setup',
-          header: '📋 Class Setup',
-          body: result.message,
-          buttonText: 'Set Up Class',
-          screen: 'CLASS_INFO',
-          flowToken: user.id  // Pass user ID so endpoint can create class for correct user
-        });
-        if (setupSent) {
-          logToFile('📋 Sent attendance setup flow', { userId: user.id, flowId: ATTENDANCE_SETUP_FLOW_ID });
-        } else {
-          // Neither a Flow nor a text flow is available — say what we know.
-          await WhatsAppService.sendMessage(from, result.message);
-          logToFile('⚠️ Class setup unavailable on this channel, sent text message instead', { userId: user.id });
-        }
-      } else if (result.action === 'ASK_CLASS_SELECTION' || result.action === 'ASK_MARKING_METHOD') {
-        await WhatsAppService.sendMessage(from, result.message);
-      } else if (result.action === 'ERROR') {
-        await WhatsAppService.sendMessage(from, result.message);
-      }
-
-      return; // Exit early - handled by attendance system
-    } catch (error) {
-      logToFile('Error starting attendance session', { error: error.message, userId: user?.id });
-      await WhatsAppService.sendMessage(from, 'Sorry, something went wrong. Please try again.');
-      return;
-    }
+  // Check for attendance keyword trigger ("attendance", "attendance 30 sep",
+  // "class attendance") — role-aware: a head teacher's is staff attendance.
+  if (await AttendanceEntryService.handleTrigger({ user, from, messageBody, typingController })) {
+    return; // Exit early - handled by attendance system
   }
 
   // ============================================================

@@ -202,18 +202,22 @@ key(s) that switch it on.
 | 💬 **[AI Chat](docs/features/ai-chat.md)** | Ask any teaching question by text or voice; get an expert, pedagogy-grounded answer | core (uses `OPENROUTER_API_KEY`); voice needs `SONIOX_API_KEY` |
 | 📝 **[Registration](docs/features/registration.md)** | Friendly WhatsApp onboarding for teachers | _always on (core)_ |
 | 🎯 **[Classroom Coaching](docs/features/coaching.md)** | A class recording → framework-scored report + reflective conversation | `SONIOX_API_KEY` |
+| 📏 **[Lesson-plan Fidelity](docs/features/lesson-plan-fidelity.md)** | Did the lesson follow the plan? The plan → observable moves → each checked against the timestamped recording, with the moment as proof | `LP_FIDELITY_ENABLED=true` + `SONIOX_API_KEY` |
 | 📖 **[Reading Assessment](docs/features/reading-assessment.md)** | A student reads aloud → fluency, accuracy, pronunciation, comprehension | `SONIOX_API_KEY` |
 | 📋 **[Lesson Plans](docs/features/lesson-plans.md)** | A topic + grade → a full lesson-plan PDF | `GAMMA_API_KEY` |
 | 📸 **[Pic-to-LP](docs/features/pic-to-lp.md)** | A photo of a textbook page → an illustrated 2-page lesson plan | `KIE_API_KEY` |
 | 📚 **[Homework](docs/features/homework.md)** | Pick a class + chapters → a curriculum homework bundle PDF | `HOMEWORK_FLOW_ID` |
 | 🧠 **[Quiz](docs/features/quiz.md)** | Teacher sends a topic quiz to a class; students answer on their parents' WhatsApp, teacher gets a results report | _core (uses `OPENROUTER_API_KEY`)_ |
+| 📝 **[Test Papers](docs/features/test-papers.md)** | A chapter or a whole unit — from a loaded textbook, the teacher's own lesson plans or an uploaded chapter — → a printable test paper + separate answer key, any language (right-to-left included); edits make new versions, "my papers" re-sends | _core (uses `OPENROUTER_API_KEY`)_; PDFs need Chromium |
 | 🎬🎓 **[Video Quizzes](docs/features/video-quizzes.md)** | A curriculum video → its quiz, 3 s later — pictures, voice notes, class share links, and a next-morning reteach report. Ships with the open **Taleemabad content library** ([see below ↓](#-the-taleemabad-content-library)) | one import script + `DEFAULT_REGION=pakistan` |
 | 🗣️ **[Voice Messages](docs/features/voice.md)** | Full spoken interaction in many languages | `SONIOX_API_KEY` + `ELEVENLABS_API_KEY` |
 | 🎬 **[Video Generation](docs/features/video.md)** | A topic → a short narrated educational video | `VIDEO_GENERATION_ENABLED` + `KIE_API_KEY` |
-| ✅ **[Attendance](docs/features/attendance.md)** | Mark attendance by voice or by tapping names — works the same way on WhatsApp, Slack, Discord and Matrix | _always on (core)_ |
+| ✅ **[Attendance](docs/features/attendance.md)** | Mark a class (teacher) or the staff (head teacher) by voice or by tapping names, approved leave included; get back the month's register, regenerated whole after every mark — on WhatsApp, Slack, Discord and Matrix | _always on (core)_ |
+| 👋 **[Teacher Nudges](docs/features/teacher-nudges.md)** | A teacher who has gone quiet for about a day gets one short, friendly check-in — once per quiet spell, on whichever channel they last used | `TEACHER_NUDGES_ENABLED` |
 | 🧮 **[Exam Checker](docs/features/exam-checker.md)** | Photograph answer sheets → vision OCR + AI grading | `MISTRAL_API_KEY` |
 | 🔐 **[Rumi Messenger (Matrix)](docs/channels/matrix.md)** | Run Rumi on your own end-to-end-encrypted messenger: same features, numbered menus instead of buttons, no per-message fee | `MATRIX_HOMESERVER_URL` + `MATRIX_ACCESS_TOKEN` |
 | 🌅 **[Morning Brief](docs/features/morning-brief.md)** | Every morning, one thread that tells your team how the programme is doing — registration, lesson plans, coaching, scores, reading, every school worst-first — on WhatsApp, Slack, Discord or Matrix, with a live page | `BRIEF_RECIPIENTS` + a read-only `BRIEF_DATABASE_URL` |
+| 🔭 **[Observe — the coach's assistant](docs/features/observe.md)** | For the people who visit classrooms: a lesson recording becomes pre-filled ratings the coach edits, a guide for the feedback conversation, coaching on how that conversation went (never a score, and no praise for a belittling one), and a warm report for the teacher — with a schedule, a pending list and a portal view | `OBSERVE_ENABLED=true` + a roster (`node bot/scripts/observe-roster.js`); recordings need `SONIOX_API_KEY` |
 
 > **No tiers, no toggles to hunt for.** Rumi gates features by **presence**: set a feature's API key and it
 > switches on; leave it blank and it stays off cleanly — the bot never crashes over a missing key. Run

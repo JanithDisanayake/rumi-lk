@@ -19,6 +19,7 @@
  * 5. lesson_plan_extraction - Extract text from uploaded lesson plans
  * 6. video_generation - Educational video via Kie.ai + FFmpeg (10-12 min)
  * 7. exam_grading - Exam checking with OCR + GPT grading (5-10 min)
+ * 8. observe_debrief - A coach's debrief recording → coach-the-coach feedback
  *
  * Advantages over PostgreSQL queue:
  * - No database polling (reduces DB load by 90%)
@@ -37,6 +38,10 @@ require('dotenv').config();
 // one -- see shared/services/messaging/matrix-outbound-relay.js. Must run before
 // any job can reach the messaging layer. A no-op for deployments without Matrix.
 require('../shared/services/messaging/matrix-outbound-relay').useRelayForThisProcess();
+
+// The operator's RUMI_FEATURE_* switches, as the bot loads them: a job for a
+// feature switched off after it was queued is not run (see testpaper.worker).
+require('../shared/config/feature-availability').overrides.load(process.env);
 const supabase = require('../shared/config/supabase');
 const { logToFile } = require('../shared/utils/logger');
 const SQSQueueService = require('../shared/services/queue');
@@ -412,6 +417,36 @@ class SQSCoachingWorker {
         break;
       }
 
+      case 'observe_debrief': {
+        // A coach's recorded debrief conversation → coach-the-coach feedback.
+        const ObserveDebrief = require('../shared/services/observe/observe-debrief.service');
+        await ObserveDebrief.processDebriefRecording(sessionId, payload);
+        break;
+      }
+
+      // Observe: the teacher's report (preview to the coach, delivery, or the
+      // teacher's tap on the invite). It records its own delivery state and
+      // tells the coach about failures, so it never throws for a send.
+      case 'observe_teacher_report': {
+        await SQSQueueService.extendJobTimeout(receiptHandle, 300); // hero render + sends
+        await require('../shared/services/observe/observe-send.service').processTeacherReport(sessionId, payload);
+        break;
+      }
+
+      // Test papers (/testpaper): write or revise one version, then print and
+      // send the paper + answer key. A long paper in a right-to-left script can
+      // take a few minutes end to end, so the job gets ten.
+      case 'testpaper_generate':
+      case 'testpaper_revise': {
+        await SQSQueueService.extendJobTimeout(receiptHandle, 600);
+        const TestPaperWorker = require('./testpaper.worker');
+        await TestPaperWorker.process({
+          ...payload,
+          action: jobType === 'testpaper_revise' ? 'revise' : 'generate',
+        });
+        break;
+      }
+
       default:
         throw new Error(`Unknown job type: ${jobType}`);
     }
@@ -451,6 +486,16 @@ class SQSCoachingWorker {
       // Skip DB update for lesson_plan_generation - it handles its own error state
       if (jobType === 'lesson_plan_generation') {
         logToFile('Lesson plan generation failure handled by worker', { sessionId });
+        return;
+      }
+
+      // The observe jobs belong to an observation whose lesson pipeline already
+      // succeeded: a failed debrief or report must never mark the session
+      // 'failed'. Their own state lives in analysis_data (the send service owns
+      // teacher_delivery and tells the coach), and the debrief retry sweep
+      // re-queues a stuck recording.
+      if (jobType === 'observe_debrief' || jobType === 'observe_teacher_report') {
+        logToFile('Observe job failure left to its own retry path', { sessionId, jobType });
         return;
       }
 
@@ -903,6 +948,80 @@ async function recoverStaleVideoRequests() {
 }
 
 // ============================================================================
+// DEBRIEF RETRY SWEEP
+// ============================================================================
+
+const DEBRIEF_RETRY_INTERVAL_MS = 15 * 60 * 1000;
+const DEBRIEF_RETRY_LOCK_TTL_S = 30 * 60;
+const DEBRIEF_RETRY_TICK_CAP = 50;
+
+function debriefRetryOff() {
+  const v = String(process.env.OBSERVE_DEBRIEF_RETRY_OFF || '').trim().toLowerCase();
+  return v === '1' || v === 'true';
+}
+
+/**
+ * Re-queue debrief recordings whose transcription failed (a provider outage
+ * outlasts the queue's own quick retries). The pure planner
+ * (observe/debrief-retry-sweep.js) picks the rows; a per-row Redis lock keeps
+ * replicas — and the previous tick — from double-queueing one; a per-attempt
+ * phase makes each retry its own job (the queue dedups on session + type +
+ * phase + the recording's nonce). OBSERVE_DEBRIEF_RETRY_OFF=true switches it off.
+ */
+async function runDebriefRetrySweep({ now = Date.now() } = {}) {
+  if (debriefRetryOff()) return { off: true, scanned: 0, eligible: 0, queued: 0, skipped: 0 };
+  const { selectDebriefsToRetry, MAX_AGE_DAYS } = require('../shared/services/observe/debrief-retry-sweep');
+  const { TERMINAL_IN_FILTER } = require('../shared/services/observe/observe-terminal');
+  const redisService = require('../shared/services/cache/railway-redis.service');
+  const CoachingJobQueueService = require('../shared/services/coaching/coaching-job-queue.service');
+
+  const cutoffIso = new Date(now - MAX_AGE_DAYS * 24 * 3600 * 1000).toISOString();
+  const { data: rows, error } = await supabase
+    .from('coaching_sessions')
+    .select('id, debrief_status, created_at, observer_debrief:analysis_data->observer_debrief')
+    .eq('debrief_status', 'pending')
+    .not('status', 'in', TERMINAL_IN_FILTER)
+    .not('observer_user_id', 'is', null)
+    .not('analysis_data->observer_debrief->>audio_id', 'is', null)
+    .is('analysis_data->observer_debrief->>transcript', null)
+    .gte('created_at', cutoffIso)
+    .order('created_at', { ascending: true })
+    .limit(DEBRIEF_RETRY_TICK_CAP);
+  if (error) {
+    logToFile('❌ debrief retry sweep: query failed', { error: error.message });
+    return { scanned: 0, eligible: 0, queued: 0, skipped: 0, error: error.message };
+  }
+
+  const reasons = {};
+  const eligible = selectDebriefsToRetry(rows || [], now, {}, reasons);
+  let queued = 0;
+  let skipped = 0;
+  for (const row of eligible) {
+    const lock = await redisService.setNX(`debrief:retry:${row.id}`, String(now), DEBRIEF_RETRY_LOCK_TTL_S);
+    if (!lock) { skipped++; continue; }
+    try {
+      const attempt = (Number(row.observer_debrief.attempts) || 0) + 1;
+      await CoachingJobQueueService.queueObserveDebrief(row.id, {
+        audioId: row.observer_debrief.audio_id,
+        mimeType: row.observer_debrief.audio_mime || null,
+        trigger: 'debrief_retry_sweep',
+        attempt,
+        phase: `retry-${attempt}`,
+      });
+      queued++;
+    } catch (err) {
+      skipped++;
+      logToFile('❌ debrief retry sweep: queue failed for one row', { sessionId: row.id, error: err.message });
+    }
+  }
+  const summary = {
+    scanned: (rows || []).length, eligible: eligible.length, queued, skipped, mediaGone: Number(reasons.mediaGone) || 0,
+  };
+  if (summary.scanned) logToFile('🔁 debrief retry sweep', summary);
+  return summary;
+}
+
+// ============================================================================
 // START WORKER
 // ============================================================================
 
@@ -916,12 +1035,82 @@ logToFile('🚀 Starting SQS Coaching Worker', {
   sqsQueueUrl: process.env.SQS_QUEUE_URL
 });
 
+// ============================================================================
+// TEACHER NUDGES
+// ============================================================================
+
+const TEACHER_NUDGES_FIRST_RUN_MS = 90 * 1000;
+const TEACHER_NUDGES_DEFAULT_SWEEP_MINUTES = 5;
+
+/**
+ * TEACHER_NUDGES_SWEEP_MINUTES as milliseconds. Fractional minutes are allowed
+ * (0.5 = every 30 s, for testing); anything below 0.1 minute, or not a number,
+ * is refused rather than clamped, and the 5-minute default stands.
+ */
+function teacherNudgesSweepMs(raw = process.env.TEACHER_NUDGES_SWEEP_MINUTES) {
+  const minutes = Number(raw);
+  if (raw === undefined || raw === '' || !Number.isFinite(minutes) || minutes < 0.1) {
+    return TEACHER_NUDGES_DEFAULT_SWEEP_MINUTES * 60 * 1000;
+  }
+  return Math.round(minutes * 60 * 1000);
+}
+
+/**
+ * Arm the teacher-nudge sweep (see docs/features/teacher-nudges.md).
+ *
+ * GATED ON THE FLAG AT BOOT as well as inside runSweep: with
+ * TEACHER_NUDGES_ENABLED off this registers nothing and arms nothing. Turning
+ * the flag OFF takes effect on the very next tick (runSweep re-reads it);
+ * turning it ON needs a restart. Several replicas each arming this is safe —
+ * the sweep's claim is single-flight.
+ *
+ * First run 90 s after boot, then every TEACHER_NUDGES_SWEEP_MINUTES: a
+ * deployment that restarts often resets the interval each time, so an interval
+ * alone might never fire. Ticks are skipped while the worker shuts down.
+ */
+function armTeacherNudges() {
+  const sweeper = require('../shared/services/nudges/teacher-nudges.sweeper');
+  if (!sweeper.isEnabled()) {
+    logToFile('Teacher-nudge sweep not enabled on this worker', { reason: 'TEACHER_NUDGES_ENABLED is off' });
+    return false;
+  }
+
+  const { registerAllKinds } = require('../shared/services/nudges/kinds');
+  const kinds = registerAllKinds(sweeper);
+  const everyMs = teacherNudgesSweepMs();
+
+  const runTeacherNudgesSweep = async () => {
+    if (worker.isShuttingDown) return;
+    try {
+      await sweeper.runSweep({});
+    } catch (error) {
+      // runSweep never throws by contract; wrapped anyway, because an error
+      // escaping here would surface as an unhandled rejection every tick.
+      logToFile('Error in teacher-nudge sweep (non-fatal)', { error: error.message });
+    }
+  };
+
+  setTimeout(() => {
+    runTeacherNudgesSweep();
+    setInterval(runTeacherNudgesSweep, everyMs);
+  }, TEACHER_NUDGES_FIRST_RUN_MS);
+
+  logToFile('Teacher-nudge sweep enabled', {
+    kinds,
+    firstRunSeconds: TEACHER_NUDGES_FIRST_RUN_MS / 1000,
+    everyMinutes: everyMs / 60000,
+  });
+  return true;
+}
+
 // Recover stale requests before starting worker. Gated behind
 // require.main === module so the file can be required as a library without
 // firing the recovery sweep + worker start.
 function startWorker() {
   startHealthEndpoint();
   return Promise.all([
+    // Teachers' own coaching reads depend on coaching_sessions.observation_type (own-coaching.js).
+    require('../shared/services/coaching/own-coaching').probe(),
     recoverStaleLessonPlanRequests(),
     recoverStaleVideoRequests(),
     ExamGradingWorker.recoverStaleExamSessions(),
@@ -948,6 +1137,23 @@ function startWorker() {
     }, STALE_CHECK_INTERVAL_MS);
 
     logToFile('Periodic stale job recovery enabled (every 5 minutes)');
+
+    // Debrief retry sweep: boot run (a redeploy resets the timer) + every 15
+    // minutes. A no-op when /observe is unused (nothing matches the query).
+    const runDebriefRetry = async () => {
+      if (worker.isShuttingDown) return;
+      try {
+        await runDebriefRetrySweep();
+      } catch (error) {
+        logToFile('Error in debrief retry sweep (non-fatal)', { error: error.message });
+      }
+    };
+    setTimeout(runDebriefRetry, 2 * 60 * 1000);
+    setInterval(runDebriefRetry, DEBRIEF_RETRY_INTERVAL_MS);
+    logToFile('Debrief retry sweep enabled (OBSERVE_DEBRIEF_RETRY_OFF=true disables)', { enabled: !debriefRetryOff() });
+
+    // Scheduled teacher nudges — a no-op unless TEACHER_NUDGES_ENABLED is on.
+    armTeacherNudges();
   });
 }
 
@@ -956,4 +1162,7 @@ if (require.main === module) {
 }
 
 // Export for testing
-module.exports = { SQSCoachingWorker, WORKER_ID, startWorker, recoverStaleVideoRequests };
+module.exports = {
+  SQSCoachingWorker, WORKER_ID, startWorker, recoverStaleVideoRequests, runDebriefRetrySweep, worker,
+  teacherNudgesSweepMs,
+};

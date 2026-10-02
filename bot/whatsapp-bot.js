@@ -21,6 +21,7 @@ const { handleTextMessage } = require('./shared/handlers/text-message.handler');
 const { handleVoiceMessage } = require('./shared/handlers/voice-message.handler');
 const { handleImageMessage } = require('./shared/handlers/image-message.handler');
 const ExamCheckerHandler = require('./shared/handlers/exam-checker.handler');
+const { routeTestPaperSelection, routeTestPaperDocument } = require('./shared/handlers/testpaper-trigger');
 
 // Import Utils
 const { logToFile, LOGS_DIR } = require('./shared/utils/logger');
@@ -419,7 +420,7 @@ async function handleWebhookPost(req, res) {
     try {
       const channelIdentity = resolveChannelIdentity(from);
       user = channelIdentity
-        ? await getOrCreateUserByChannel(channelIdentity.channel, channelIdentity.channelUserId)
+        ? await getOrCreateUserByChannel(channelIdentity.channel, channelIdentity.channelUserId, { replyIdentifier: from })
         : await getOrCreateUser(from);
       logToFile('User retrieved/created', { userId: user.id, phoneNumber: from });
     } catch (error) {
@@ -460,6 +461,24 @@ async function handleWebhookPost(req, res) {
       // Handle interactive button responses
       const buttonId = message.interactive.button_reply.id;
       logToFile('📱 Interactive button clicked', { buttonId, from });
+
+      // Observe taps (capture ack, cancel, debrief, report …) — one dispatcher,
+      // ahead of every other branch so no other feature can claim an observe id.
+      if (buttonId.startsWith('observe_')) {
+        const { handleObserveInteractive } = require('./shared/handlers/observe-interactive.handler');
+        if (await handleObserveInteractive(user, from, buttonId)) return;
+      }
+
+      // Classroom-photo question (photo_yes_/photo_no_/photo_more_/photo_done_):
+      // "No"/"Done" move the coaching session on to the lesson-plan step.
+      const { handleCoachingFlowButton } = require('./shared/services/coaching/coaching-flow-buttons');
+      if (await handleCoachingFlowButton(buttonId, from, user)) return;
+      // Test papers (tp_ ids): Edit / New paper / My papers after a delivery.
+      // Acknowledged before returning: Meta retries a webhook it gets no 200 for.
+      if (await routeTestPaperSelection({ user, from, id: buttonId })) {
+        res.status(200).send('EVENT_RECEIVED');
+        return;
+      }
 
       // Coaching confirmation buttons
       if (buttonId.startsWith('coaching_confirm_')) {
@@ -936,6 +955,13 @@ async function handleWebhookPost(req, res) {
         userId: user?.id
       });
 
+      // Observe: a teacher tapped the report-invite template (observe_report_<id>).
+      // The tap may come from someone with no account yet, so it needs no user.
+      if (buttonPayload && buttonPayload.startsWith('observe_report_')) {
+        const { handleReportTap } = require('./shared/services/observe/observe-send.service');
+        if (await handleReportTap(from, buttonPayload)) return;
+      }
+
       // Handle style_* payloads from video style carousel
       if (buttonPayload && buttonPayload.startsWith('style_')) {
         if (user) {
@@ -1048,6 +1074,20 @@ async function handleWebhookPost(req, res) {
         } catch (vqFlowErr) {
           logToFile('❌ video-quiz Flow reply routing failed', { error: vqFlowErr.message });
         }
+      }
+
+      // The coach's observation form (/observe). Routed on its own
+      // observe_action tag before the detector: its "<observerId>:<sessionId>"
+      // token would otherwise read as an attendance Flow.
+      if (responseJson.observe_action !== undefined) {
+        try {
+          const ObserveDraft = require('./shared/services/observe/observe-draft.service');
+          await ObserveDraft.completeFromFlow(user, from, responseJson);
+        } catch (observeFlowErr) {
+          // The edits are already saved by the endpoint; only the ack failed.
+          logToFile('❌ observe form Flow reply failed', { from, error: observeFlowErr.message });
+        }
+        return;
       }
 
       // Use centralized flow type detection (fixes registration→attendance misrouting)
@@ -1177,6 +1217,17 @@ async function handleWebhookPost(req, res) {
       const listId = listReply.id;
       logToFile('📋 Interactive list item selected', { listId, from });
 
+      if (listId.startsWith('observe_')) {
+        const { handleObserveInteractive } = require('./shared/handlers/observe-interactive.handler');
+        if (await handleObserveInteractive(user, from, listId)) return;
+      }
+
+      // Test papers (tp_ ids): source, chapter, size, language, my papers.
+      if (await routeTestPaperSelection({ user, from, id: listId })) {
+        res.status(200).send('EVENT_RECEIVED');
+        return;
+      }
+
       // Video-quiz answers arrive as list_reply whenever the question has 4
       // options or a title too long for a 20-char button. Same `vq_` ids as
       // the button path — routed here too, or a four-option question would
@@ -1184,6 +1235,12 @@ async function handleWebhookPost(req, res) {
       if (listId.startsWith('vq_')) {
         const VideoQuizService = require('./shared/services/quiz/video-quiz.service');
         if (await VideoQuizService.handleAnswer(from, listId)) return;
+      }
+
+      // The lesson-plan picker of the coaching flow (lp_select_/lp_upload_/lp_none_).
+      if (/^lp_(select|upload|none)_/.test(listId)) {
+        const { handleLpListSelection } = require('./shared/services/coaching/lp-coaching/lp-list-selection.handler');
+        if (await handleLpListSelection(listId, from)) return;
       }
 
       // /quiz's class picker. QuizOrchestrator.initiateQuizRequest builds these
@@ -1515,6 +1572,9 @@ async function handleDocumentMessage(message, from, user) {
   }
 
   try {
+    // A chapter the teacher was asked to send for a test paper.
+    if (await routeTestPaperDocument({ user, from, message })) return;
+
     const documentId = message.document.id;
     const mimeType = message.document.mime_type || '';
 
@@ -1549,8 +1609,28 @@ async function handleDocumentMessage(message, from, user) {
           mimeType
         });
 
+        // OBSERVE: a coach's lesson recording usually arrives as a FILE. It is
+        // an observation (or a debrief), never the coach's own coaching — the
+        // observe router decides before the self-coaching threshold below.
+        const ObserveGate = require('./shared/services/observe/observe-gate');
+        if (user && ObserveGate.isObserveEnabled() && ObserveGate.isSchoolLeader(user)) {
+          const { routeLeaderAudio } = require('./shared/services/observe/observe-audio-router');
+          const { getOrCreateSession: observeSession } = require('./shared/database/bot-helpers');
+          const handled = await routeLeaderAudio({
+            user,
+            from,
+            audioId: documentId,
+            sessionId: await observeSession(user.id),
+            isLongAudio: audioDurationRounded >= require('./shared/config/coaching-audio').classroomAudioThresholdSeconds(),
+            durationSeconds: audioDurationRounded || null,
+            mimeType,
+          });
+          if (handled) return;
+        }
+
         // Check if audio is 15+ minutes (900 seconds) = classroom audio
-        const CLASSROOM_AUDIO_THRESHOLD = 900; // 15 minutes in seconds
+        // COACHING_MIN_AUDIO_SECONDS, default 900 (15 minutes)
+        const CLASSROOM_AUDIO_THRESHOLD = require('./shared/config/coaching-audio').classroomAudioThresholdSeconds();
 
         if (audioDurationRounded >= CLASSROOM_AUDIO_THRESHOLD) {
           logToFile('🎓 CLASSROOM AUDIO DETECTED (15+ minutes)', {
@@ -1973,6 +2053,9 @@ function registerChannelShutdownHandlers() {
  * Express `app` without its listener) does NOT bind to a port.
  */
 function startServer() {
+  // Does coaching_sessions have observation_type yet? Teachers' own coaching
+  // reads depend on it (see own-coaching.js); a missing migration is logged.
+  require('./shared/services/coaching/own-coaching').probe();
   wireBaileysInboundIfSelected();
   registerChannelShutdownHandlers();
   exitOnChannelLogout();

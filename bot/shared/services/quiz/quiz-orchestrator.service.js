@@ -253,6 +253,7 @@ class QuizOrchestrator {
       );
 
       const QuizGenerationService = require('./quiz-generation.service');
+      const { planContentForPrompt } = require('../coaching/fidelity/lesson-plan-text');
       const QuizDeliveryService = require('./quiz-delivery.service');
 
       const quizId = await QuizGenerationService.generateAndStore({
@@ -262,7 +263,7 @@ class QuizOrchestrator {
         topic: lp.topic,
         grade: lp.grade || classData?.class_name,
         subject: lp.subject,
-        sourceContent: lp.content ? JSON.stringify(lp.content) : null,
+        sourceContent: lp.content ? JSON.stringify(planContentForPrompt(lp.content)) : null,
         quizSource: 'lesson_plan',
         language
       });

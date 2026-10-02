@@ -28,7 +28,7 @@ const CoachingSessionService = require('./coaching-session.service');
 const CoachingHelpersService = require('./coaching-helpers.service');
 const PDFReportService = require('../pdf-report.service');
 const FeatureLinkerService = require('../feature-linker.service');
-const { uploadVoiceDebrief, uploadReportPDF } = require('../../storage/r2');
+const { uploadVoiceDebrief, uploadReportPDF, isR2Configured } = require('../../storage/r2');
 const { TEMP_DIR } = require('../../utils/constants');
 const { getCoachingMessage } = require('../../config/coaching-messages');
 
@@ -45,6 +45,7 @@ const {
   CLASSROOM_MARKS_WITH_LP
 } = require('../../constants/scoring.constants');
 const { getReportTransformer } = require('./report-transformers/report-transformer-dispatch');
+const { ownCoaching } = require('./own-coaching');
 
 class ReportGeneratorService {
   /**
@@ -181,6 +182,18 @@ class ReportGeneratorService {
 
       // Send PDF immediately with proper filename
       await this.sendPDFReport(from, coachingSessionId, pdfBuffer, displayName(session.users, 'Teacher', { firstOnly: true }), session.created_at);
+
+      // Lesson-plan fidelity: one line saying how the lesson compared with the plan, or exactly why it wasn't
+      // compared. Only when the feature ran (analysis_data.lp_fidelity); never fails the report.
+      if (enhancedAnalysis.lp_fidelity) {
+        try {
+          const { fidelityChatLineFor } = require('./fidelity/fidelity-report');
+          const line = fidelityChatLineFor(enhancedAnalysis.lp_fidelity, _languageFromSession(session));
+          if (line) await WhatsAppService.sendMessage(from, line);
+        } catch (lineError) {
+          logToFile('⚠️ Fidelity summary line failed (non-critical)', { coachingSessionId, error: lineError.message });
+        }
+      }
 
       // Generate and send voice debrief (optional, won't fail entire process)
       if (!isRetry) {
@@ -413,11 +426,11 @@ class ReportGeneratorService {
     try {
       logToFile('Fetching prior coaching sessions with compression', { userId, currentSessionId });
 
-      const { data: priorSessions, error } = await supabase
+      const { data: priorSessions, error } = await ownCoaching(supabase
         .from('coaching_sessions')
         .select('id, created_at, analysis_data')
         .eq('user_id', userId)
-        .eq('status', 'completed')
+        .eq('status', 'completed')) // never a coach's observation of this teacher: it is not their own session
         .neq('id', currentSessionId)
         .order('created_at', { ascending: false });
 
@@ -492,11 +505,11 @@ class ReportGeneratorService {
     try {
       logToFile('⚠️  Using deprecated fetchPriorSession() - use fetchAndCompressPriorFeedback() instead', { userId });
 
-      const { data: priorSession, error } = await supabase
+      const { data: priorSession, error } = await ownCoaching(supabase
         .from('coaching_sessions')
         .select('id, created_at, analysis_data')
         .eq('user_id', userId)
-        .eq('status', 'completed')
+        .eq('status', 'completed')) // never a coach's observation of this teacher: it is not their own session
         .neq('id', currentSessionId)
         .order('created_at', { ascending: false })
         .limit(1)
@@ -577,11 +590,11 @@ class ReportGeneratorService {
     // Check if user has prior completed sessions (needed by OECD transformer)
     let hasPriorSessions = false;
     try {
-      const { count, error: countError } = await supabase
+      const { count, error: countError } = await ownCoaching(supabase
         .from('coaching_sessions')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', session.user_id)
-        .eq('status', 'completed')
+        .eq('status', 'completed')) // never a coach's observation of this teacher: it is not their own session
         .neq('id', session.id);
       if (!countError) hasPriorSessions = (count || 0) > 0;
     } catch (e) {
@@ -854,11 +867,11 @@ class ReportGeneratorService {
     // PRIOR FEEDBACK (separate from 5 main goals, 5 marks total)
     // Check if user has prior completed sessions
     let hasPriorSessions = false;
-    const { count, error: countError } = await supabase
+    const { count, error: countError } = await ownCoaching(supabase
       .from('coaching_sessions')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', session.user_id)
-      .eq('status', 'completed')
+      .eq('status', 'completed')) // never a coach's observation of this teacher: it is not their own session
       .neq('id', session.id);
 
     if (countError) {
@@ -1264,15 +1277,23 @@ class ReportGeneratorService {
         session.transcript_language
       );
 
-      const voiceScript = await GPT5MiniService.summarizeForVoiceDebrief(
-        {
-          analysis: enhancedAnalysis,
-          conversation: session.conversation_state,
-          hasLessonPlan: !!enhancedAnalysis.has_lesson_plan,
-          fidelityScore: enhancedAnalysis.fidelity_analysis?.score || null
-        },
-        outputLanguage
-      );
+      // With lesson-plan fidelity measured, the voice gets the band in words and the move count — never a
+      // percentage it could read out (projectForVoice). Without it, the payload is as it always was.
+      const voiceData = {
+        analysis: enhancedAnalysis,
+        conversation: session.conversation_state,
+        hasLessonPlan: !!enhancedAnalysis.has_lesson_plan,
+        fidelityScore: enhancedAnalysis.fidelity_analysis?.score || null
+      };
+      if (enhancedAnalysis.lp_fidelity) {
+        const { projectForVoice } = require('./fidelity/fidelity-report');
+        const projected = projectForVoice(enhancedAnalysis, outputLanguage);
+        voiceData.analysis = projected.analysis;
+        voiceData.hasLessonPlan = voiceData.hasLessonPlan || !!enhancedAnalysis.lp_fidelity.source;
+        voiceData.fidelityScore = null;
+        voiceData.lessonPlanFidelity = projected.lessonPlanFidelity;
+      }
+      const voiceScript = await GPT5MiniService.summarizeForVoiceDebrief(voiceData, outputLanguage);
 
       logToFile('Voice debrief script generated', {
         coachingSessionId,
@@ -1287,6 +1308,14 @@ class ReportGeneratorService {
 
       // Generate audio from script
       const voiceBuffer = await AudioService.generateSpeechForLanguage(voiceScript, outputLanguage);
+
+      // Without object storage (R2 is optional) the voice note is sent from memory instead of by URL.
+      if (!isR2Configured()) {
+        await WhatsAppService.sendMessage(phoneNumber, getCoachingMessage('voiceSummaryReady', _languageFromSession(session)));
+        await WhatsAppService.sendAudio(phoneNumber, voiceBuffer, TEMP_DIR);
+        logToFile('Voice debrief sent without object storage', { coachingSessionId });
+        return;
+      }
 
       // Upload voice debrief to R2
       const voiceUrl = await uploadVoiceDebrief(

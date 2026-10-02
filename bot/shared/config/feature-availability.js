@@ -107,6 +107,23 @@ const FEATURES = [
     keys: ['BRIEF_RECIPIENTS'],
     notes: 'Needs BRIEF_DATABASE_URL or DATABASE_URL and python3 with matplotlib; schedule bot/workers/brief.worker.js daily.',
   },
+  {
+    id: 'teacher_nudges',
+    name: 'Teacher nudges (check-ins with teachers who went quiet)',
+    keys: ['TEACHER_NUDGES_ENABLED'],
+    // An on/off switch, not a credential: present is not enough, it must say on.
+    flags: ['TEACHER_NUDGES_ENABLED'],
+    notes: 'Set TEACHER_NUDGES_ENABLED=true (or 1 / yes); the SQS worker then sweeps every TEACHER_NUDGES_SWEEP_MINUTES, '
+      + 'or schedule bot/workers/teacher-nudges.worker.js from cron. On the Meta driver, sends only inside '
+      + 'the 24-hour window.',
+  },
+  {
+    id: 'observe',
+    name: 'Observe — the coach\'s assistant (/observe)',
+    keys: ['OBSERVE_ENABLED'],
+    notes: 'Set OBSERVE_ENABLED=true. Coaches are users with a role in OBSERVE_LEADER_ROLES — assign them '
+      + 'with `node bot/scripts/observe-roster.js`. Needs a speech-to-text key for the recordings.',
+  },
   { id: 'tts_elevenlabs', name: 'Spoken replies (text-to-speech, ElevenLabs)', keys: ['ELEVENLABS_API_KEY'] },
   { id: 'tts_uplift', name: 'Urdu / regional voices (Uplift)', keys: ['UPLIFT_API_KEY'] },
   { id: 'lesson_plans_gamma', name: 'Lesson-plan generation (Gamma)', keys: ['GAMMA_API_KEY'] },
@@ -129,12 +146,33 @@ const FEATURES = [
     keysAny: ['MISTRAL_API_KEY', 'CHANDRA_API_KEY'],
   },
   { id: 'observability_axiom', name: 'Observability (Axiom)', keys: ['AXIOM_DATASET', 'AXIOM_TOKEN'] },
+  // Lesson-plan fidelity is gated on a FLAG as well as a key: it ships off (LP_FIDELITY_ENABLED=true turns it on),
+  // and it needs Soniox because only the diarized transcript carries the [MM:SS] timings the grader quotes.
+  {
+    id: 'lp_fidelity',
+    name: 'Lesson-plan fidelity (did the lesson follow the plan?)',
+    keys: ['SONIOX_API_KEY'],
+    flag: 'LP_FIDELITY_ENABLED',
+    probe: 'diarization',
+    notes: 'Set LP_FIDELITY_ENABLED=true. Grades with OPENROUTER_API_KEY (LP_FIDELITY_MODEL, default google/gemini-3.8-flash).',
+  },
+  // Test papers need only the model key every deployment already has (either
+  // provider llm-client supports), so they are on by default; RUMI_FEATURE_TEST_PAPER=off
+  // turns them off. Printing the PDF needs Chromium, like the reading report.
+  {
+    id: 'test_paper',
+    name: 'Test papers from the book (/testpaper)',
+    keysAny: ['OPENROUTER_API_KEY', 'OPENAI_API_KEY'],
+    notes: 'Builds papers from loaded textbooks, a teacher\'s lesson plans or an uploaded chapter. '
+      + 'Optional: TESTPAPER_MODEL, TESTPAPER_CURRICULUM. PDFs need Chromium (PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH).',
+  },
 ];
 
 // A var counts as "set" only if it holds a real value — not a template placeholder.
 // Placeholders the template ships: CHANGEME-*, your-project / your_ / YOUR_, and <…> angle stubs.
 // (REDIS_URL=redis://localhost:6379 is a legitimate local default and is intentionally NOT a placeholder.)
 const PLACEHOLDER_RE = /^CHANGEME|your-project|your_|^YOUR_|^<.*>$/i;
+const FLAG_ON_RE = /^(true|1|yes)$/i;
 const isSet = (v) => typeof v === 'string' && v.trim() !== '' && !PLACEHOLDER_RE.test(v.trim());
 
 /**
@@ -193,7 +231,14 @@ function isFeatureAvailable(feature, env = process.env, opts = {}) {
     if (!keys) return false;
     present = keys.every((k) => isSet(env[k]));
   }
+  // An entry's `flags` are switches: set is not enough, the value must be on
+  // (`true`, `1` or `yes`), so `TEACHER_NUDGES_ENABLED=false` is not "available".
+  if (present && entry && Array.isArray(entry.flags)) {
+    present = entry.flags.every((k) => FLAG_ON_RE.test(String(env[k] || '').trim()));
+  }
   if (!present) return false;
+  // A feature gated on a flag (e.g. LP_FIDELITY_ENABLED) is present only when the flag is exactly "true".
+  if (entry && entry.flag && String(env[entry.flag] || '').trim() !== 'true') return false;
 
   // Layer 2 — the operator's switch. It can only ever subtract: a feature with
   // no key stays off above, and a feature with no id (a bare keys array, the

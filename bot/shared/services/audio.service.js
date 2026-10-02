@@ -344,7 +344,8 @@ class AudioService {
           return {
             text: transcription,
             language: detectedLanguage,
-            tokens: tokens // Include tokens for language detection
+            tokens: tokens, // Include tokens for language detection
+            diarized: !!diarizationData // speaker turns → [MM:SS] timings in the text
           };
         } else if (status === 'failed') {
           logToFile('Soniox transcription failed', {
@@ -613,6 +614,15 @@ class AudioService {
             );
           }
         }
+      }
+
+      // Classroom recordings: count whether the transcript came back with speaker turns (and so [MM:SS]
+      // timings). A fallback to a model without diarization is otherwise silent — see diarization-health.js.
+      if (enableDiarization) {
+        const { recordDiarization } = require('./coaching/diarization-health');
+        await recordDiarization(transcriptionResult && transcriptionResult.diarized ? 'diarized' : 'not_diarized', {
+          source: (transcriptionResult && transcriptionResult.source) || (soniox3Error ? (soniox2Error ? 'whisper' : 'stt-async-v2') : 'stt-async-v3'),
+        });
       }
 
       // Step 3: Clean up file from Soniox

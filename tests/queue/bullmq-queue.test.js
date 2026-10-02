@@ -63,6 +63,13 @@ describe('BullMQ driver — producers', () => {
     expect(job.data).toMatchObject({ sessionId: 's1', jobType: 'transcription', version: '1.0' });
   });
 
+  it('queueCoachingJob folds payload.phase / dedupNonce into the jobId so a deliver after a preview is not dropped', async () => {
+    const q = load();
+    expect(await q.queueCoachingJob('s9', 'observe_teacher_report', { phase: 'preview' })).toBe('s9-observe_teacher_report-preview');
+    expect(await q.queueCoachingJob('s9', 'observe_teacher_report', { phase: 'deliver' })).toBe('s9-observe_teacher_report-deliver');
+    expect(await q.queueCoachingJob('s9', 'observe_debrief', { dedupNonce: 'n1' })).toBe('s9-observe_debrief-n1');
+  });
+
   it('queueVideoJob enqueues on the video queue', async () => {
     const q = load();
     await q.queueVideoJob('v1', 'video_generation', {});
