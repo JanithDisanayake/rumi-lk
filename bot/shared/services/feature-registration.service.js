@@ -23,8 +23,49 @@ const { nativeFlowIdFor } = require('./messaging/channel-capabilities');
 // Greetings and acknowledgements that are not names (English, and the
 // romanized forms teachers commonly type in the supported languages).
 const GREETINGS = 'hi|hello|hey|hiya|salam|salaam|assalam(?:u|o)?\\s*(?:o\\s*)?alaikum|aoa|good\\s+(?:morning|afternoon|evening)|hola|marhaba';
-const GREETING_PREFIX_RE = new RegExp(`^(?:${GREETINGS})\\b[\\s,.!]*`, 'i');
-const NOT_A_NAME_RE = new RegExp(`^(?:${GREETINGS}|ok|okay|yes|no|thanks|thank\\s+you|sure|fine)[.!?]*$`, 'i');
+const ACKS = 'ok|okay|yes|no|thanks|thank\\s+you|sure|fine';
+const GREETING_ONLY_RE = new RegExp(`^(?:${GREETINGS})$`, 'i');
+const ACK_RE = new RegExp(`^(?:${ACKS})$`, 'i');
+// A greeting in front of something else. The separator must hold a space or
+// a comma, so a hyphenated name that starts like a greeting ("Hi-Young") is
+// left whole.
+const GREETING_LEAD_RE = new RegExp(`^(${GREETINGS})([\\s,.!]*[\\s,][\\s,.!]*)(\\S.*)$`, 'i');
+// Greetings that are also given names. After one of these, a bare name with
+// no punctuation in between ("Salam Karimi") is read as the teacher's full
+// name, not as a greeting to them.
+const NAME_LIKE_GREETING_RE = /^(?:salam|salaam)$/i;
+// What a teacher writes before their name when they introduce themselves.
+const INTRODUCTION_RE = /^(?:my name is|i am|i'm|im|this is|it's|its|call me|mera naam|me llamo|soy|mi nombre es|اسمي|انا|أنا)\s/i;
+// A literal placeholder (a client that fills an empty field, or a teacher
+// testing) is never a name; "Teacher: Null" is the bug this guards.
+const PLACEHOLDER_RE = /^(?:null|undefined|none)$/i;
+// "Yes" to "Is "Salam" your name?" is as clear as sending Salam again.
+const AFFIRMATIVE_RE = /^(?:yes|yeah|yep|ok|okay|haan|han|ji|jee|si|sí|نعم|ہاں|جی)$/i;
+// The greeting-only word Rumi asked about, kept until the teacher answers.
+// Redis when available (so a deploy between the two messages does not lose
+// it), memory otherwise; losing it only means asking once more.
+const NAME_CANDIDATE_KEY = (userId) => `registration:name_candidate:${userId}`;
+const NAME_CANDIDATE_TTL_SECONDS = 24 * 3600;
+const nameCandidates = new Map();
+
+/**
+ * Redis is required lazily: railway-redis.service.js connects on require, and
+ * this service is loaded by tools that never touch a pending name.
+ */
+function redis() {
+  // eslint-disable-next-line global-require -- deliberate: see comment above
+  return require('./cache/railway-redis.service');
+}
+
+/** Strips trailing punctuation, for comparing a reply to a word list. */
+function bare(text) {
+  return text.replace(/[.!,?]+$/, '').trim();
+}
+
+/** "salam" -> "Salam", "hi-young" -> "Hi-Young". */
+function capitalizeName(word) {
+  return word.split('-').map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()).join('-');
+}
 
 class FeatureRegistrationService {
   /**
@@ -270,8 +311,12 @@ class FeatureRegistrationService {
       logToFile('Handling name response', { userId, nameResponse, language });
 
       // Extract first name (simple extraction - take first word or whole response)
-      const firstName = this.extractFirstName(nameResponse);
+      const { name: firstName, confirm } = await this.resolveNameReply(userId, nameResponse);
 
+      if (confirm) {
+        logToFile('Name reply is a lone greeting word; asking to confirm', { userId, candidate: confirm });
+        return { success: false, confirm, error: 'Name needs confirming' };
+      }
       if (!firstName) {
         logToFile('Could not extract name from response', { userId, nameResponse });
         return { success: false, error: 'Could not extract name' };
@@ -333,20 +378,51 @@ class FeatureRegistrationService {
    * @returns {string|null} - Extracted first name or null
    */
   static extractFirstName(response) {
-    if (!response || typeof response !== 'string') {
-      return null;
-    }
+    return this.parseNameReply(response).name || null;
+  }
 
-    // Clean up the response
+  /**
+   * Read a reply to "what should I call you?".
+   *
+   * Rumi asks for the name after a feature, and the next message is read as
+   * the answer, so a teacher's "Hi" used to become their name (reports then
+   * said "Teacher: Hi null"). But Salam is a name as well as a greeting, and a
+   * filter that dropped every greeting word left a teacher named Salam unable
+   * to register. So:
+   * - a reply that is only one greeting word ("Salam", "Hi") is a candidate:
+   *   the caller asks whether it is the name and takes it the second time;
+   * - a leading greeting is stripped only when a space or comma follows it and
+   *   then an introduction ("Hi, I'm Sara"), punctuation and a name ("Salam,
+   *   Ali"), or anything after a greeting that is never a name ("Hello
+   *   Ayesha"). "Salam Karimi" stays Salam. "Hi Young Park" gives Young: the
+   *   reply cannot tell a greeting from a spaced given name, and a teacher
+   *   named Hi-Young usually writes the hyphen, which is kept;
+   * - nothing after "my name is" is stripped ("My name is Salam");
+   * - acknowledgements and placeholders ("ok", "null") give nothing.
+   *
+   * @param {string} response - User's response
+   * @returns {{name?: string, candidate?: string}} name when certain,
+   *   candidate when the reply is a lone greeting word, {} otherwise
+   */
+  static parseNameReply(response) {
+    if (!response || typeof response !== 'string') return {};
+
     let name = response.trim();
+    if (!name || name.startsWith('/')) return {};
 
-    // A greeting is not a name. Rumi asks for the name after a feature, and
-    // the next message is read as the answer, so a teacher's "Hi" used to
-    // become their name (reports then said "Teacher: Hi null"). Strip a
-    // greeting in front of a name; a reply that is only a greeting or an
-    // acknowledgement gives no name, and the caller asks again.
-    name = name.replace(GREETING_PREFIX_RE, '').trim();
-    if (!name || NOT_A_NAME_RE.test(name) || name.startsWith('/')) return null;
+    const whole = bare(name);
+    if (GREETING_ONLY_RE.test(whole)) {
+      return /^\S+$/.test(whole) ? { candidate: capitalizeName(whole) } : {};
+    }
+    if (ACK_RE.test(whole) || PLACEHOLDER_RE.test(whole)) return {};
+
+    const lead = name.match(GREETING_LEAD_RE);
+    if (lead) {
+      const [, greeting, separator, rest] = lead;
+      const introduces = INTRODUCTION_RE.test(rest);
+      const punctuated = /[,.!]/.test(separator);
+      if (introduces || punctuated || !NAME_LIKE_GREETING_RE.test(greeting)) name = rest;
+    }
 
     // Common patterns to strip
     const prefixes = [
@@ -363,21 +439,75 @@ class FeatureRegistrationService {
     for (const prefix of prefixes) {
       name = name.replace(prefix, '');
     }
-    if (!name || NOT_A_NAME_RE.test(name.replace(/[.!,?]+$/, ''))) return null;
+    // After an introduction a greeting word is the name ("My name is Salam"),
+    // but "I'm fine" and "it's null" still are not.
+    if (!name || ACK_RE.test(bare(name)) || PLACEHOLDER_RE.test(bare(name))) return {};
 
     // Remove trailing punctuation and common suffixes
-    name = name.replace(/[.!,?]+$/, '').trim();
+    name = bare(name);
     name = name.replace(/\s+(hai|ہے|is|he|hey|hoon|ہوں)$/i, '').trim();
 
     // If there are multiple words, take just the first one (first name)
     const words = name.split(/\s+/);
-    if (words.length > 0 && words[0].length > 0) {
-      // Capitalize first letter
-      const firstName = words[0].charAt(0).toUpperCase() + words[0].slice(1).toLowerCase();
-      return firstName;
+    if (words.length > 0 && words[0].length > 0 && !PLACEHOLDER_RE.test(words[0])) {
+      return { name: capitalizeName(words[0]) };
     }
 
+    return {};
+  }
+
+  /**
+   * Decide what a name reply means, given what Rumi asked last. A lone
+   * greeting word becomes the name when it repeats the candidate Rumi asked
+   * about (or the teacher says yes); the first time, it is stored and the
+   * caller asks.
+   *
+   * @param {string} userId
+   * @param {string} response
+   * @returns {Promise<{name?: string, confirm?: string}>}
+   */
+  static async resolveNameReply(userId, response) {
+    const parsed = this.parseNameReply(response);
+    const asked = await this._readNameCandidate(userId);
+    const reply = bare(String(response || '').trim());
+
+    if (asked && ((parsed.candidate && parsed.candidate.toLowerCase() === asked.toLowerCase())
+      || AFFIRMATIVE_RE.test(reply))) {
+      await this._clearNameCandidate(userId);
+      return { name: asked };
+    }
+    if (parsed.candidate) {
+      await this._storeNameCandidate(userId, parsed.candidate);
+      return { confirm: parsed.candidate };
+    }
+    // Any other reply answers the question on its own; the old candidate is
+    // dropped so a later lone greeting is asked about afresh.
+    if (asked) await this._clearNameCandidate(userId);
+    return parsed.name ? { name: parsed.name } : {};
+  }
+
+  static async _readNameCandidate(userId) {
+    try {
+      const stored = await redis().get(NAME_CANDIDATE_KEY(userId));
+      if (stored && typeof stored.candidate === 'string') return stored.candidate;
+    } catch (_) { /* fall back to memory */ }
+    const entry = nameCandidates.get(userId);
+    if (entry && entry.expiresAt > Date.now()) return entry.candidate;
     return null;
+  }
+
+  static async _storeNameCandidate(userId, candidate) {
+    nameCandidates.set(userId, { candidate, expiresAt: Date.now() + NAME_CANDIDATE_TTL_SECONDS * 1000 });
+    try {
+      await redis().set(NAME_CANDIDATE_KEY(userId), { candidate }, NAME_CANDIDATE_TTL_SECONDS);
+    } catch (_) { /* memory still holds it */ }
+  }
+
+  static async _clearNameCandidate(userId) {
+    nameCandidates.delete(userId);
+    try {
+      await redis().delete(NAME_CANDIDATE_KEY(userId));
+    } catch (_) { /* nothing to clear */ }
   }
 
   /**

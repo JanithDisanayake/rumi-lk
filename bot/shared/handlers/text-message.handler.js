@@ -217,6 +217,18 @@ async function handleTextMessage(message, from, messageBody, user = null) {
 
         if (result.success) {
           logToFile('✅ Name registration completed via text', { userId: user.id, firstName: result.firstName });
+        } else if (result.confirm) {
+          // A lone greeting word ("Salam") may be a greeting or the name.
+          // Ask in words that make plain it can be the name; the same word
+          // sent again is taken (FeatureRegistrationService.resolveNameReply).
+          const name = result.confirm;
+          const confirmMessages = {
+            en: `Is "${name}" your name? Send it again and I'll use it, or tell me the name you'd like me to use.`,
+            ur: `کیا "${name}" آپ کا نام ہے؟ یہی دوبارہ بھیج دیں تو میں یہی نام رکھوں گی، یا وہ نام بتا دیں جس سے آپ کو بلاؤں۔`,
+            ar: `هل "${name}" اسمك؟ أرسله مرة أخرى وسأستخدمه، أو أخبرني بالاسم الذي تريد أن أناديك به.`,
+            es: `¿"${name}" es tu nombre? Envíalo otra vez y lo usaré, o dime el nombre que quieres que use.`
+          };
+          await WhatsAppService.sendMessage(from, confirmMessages[userLanguage] || confirmMessages.en);
         } else {
           logToFile('⚠️ Name extraction failed, asking again', { userId: user.id });
           // Ask again if extraction failed
