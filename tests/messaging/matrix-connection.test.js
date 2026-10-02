@@ -11,6 +11,10 @@
  * plaintext with a warning, never throw and never crash boot.
  */
 
+const SDK_DIR = require('path').join(__dirname, '../../bot/node_modules/matrix-bot-sdk');
+const SDK_INSTALLED = require('fs').existsSync(require('path').join(SDK_DIR, 'package.json'));
+const SDK_MAIN = SDK_INSTALLED ? require('fs').realpathSync(require.resolve(SDK_DIR)) : null;
+
 // matrix-bot-sdk@0.8.0's own real exports for this area are `CryptoClient`,
 // `requiresCrypto`, `RustSdkCryptoStorageProvider`, and
 // `RustSdkAppserviceCryptoStorageProvider` -- NOT a `StoreType`/
@@ -40,11 +44,17 @@ function mockMatrixSdk({ startImpl, getUserIdImpl, joinRoomImpl } = {}) {
   const SimpleFsStorageProvider = jest.fn();
   const RustSdkCryptoStorageProvider = jest.fn(() => ({}));
 
-  jest.doMock('matrix-bot-sdk', () => ({
+  const factory = () => ({
     MatrixClient,
     SimpleFsStorageProvider,
     RustSdkCryptoStorageProvider,
-  }), { virtual: true });
+  });
+  // Where bot/node_modules has the real package, mock it by its real path:
+  // jest's resolver caches a bare name's resolution per worker, across test
+  // files, so a virtual bare-name mock is silently skipped after a suite that
+  // loaded the real SDK (matrix-encrypted-send-guard.test.js) ran first.
+  if (SDK_INSTALLED) jest.doMock(SDK_MAIN, factory);
+  else jest.doMock('matrix-bot-sdk', factory, { virtual: true });
   jest.doMock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn() }));
 
   return { MatrixClient, client, SimpleFsStorageProvider, RustSdkCryptoStorageProvider };
@@ -56,7 +66,6 @@ function mockMatrixSdk({ startImpl, getUserIdImpl, joinRoomImpl } = {}) {
 // CI pass, before bot/ dependencies are installed; the one test that needs the
 // real nested package runs only where bot/node_modules has it.
 const CRYPTO_MODULE = '../../bot/shared/services/messaging/matrix-crypto-module';
-const SDK_INSTALLED = require('fs').existsSync(require('path').join(__dirname, '../../bot/node_modules/matrix-bot-sdk/package.json'));
 
 function mockCryptoLoader(load) {
   jest.doMock(CRYPTO_MODULE, () => ({ loadSdkCryptoModule: load }));
