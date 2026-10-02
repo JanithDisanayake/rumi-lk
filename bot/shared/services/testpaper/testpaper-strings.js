@@ -72,6 +72,7 @@ const STRINGS = {
     cancelled: 'Okay — no paper made. Type /testpaper whenever you want one.',
     pdfUnavailable: 'The paper is ready, but this deployment cannot print PDFs yet (a Chromium browser is needed). Please ask your administrator to set PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH.',
     failed: 'Sorry, the paper could not be made just now. Please try /testpaper again in a few minutes.',
+    sendFailed: 'Your paper is ready, but it could not be sent just now. Type /mypapers to get it again.',
     failedTooLong: 'That was too much for one paper. Please try again with fewer questions.',
     failedQueue: 'Sorry, I could not start making your paper. Please try /testpaper again.',
   },
@@ -109,6 +110,7 @@ const STRINGS = {
     noPapers: 'ابھی آپ کا کوئی ٹیسٹ پیپر نہیں۔ بنانے کے لیے /testpaper لکھیں۔',
     cancelled: 'ٹھیک ہے — کوئی پرچہ نہیں بنایا گیا۔ جب چاہیں /testpaper لکھیں۔',
     failed: 'معذرت، ابھی پرچہ نہیں بن سکا۔ چند منٹ بعد دوبارہ /testpaper لکھیں۔',
+    sendFailed: 'پرچہ تیار ہے، مگر ابھی بھیجا نہیں جا سکا۔ دوبارہ حاصل کرنے کے لیے /mypapers لکھیں۔',
   },
 };
 

@@ -106,13 +106,17 @@ async function deliverPaper({ to, paper, request, chatLanguage = 'en' }) {
 
     const sentPaper = await WhatsAppService.sendDocument(to, paperPath, paperName,
       t('paperCaption', chatLanguage, { title, version: paper.version }));
+    // The version is already stored as ready, so a retried job would skip it:
+    // a failed send is told to the teacher, with My papers as the way back.
     if (sentPaper === false) {
       logToFile('❌ test paper: paper document not sent', { paperId: paper.id });
+      await WhatsAppService.sendMessage(to, t('sendFailed', chatLanguage));
       return false;
     }
     const sentKey = await WhatsAppService.sendDocument(to, keyPath, keyName, t('keyCaption', chatLanguage, { title }));
     if (sentKey === false) {
       logToFile('❌ test paper: answer key not sent', { paperId: paper.id });
+      await WhatsAppService.sendMessage(to, t('sendFailed', chatLanguage));
       return false;
     }
 

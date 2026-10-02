@@ -101,8 +101,20 @@ it('no Chromium: says so plainly, sends no document, reports failure', async () 
   expect(WA.sendMessage.mock.calls[0][1]).toMatch(/cannot print PDFs/);
 });
 
-it('a channel that fails the document send reports failure', async () => {
+it('a channel that fails the document send reports failure and tells the teacher how to get it again', async () => {
   setup();
   WA.sendDocument.mockResolvedValue(false);
   expect(await Delivery.deliverPaper({ to: '15550100001', paper: PAPER, request: REQUEST, chatLanguage: 'en' })).toBe(false);
+  expect(WA.sendDocument).toHaveBeenCalledTimes(1);
+  // The version is stored as ready, so a retry would skip it: My papers is the way back.
+  expect(WA.sendMessage).toHaveBeenCalledWith('15550100001', expect.stringMatching(/could not be sent[\s\S]*\/mypapers/));
+  expect(WA.sendInteractiveButtons).not.toHaveBeenCalled();
+});
+
+it('an answer key that fails to send is told the same way, in the chat language', async () => {
+  setup();
+  WA.sendDocument.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+  expect(await Delivery.deliverPaper({ to: '15550100001', paper: PAPER, request: REQUEST, chatLanguage: 'ur' })).toBe(false);
+  expect(WA.sendMessage).toHaveBeenCalledWith('15550100001', expect.stringMatching(/\/mypapers/));
+  expect(WA.sendMessage.mock.calls[0][1]).toMatch(/[\u0600-\u06FF]/);
 });
