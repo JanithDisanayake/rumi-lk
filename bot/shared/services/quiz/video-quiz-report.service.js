@@ -179,7 +179,6 @@ async function scheduleForShareCode(shareCodeId) {
  *
  * The TTL is far above the slowest build; it only matters when a holder dies
  * mid-send or its stamp failed, and then the key must outlive a whole 07:00 burst.
- * VIDEO_REPORT_SEND_CLAIM=off restores the unguarded send exactly.
  */
 const SEND_CLAIM_TTL_S = 15 * 60;
 const sendClaimKey = (shareCodeId) => `vq:report:sending:${shareCodeId}`;
@@ -454,7 +453,7 @@ async function generate(shareCodeId, { reason = 'scheduled', force = false } = {
 
 /**
  * Read the class, build the report and send it. Called by generate() once every
- * early-out has passed and (unless switched off) the send claim is held.
+ * early-out has passed and the send claim is held.
  * `stamp.stamped` tells the caller whether report_sent_at really landed.
  */
 async function buildAndSend(shareCodeId, sc, teacher, { reason, isFollowUp, stamp }) {
