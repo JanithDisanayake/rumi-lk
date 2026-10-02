@@ -56,6 +56,16 @@ function planTextFromRow(row) {
   return withHeader(row, body.trim());
 }
 
+/**
+ * A lesson_plans row's content for another feature's prompt (a quiz from the plan): without fidelity's cached move
+ * list, which is fidelity's own bookkeeping, not plan content. The row itself is not changed.
+ */
+function planContentForPrompt(content) {
+  if (!content || typeof content !== 'object') return content || null;
+  const { fidelity_moves: _moves, ...rest } = content;
+  return rest;
+}
+
 async function defaultFetchPdfText(url) {
   const axios = require('axios');
   const pdf = require('pdf-parse');
@@ -113,4 +123,4 @@ async function renderLinkedPlanText(lessonPlanId, deps = {}) {
   }
 }
 
-module.exports = { renderLinkedPlanText, planTextFromRow, planContentFromPdfFile };
+module.exports = { renderLinkedPlanText, planTextFromRow, planContentFromPdfFile, planContentForPrompt };

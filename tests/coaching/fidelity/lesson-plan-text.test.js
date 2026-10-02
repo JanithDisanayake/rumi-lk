@@ -71,3 +71,19 @@ describe('lesson-plan-text · renderLinkedPlanText', () => {
     expect(await renderLinkedPlanText(null, { db: fakeDb(null) })).toBeNull();
   });
 });
+
+describe('lesson-plan-text · planContentForPrompt', () => {
+  const { planContentForPrompt } = require('../../../bot/shared/services/coaching/fidelity/lesson-plan-text');
+
+  test('fidelity\'s cached move list never rides into another feature\'s prompt (e.g. a quiz from the plan)', () => {
+    const content = { plan_text: 'the plan', objectives: ['o'], fidelity_moves: { plan_hash: 'h', moves: [{ text: 'm' }] } };
+    expect(planContentForPrompt(content)).toEqual({ plan_text: 'the plan', objectives: ['o'] });
+    expect(content.fidelity_moves).toBeDefined(); // the stored row is not mutated
+    expect(planContentForPrompt(null)).toBeNull();
+  });
+
+  test('the quiz-from-a-plan path uses it', () => {
+    const src = require('fs').readFileSync(require('path').resolve(__dirname, '../../../bot/shared/services/quiz/quiz-orchestrator.service.js'), 'utf8');
+    expect(src).toContain('JSON.stringify(planContentForPrompt(lp.content))');
+  });
+});
