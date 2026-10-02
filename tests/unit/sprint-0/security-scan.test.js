@@ -180,6 +180,11 @@ describe('Security Scan', () => {
             if (file.includes('scripts/setup/db-setup.js')) continue;
             // Allow `rumi doctor` which diagnoses missing exec_sql helper
             if (file.includes('scripts/setup/doctor.js')) continue;
+            // Allow the laptop-local stack's Supabase shim, which creates the
+            // same helper exec-sql-helper.js defines (granted to service_role
+            // only) so bootstrap-db.js / migrate.js work against a plain
+            // local Postgres — setup-time, not a runtime SQL surface.
+            if (file.includes('infrastructure/local/supabase-shim.sql') || file.includes('infrastructure/local/up.sh')) continue;
             throw new Error(`Active exec_sql reference found at ${file}:${i + 1}: ${line.trim()}`);
           }
         }
