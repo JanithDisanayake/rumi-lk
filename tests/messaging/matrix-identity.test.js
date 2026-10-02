@@ -43,7 +43,7 @@ describe('matrix-identity -- encodeIdentity', () => {
 
   it('the short form is <= 20 characters for the longest possible localpart ("+"/"t" + 15 digits)', () => {
     const identity = loadIdentity();
-    const fifteenDigits = '123456789012345';
+    const fifteenDigits = '155501000012345';
     const encoded = identity.encodeIdentity(`@+${fifteenDigits}:localhost`);
     expect(encoded).toBe(`mtx:${fifteenDigits}`);
     expect(encoded.length).toBe(19); // "mtx:" (4) + 15 digits
