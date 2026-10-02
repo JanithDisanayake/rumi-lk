@@ -164,7 +164,8 @@ async function handleAttendanceMarkingRequest(data) {
 async function handleInit(flowToken, screenData) {
   try {
     // Parse flow token to get user ID and class info
-    // Flow token format: "userId:classId:date:sessionType:encodedClassName"
+    // Flow token format: "userId:target:date:sessionType:encodedName", where target
+    // is a class's list id, or "staff" for a head teacher's staff attendance.
     const tokenParts = (flowToken || '').split(':');
     const [userId, classId, dateStr, sessionType, encodedClassName] = tokenParts;
 
@@ -173,46 +174,61 @@ async function handleInit(flowToken, screenData) {
       return FlowEncryptionService.createErrorResponse('Invalid flow token');
     }
 
-    // Get student list for the class (fixed method name)
-    const { data: students, error: studentsError } = await StudentListService.getStudentsByList(classId);
+    let people;
+    let className;
+    if (classId === 'staff') {
+      // Re-check the role: the token says staff, the account must agree.
+      const StaffAttendanceService = require('../services/staff-attendance.service');
+      const marker = await StaffAttendanceService.loadUser(userId);
+      if (!StaffAttendanceService.isHeadTeacher(marker) || !marker.school_id) {
+        logToFile('Staff marking INIT refused - not a head teacher with a school', { userId });
+        return FlowEncryptionService.createErrorResponse('Staff attendance is marked by a head teacher linked to a school');
+      }
+      const staff = await StaffAttendanceService.loadStaffRoster(marker.school_id, userId);
+      people = staff.map((s) => ({ id: s.id, student_name: StaffAttendanceService.personName(s) }));
+      const school = await StaffAttendanceService.loadSchool(marker.school_id);
+      className = `${school?.name || (encodedClassName ? decodeURIComponent(encodedClassName) : 'Your school')} — staff`;
+    } else {
+      // Get student list for the class (fixed method name)
+      const { data: students, error: studentsError } = await StudentListService.getStudentsByList(classId);
+      if (studentsError) {
+        logToFile('No students found for class', { classId, error: studentsError?.message });
+      }
+      people = students || [];
 
-    if (studentsError || !students || students.length === 0) {
-      logToFile('No students found for class', { classId, error: studentsError?.message });
-      return FlowEncryptionService.createErrorResponse('No students found for this class');
+      // Get class info (fallback if not in token)
+      const { data: classInfo } = await StudentListService.getStudentListById(classId);
+      className = encodedClassName ? decodeURIComponent(encodedClassName) : (classInfo?.class_name || 'Class');
     }
 
-    // Get class info (fallback if not in token)
-    const classInfo = await StudentListService.getStudentListById(classId);
-    const className = encodedClassName ? decodeURIComponent(encodedClassName) : (classInfo?.class_name || 'Class');
+    if (!people.length) {
+      logToFile('No one on the roster for this marking flow', { classId });
+      return FlowEncryptionService.createErrorResponse(classId === 'staff' ? 'No staff linked to this school' : 'No students found for this class');
+    }
 
     // Format session type for display - include "Session:" prefix
     // The Flow's "Session: ${data.session_type}" concatenation has binding issues
     // So we include the prefix in the value and update Flow to use just ${data.session_type}
     const sessionTypeDisplay = sessionType === 'morning' ? 'Session: Morning' :
                                sessionType === 'afternoon' ? 'Session: Afternoon' :
-                               `Session: ${sessionType || 'Full Day'}`;
+                               `Session: ${sessionType === 'full_day' || !sessionType ? 'Full Day' : sessionType}`;
 
-    // Format date for display
-    const date = dateStr ? new Date(dateStr) : new Date();
-    const dateDisplay = date.toLocaleDateString('en-US', {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-    });
+    // The token's day, read as a date string — `new Date(dateStr)` is the day
+    // before west of UTC.
+    const AttendanceDates = require('../services/attendance-dates');
+    const dateDisplay = AttendanceDates.formatDisplayDate(AttendanceDates.toDateString(dateStr));
 
-    // Format students for CheckboxGroup (id, title format)
-    // Note: field is student_name not name
-    const formattedStudents = students.map((student, index) => ({
-      id: student.id,
-      title: `${index + 1}. ${student.student_name}`,
+    // Format the roster for the CheckboxGroups (id, title format)
+    const formattedStudents = people.map((person, index) => ({
+      id: person.id,
+      title: `${index + 1}. ${person.student_name}`,
     }));
 
-    logToFile('Providing student list for flow', {
+    logToFile('Providing roster for marking flow', {
       userId,
       classId,
       sessionType,
-      studentCount: formattedStudents.length,
+      rosterSize: formattedStudents.length,
     });
 
     return {
@@ -241,10 +257,12 @@ async function handleDataExchange(flowToken, screen, screenData) {
   // For MARK_ABSENT screen, the response contains the absent student IDs
   if (screen === 'MARK_ABSENT') {
     const absentStudentIds = screenData?.absent_students || [];
+    const leaveStudentIds = screenData?.leave_students || [];
 
     logToFile('Flow marking submission', {
       flowToken,
       absentCount: absentStudentIds.length,
+      leaveCount: leaveStudentIds.length,
     });
 
     // Close the flow - the webhook will handle the actual database update
@@ -255,6 +273,7 @@ async function handleDataExchange(flowToken, screen, screenData) {
           params: {
             flow_token: flowToken,
             absent_students: absentStudentIds,
+            leave_students: leaveStudentIds,
           },
         },
       },
@@ -891,3 +910,5 @@ async function handleExamConfirmRequest(data) {
 }
 
 module.exports = router;
+// The marking request handler, for tests that drive INIT/data_exchange directly.
+module.exports.handleAttendanceMarkingRequest = handleAttendanceMarkingRequest;

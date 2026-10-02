@@ -32,6 +32,8 @@ ALTER TABLE students ENABLE ROW LEVEL SECURITY;
 ALTER TABLE student_videos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE attendance_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE attendance_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE schools ENABLE ROW LEVEL SECURITY;
+ALTER TABLE teacher_attendance_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE exam_check_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE exam_templates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE exam_submissions ENABLE ROW LEVEL SECURITY;
@@ -140,6 +142,10 @@ DROP POLICY IF EXISTS "service_role_attendance_sessions" ON attendance_sessions;
 CREATE POLICY "service_role_attendance_sessions" ON attendance_sessions FOR ALL USING (auth.role() = 'service_role');
 DROP POLICY IF EXISTS "service_role_attendance_records" ON attendance_records;
 CREATE POLICY "service_role_attendance_records" ON attendance_records FOR ALL USING (auth.role() = 'service_role');
+DROP POLICY IF EXISTS "service_role_schools" ON schools;
+CREATE POLICY "service_role_schools" ON schools FOR ALL USING (auth.role() = 'service_role');
+DROP POLICY IF EXISTS "service_role_teacher_attendance_records" ON teacher_attendance_records;
+CREATE POLICY "service_role_teacher_attendance_records" ON teacher_attendance_records FOR ALL USING (auth.role() = 'service_role');
 
 -- Exam Checker
 DROP POLICY IF EXISTS "service_role_exam_sessions" ON exam_check_sessions;
@@ -238,3 +244,7 @@ DROP POLICY IF EXISTS "service_role_test_paper_requests" ON test_paper_requests;
 CREATE POLICY "service_role_test_paper_requests" ON test_paper_requests FOR ALL USING (auth.role() = 'service_role');
 DROP POLICY IF EXISTS "service_role_test_papers" ON test_papers;
 CREATE POLICY "service_role_test_papers" ON test_papers FOR ALL USING (auth.role() = 'service_role');
+-- Teacher nudges (bot-only)
+ALTER TABLE teacher_nudges ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "service_role_teacher_nudges" ON teacher_nudges;
+CREATE POLICY "service_role_teacher_nudges" ON teacher_nudges FOR ALL USING (auth.role() = 'service_role');

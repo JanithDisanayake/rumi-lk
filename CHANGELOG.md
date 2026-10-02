@@ -5,6 +5,81 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] - 2026-10-02
+
+**A register the school can file.** After every mark, Rumi sends back the month's attendance register — one
+row per person, one column per day, weekends greyed, running totals, and approved **Leave** as its own status —
+regenerated whole, so the newest file always holds the whole month. A teacher's "attendance" is their class; a
+head teacher's is the school's staff. A past day can be named and corrected, and the correction rebuilds the
+month. Plus **teacher nudges**: one friendly check-in for a teacher who has gone quiet, never twice for the
+same silence.
+
+### Added
+
+- **Leave on every marking surface** — the native WhatsApp Flow gains an *On leave* checkbox group
+  (re-publish `docs/flows/attendance-marking-flow.json`); the text stand-in (Baileys, Matrix) takes one reply,
+  `2, 5 leave 3`; the Slack and Discord tap-to-mark modals gain a leave picker; voice roll call records
+  "on leave" as leave. Someone named in both lists counts once, as leave.
+- **Staff attendance and the staff register** — a head teacher (`users.role = 'head_teacher'`; `principal`
+  and `school_leader` are read as the same role, never written) marks the school's staff by voice, by tapping, or "everyone present", and
+  gets the month's staff register back. Staff are everyone linked to the school except the person marking;
+  colleagues who never use the bot can be added by name. "class attendance" still reaches a class they teach.
+- **`bot/scripts/attendance/link-school.js`** — links a school (optional external id: `--ext-id`, stored as `schools.ext_id`), its head
+  teacher and its staff, naming people by `users.id`, WhatsApp number or channel identity. Idempotent.
+- **Two rates, one per register** — staff: present ÷ (present + absent), approved leave excused; class:
+  present ÷ every marked day, because a child on leave was not in the room.
+- **Name a day** — `attendance yesterday`, `attendance 30 sep`, `attendance 2026-09-30` mark or correct that
+  day; future days and days older than `ATTENDANCE_MAX_BACKDATE_DAYS` (default 62) are refused in words.
+- **Teacher nudges** — `bot/shared/services/nudges/`: one `teacher_nudges` table, a sweeper with a registry
+  of nudge kinds, an idempotent booking and a single-flight claim (two replicas never send twice), a kill
+  switch (`TEACHER_NUDGES_ENABLED`, also `RUMI_FEATURE_TEACHER_NUDGES=off`), a per-tick cap, quiet hours and
+  a timezone. One kind ships: `re_engage`, a check-in for a teacher silent for `TEACHER_NUDGES_QUIET_MINUTES`,
+  once per quiet spell; on the Meta WhatsApp Cloud driver only inside the 24-hour window. The SQS worker
+  sweeps every `TEACHER_NUDGES_SWEEP_MINUTES`, or run `bot/workers/teacher-nudges.worker.js` from cron.
+- `docs/features/attendance.md` (rewritten), `docs/features/teacher-nudges.md`, `ATTENDANCE_*` and
+  `TEACHER_NUDGES_*` blocks in `.env.template`, a `teacher_nudges` entry in `FEATURES`, SETUP.md steps.
+
+### Changed
+
+- **Re-marking a day replaces it** instead of stopping at "Attendance Already Recorded", and the whole month's
+  register is regenerated, so the corrected file still holds every other day. The new records are written
+  before the old ones are removed (and taken back out if that fails), so a correction that fails leaves the
+  day on file; only the teacher whose
+  class it is can mark or replace its days.
+- A number after "class", "grade" or "section" is never read as a day ("attendance grade 5/6"), a month must
+  be a whole word, every date in the message is considered, and a bare `d/m` outside the correction window
+  opens today. The method menu always names the day being marked, today included.
+- `TEACHER_NUDGES_TZ` left blank uses `ATTENDANCE_TZ`. The feature list shows teacher nudges as available only
+  when `TEACHER_NUDGES_ENABLED` is on (a FEATURES entry may now name `flags`, switches that must read on).
+- "Everyone present" is a numbered option (`3`) and is recorded as `everyone_present`.
+- The academic year's start month is `ATTENDANCE_ACADEMIC_YEAR_START_MONTH` (default 4, the previous
+  behaviour). "Today" is the school's today, in `ATTENDANCE_TZ` (default UTC).
+- The text handler's attendance blocks moved to `attendance-entry.service.js` (one place a result becomes
+  messages).
+
+### Fixed
+
+- A child on approved leave was written into the register as **A**; voice roll call filed "on leave" as absent.
+- The register placed a day one column early west of UTC, and the month query dropped the month's last day
+  east of UTC.
+- Without R2 (or with R2 down) the register was generated and never sent; a refused send was reported as
+  delivered; the file was lost to `ENOENT` where the temp folder did not exist yet.
+- The sixth attendance start in five minutes got no reply at all.
+- Where the marking form could not be sent, the fallback offered "1" and "3", which the session then did not
+  accept.
+- The Meta Flow's data endpoint read `getStudentListById`'s `{ data }` as the row.
+
+### Database
+
+- Migration `V2.5.0__attendance_register.sql` (additive): `schools` (the shared definition: `id`, `ext_id`,
+  `name`, `district`, timestamps — the same DDL as the coach-observation migration, whichever runs first), `users.school_id`, `users.role`,
+  `teacher_attendance_records`, `attendance_sessions.leave_count`. **Where the legacy CHECK on
+  `attendance_records.status` exists, it is widened to accept `leave`** (every existing row stays valid);
+  legacy `excused` records are read as Leave and their sessions' `leave_count` is back-filled.
+- Migration `V2.5.1__teacher_nudges.sql` (additive): `teacher_nudges`, `users(last_message_at)` index,
+  `user_channels.reply_identifier` (the exact identifier a teacher last wrote from, so a proactive send
+  delivers back to it).
+
 ## [2.4.0] - 2026-10-02
 
 **Make a test from the book.** A teacher picks a chapter — or a whole unit — from material the deployment

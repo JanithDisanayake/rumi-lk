@@ -738,6 +738,50 @@ CREATE TABLE IF NOT EXISTS attendance_records (
     PRIMARY KEY (id)
 );
 
+-- A school, so a head teacher's staff can be found and their attendance kept.
+-- `ext_id` is an optional external identifier (a census or district school
+-- number) for deployments that have one; nothing in the bot depends on it.
+-- One definition shared with coach observations (same columns, same DDL).
+-- users.school_id (column reconcile below) links teachers and head teachers.
+CREATE TABLE IF NOT EXISTS schools (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ext_id TEXT,
+    name TEXT NOT NULL,
+    district TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_schools_ext_id ON schools (ext_id) WHERE ext_id IS NOT NULL;
+
+-- Staff attendance: one row per (teacher, day), marked by a head teacher.
+-- Distinct from attendance_sessions/attendance_records, which are STUDENT
+-- attendance per class. Re-marking a day upserts on (teacher_id, date).
+-- status 'leave' is approved leave: the staff register counts it as neither
+-- present nor absent. leave_type is optional (casual | sick | official).
+CREATE TABLE IF NOT EXISTS teacher_attendance_records (
+    id UUID NOT NULL DEFAULT uuid_generate_v4(),
+    teacher_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    status VARCHAR(16) NOT NULL,
+    leave_type VARCHAR(16),
+    marked_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    marked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (id),
+    UNIQUE (teacher_id, date),
+    CONSTRAINT teacher_attendance_status_valid
+        CHECK (status IN ('present', 'absent', 'leave')),
+    CONSTRAINT teacher_attendance_leave_type_valid
+        CHECK (leave_type IS NULL OR (status = 'leave' AND leave_type IN ('casual', 'sick', 'official')))
+);
+
+CREATE INDEX IF NOT EXISTS idx_teacher_attendance_school_date
+    ON teacher_attendance_records (school_id, date);
+CREATE INDEX IF NOT EXISTS idx_teacher_attendance_teacher_date
+    ON teacher_attendance_records (teacher_id, date DESC);
+
 -- ---------------------------------------------------------------------------
 -- Exam Checker
 -- ---------------------------------------------------------------------------
@@ -4007,12 +4051,17 @@ ALTER TABLE users ALTER COLUMN phone_number DROP NOT NULL;
 -- for a Slack-only teacher with no phone number at all). See bot/workers/
 -- coaching-session.service.js#initiateSession, exam-session.service.js#_createSession,
 -- video-orchestrator.service.js#startGeneration for where each is populated.
+-- user_channels.reply_identifier: the same rule for PROACTIVE sends (a teacher
+-- nudge, which no inbound message originated). The exact identifier the
+-- teacher last wrote from on that channel, stamped on every inbound by
+-- bot-helpers.getOrCreateUserByChannel; nudges/address.js delivers back to it
+-- rather than re-deriving "<prefix>:<channel_user_id>".
+ALTER TABLE user_channels ADD COLUMN IF NOT EXISTS reply_identifier VARCHAR(255);
 ALTER TABLE coaching_sessions ADD COLUMN IF NOT EXISTS recipient_identifier VARCHAR(255);
 ALTER TABLE exam_check_sessions ADD COLUMN IF NOT EXISTS recipient_identifier VARCHAR(255);
 ALTER TABLE video_requests ADD COLUMN IF NOT EXISTS recipient_identifier VARCHAR(255);
 
--- ============================================================================
--- TEST PAPERS (/testpaper)
+-- =====================================================================-- TEST PAPERS (/testpaper)
 -- ============================================================================
 -- A teacher picks material the deployment already has — a textbook chapter,
 -- their own lesson plans, or a chapter they upload — and gets a printable test
@@ -4085,6 +4134,38 @@ END $$;
 CREATE INDEX IF NOT EXISTS idx_test_papers_request ON test_papers (request_id, version DESC);
 CREATE INDEX IF NOT EXISTS idx_test_papers_inflight ON test_papers (created_at) WHERE status = 'generating';
 
+=======
+-- Attendance register (staff attendance + Leave).
+-- users.school_id links a teacher or head teacher to a school; users.role says
+-- which job they do there. NULL role is a teacher; 'head_teacher' (or the legacy
+-- spelling 'principal') makes "attendance" mean staff attendance. Both nullable:
+-- a deployment that never links schools sees no change.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS school_id UUID REFERENCES schools(id) ON DELETE SET NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(30);
+CREATE INDEX IF NOT EXISTS idx_users_school_id ON users (school_id);
+
+-- attendance_sessions.leave_count: students on approved leave that day, beside
+-- present_count/absent_count, so a Leave round-trips to the register summary.
+ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS leave_count INTEGER DEFAULT 0;
+
+-- attendance_records.status gains 'leave'. Installs that applied the legacy
+-- bot/database/migrations/014_attendance_tables.sql carry a CHECK of
+-- (present, absent, late, excused) that would reject it; widen that CHECK in
+-- place. Every existing row stays valid; installs without the CHECK are untouched.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'attendance_records_status_check'
+          AND conrelid = 'attendance_records'::regclass
+          AND pg_get_constraintdef(oid) NOT LIKE '%leave%'
+    ) THEN
+        ALTER TABLE attendance_records DROP CONSTRAINT attendance_records_status_check;
+        ALTER TABLE attendance_records ADD CONSTRAINT attendance_records_status_check
+            CHECK (status IN ('present', 'absent', 'leave', 'late', 'excused'));
+    END IF;
+END $$;
+
 -- =============================================================================
 -- Function reconcile (Phase 5) — RPCs the bot invokes via supabase.rpc() that the
 -- consolidated schema predated. CREATE OR REPLACE keeps it idempotent. (get_column_info
@@ -4139,6 +4220,50 @@ BEGIN
     AND created_at > NOW() - (p_lookback_hours || ' hours')::INTERVAL;
 END;
 $function$;
+
+-- =============================================================================
+-- Teacher nudges — scheduled, proactive messages to teachers
+-- One row per (teacher, local day, kind). The sweeper books rows, claims the
+-- due ones (pending -> sending, single-flight via a conditional UPDATE) and
+-- records sent / skipped / failed. Only bot/shared/services/nudges/
+-- teacher-nudges.store.js touches this table. Placed after the column
+-- reconcile because the users(last_message_at) index needs that column.
+-- See docs/features/teacher-nudges.md.
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS teacher_nudges (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    -- A code registry, not a CHECK: a new kind needs no migration.
+    kind TEXT NOT NULL,
+    -- The local calendar day (TEACHER_NUDGES_TZ) the nudge belongs to.
+    nudge_date DATE NOT NULL,
+    scheduled_at TIMESTAMPTZ NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'sending', 'sent', 'skipped', 'failed')),
+    -- Why a nudge was deliberately not sent (window_closed, quiet_hours, ...).
+    skip_reason TEXT,
+    -- What the nudge was about, plus an error message on failure. Merged, never replaced.
+    context JSONB NOT NULL DEFAULT '{}'::jsonb,
+    -- How many times the row has been claimed.
+    attempts INTEGER NOT NULL DEFAULT 0,
+    claimed_at TIMESTAMPTZ,
+    sent_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- One nudge per teacher per local day per kind. Booking relies on this.
+    CONSTRAINT teacher_nudges_one_per_day UNIQUE (user_id, nudge_date, kind)
+);
+
+-- The sweeper's claim: due, pending rows, oldest first.
+CREATE INDEX IF NOT EXISTS idx_teacher_nudges_due
+    ON teacher_nudges (scheduled_at) WHERE status = 'pending';
+-- A teacher's recent nudges (the "same quiet spell" check).
+CREATE INDEX IF NOT EXISTS idx_teacher_nudges_user_recent
+    ON teacher_nudges (user_id, nudge_date DESC);
+-- The re-engage cohort reads users by how long ago they last wrote in.
+CREATE INDEX IF NOT EXISTS idx_users_last_message_at
+    ON users (last_message_at);
 
 -- Reload PostgREST's schema cache last, so the reconciled columns + functions
 -- above are immediately visible to the REST API (the earlier NOTIFY predates these DDLs).

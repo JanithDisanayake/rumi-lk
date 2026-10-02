@@ -99,9 +99,14 @@ async function getOrCreateUser(phoneNumber) {
  * @param {string} channelUserId - the bare identifier on that channel (a
  *   WhatsApp phone number, a Slack user id, a Discord snowflake — never a
  *   "channel:id"-prefixed string; that prefix is a messaging-router concern)
+ * @param {object} [opts]
+ * @param {string} [opts.replyIdentifier] - the exact identifier this message came
+ *   from, as the messaging router addresses it ("slack:U…", a channel's own short
+ *   form, …). Stored on the user_channels row so a later proactive send (one with
+ *   no inbound message to reply to) can deliver back to it rather than re-derive it.
  * @returns {Promise<object>} User record (the same shape getOrCreateUser returns)
  */
-async function getOrCreateUserByChannel(channel, channelUserId) {
+async function getOrCreateUserByChannel(channel, channelUserId, { replyIdentifier = null } = {}) {
   if (channel === 'whatsapp') {
     // The legacy path is authoritative for WhatsApp — same lookup key
     // (phone_number), same insert shape, zero behavior change. Only make sure
@@ -123,7 +128,8 @@ async function getOrCreateUserByChannel(channel, channelUserId) {
     if (existingLink) {
       const nowIso = new Date().toISOString();
       try {
-        await supabase.from('user_channels').update({ last_message_at: nowIso }).eq('channel', channel).eq('channel_user_id', channelUserId);
+        const stamp = replyIdentifier ? { last_message_at: nowIso, reply_identifier: replyIdentifier } : { last_message_at: nowIso };
+        await supabase.from('user_channels').update(stamp).eq('channel', channel).eq('channel_user_id', channelUserId);
       } catch (stampErr) {
         console.error('user_channels last_message_at update failed:', stampErr.message);
       }
@@ -158,7 +164,7 @@ async function getOrCreateUserByChannel(channel, channelUserId) {
       throw createUserError;
     }
 
-    await ensureUserChannelRow(newUser.id, channel, channelUserId, { isPrimary: true });
+    await ensureUserChannelRow(newUser.id, channel, channelUserId, { isPrimary: true, replyIdentifier });
     console.log(`✅ New user created via ${channel}: ${channelUserId}`);
     return newUser;
   } catch (error) {
@@ -172,7 +178,7 @@ async function getOrCreateUserByChannel(channel, channelUserId) {
  * channelUserId) — the lazy-backfill helper getOrCreateUserByChannel uses for
  * both the whatsapp delegation path and brand-new channel identities.
  */
-async function ensureUserChannelRow(userId, channel, channelUserId, { isPrimary = false } = {}) {
+async function ensureUserChannelRow(userId, channel, channelUserId, { isPrimary = false, replyIdentifier = null } = {}) {
   try {
     const { data: existing } = await supabase
       .from('user_channels')
@@ -187,6 +193,7 @@ async function ensureUserChannelRow(userId, channel, channelUserId, { isPrimary 
       channel,
       channel_user_id: channelUserId,
       is_primary: isPrimary,
+      ...(replyIdentifier ? { reply_identifier: replyIdentifier } : {}),
       created_at: new Date().toISOString(),
       last_message_at: new Date().toISOString(),
     });
