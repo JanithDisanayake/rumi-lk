@@ -15,6 +15,8 @@ jest.mock('../../../bot/shared/services/whatsapp.service', () => ({
   sendImageFromUrl: jest.fn(async () => true), sendInteractiveButtons: jest.fn(async () => true),
 }));
 jest.mock('../../../bot/shared/services/feature-linker.service', () => ({ suggestNext: jest.fn() }));
+// PDFKit is a bot-only dependency (not installed for the root suite); the report renderer is not under test here.
+jest.mock('pdfkit', () => function FakePDF() {}, { virtual: true });
 jest.mock('jsonrepair', () => ({ jsonrepair: (s) => s }), { virtual: true });
 jest.mock('dotenv', () => ({ config: () => ({}) }), { virtual: true });
 

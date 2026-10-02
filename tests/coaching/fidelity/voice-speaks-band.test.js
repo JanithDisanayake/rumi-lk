@@ -13,6 +13,8 @@ jest.mock('../../../bot/shared/storage/r2', () => ({ isR2Configured: () => true,
 jest.mock('../../../bot/shared/services/audio.service', () => ({ generateSpeechForLanguage: jest.fn(async () => Buffer.alloc(32000)) }));
 jest.mock('../../../bot/shared/services/whatsapp.service', () => ({ sendMessage: jest.fn(async () => true), sendAudioFromUrl: jest.fn(async () => true) }));
 jest.mock('../../../bot/shared/services/coaching/coaching-helpers.service', () => ({ determineOutputLanguage: jest.fn(async () => 'en') }));
+// PDFKit is a bot-only dependency (not installed for the root suite); the report renderer is not under test here.
+jest.mock('pdfkit', () => function FakePDF() {}, { virtual: true });
 jest.mock('jsonrepair', () => ({ jsonrepair: (s) => s }), { virtual: true });
 jest.mock('dotenv', () => ({ config: () => ({}) }), { virtual: true });
 
