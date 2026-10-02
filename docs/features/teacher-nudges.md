@@ -122,7 +122,8 @@ again.
    `node bot/workers/teacher-nudges.worker.js`. Running both is harmless, because the claim is
    single-flight.
 
-To switch nudges off, unset the flag or set it to anything other than `true`, `1` or `yes`. The next tick
+To switch nudges off, unset the flag or set it to anything other than `true`, `1` or `yes`. You can also pause
+them without touching the flag with the operator feature switch `RUMI_FEATURE_TEACHER_NUDGES=off`. The next tick
 does nothing and does not even read the database.
 
 | Variable | Default | What |

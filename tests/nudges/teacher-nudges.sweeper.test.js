@@ -26,7 +26,7 @@ jest.mock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn() }));
 const NOW = new Date('2026-03-10T10:00:00.000Z');
 const minutesAgo = (m) => new Date(NOW.getTime() - m * 60 * 1000).toISOString();
 
-const ENV_KEYS = ['TEACHER_NUDGES_ENABLED', 'TEACHER_NUDGES_MAX_PER_TICK'];
+const ENV_KEYS = ['TEACHER_NUDGES_ENABLED', 'TEACHER_NUDGES_MAX_PER_TICK', 'RUMI_FEATURE_TEACHER_NUDGES'];
 const saved = {};
 
 function load() {
@@ -93,6 +93,20 @@ describe('kill switch — TEACHER_NUDGES_ENABLED', () => {
     expect(out.off).toBe(true);
     expect(supabase.from).not.toHaveBeenCalled();
     expect(kind.prepare).not.toHaveBeenCalled();
+    expect(kind.handle).not.toHaveBeenCalled();
+    expect(byId(supabase, row.id).status).toBe('pending');
+  });
+
+  it('the operator feature switch RUMI_FEATURE_TEACHER_NUDGES=off pauses it even with the flag on', async () => {
+    process.env.RUMI_FEATURE_TEACHER_NUDGES = 'off';
+    const { sweeper, supabase } = load();
+    const row = seed(supabase);
+    const kind = sendingKind();
+    sweeper.register(kind);
+
+    expect(sweeper.isEnabled()).toBe(false);
+    const out = await sweeper.runSweep({ now: NOW });
+    expect(out.off).toBe(true);
     expect(kind.handle).not.toHaveBeenCalled();
     expect(byId(supabase, row.id).status).toBe('pending');
   });

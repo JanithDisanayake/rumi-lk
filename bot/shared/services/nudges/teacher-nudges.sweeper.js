@@ -26,8 +26,9 @@
  *   single-flight  rows arrive only from `store.claimDue`, a conditional UPDATE
  *                  returning what IT won. Two replicas ticking in the same
  *                  second each hold a disjoint set.
- *   kill switch    TEACHER_NUDGES_ENABLED, read at CALL time. Off and the tick
- *                  touches nothing at all — not even a read.
+ *   kill switch    TEACHER_NUDGES_ENABLED (and the operator's feature switch),
+ *                  read at CALL time. Off and the tick touches nothing at all —
+ *                  not even a read.
  *   per-tick cap   TEACHER_NUDGES_MAX_PER_TICK (default 200) claimed rows per
  *                  tick, across every kind. A backlog drips out over ticks.
  *   one log line   exactly one summary line per tick with all its counts, so an
@@ -40,6 +41,7 @@
 const store = require('./teacher-nudges.store');
 const { flagOn } = require('./flags');
 const { logToFile } = require('../../utils/logger');
+const overrides = require('../../config/feature-overrides');
 
 const DEFAULT_MAX_PER_TICK = 200;
 const KIND_RE = /^[a-z][a-z0-9_]{0,62}$/;
@@ -47,12 +49,23 @@ const KIND_RE = /^[a-z][a-z0-9_]{0,62}$/;
 /** kind → kind module. Insertion order is sweep order. */
 const registry = new Map();
 
+const FEATURE_ID = 'teacher_nudges';
+
 /**
  * The master switch, read at call time and never cached. Exported because the
  * worker gates arming its interval on the same answer.
+ *
+ * On means TEACHER_NUDGES_ENABLED is on AND the operator has not paused the
+ * feature with its switch (RUMI_FEATURE_TEACHER_NUDGES=off, see
+ * config/feature-overrides.js). The switch is read from the in-process cache
+ * (the console updates it live) and from the environment, because a worker
+ * process never loads the cache itself.
  */
 function isEnabled() {
-  return flagOn('TEACHER_NUDGES_ENABLED');
+  if (!flagOn('TEACHER_NUDGES_ENABLED')) return false;
+  if (!overrides.isEnabled(FEATURE_ID)) return false;
+  const paused = String(process.env[overrides.envVarFor(FEATURE_ID)] || '').trim().toLowerCase() === 'off';
+  return !paused;
 }
 
 /** The per-tick claim budget: TEACHER_NUDGES_MAX_PER_TICK, a positive integer, else 200. */
