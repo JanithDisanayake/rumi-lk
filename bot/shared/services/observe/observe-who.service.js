@@ -173,7 +173,9 @@ async function handleObservedTeacherPick(user, from, listId) {
     // One record per session: replace rather than accumulate if the coach re-answers.
     await supabase.from('observation_schedules').delete()
       .eq('session_id', parsed.sessionId).eq('leader_user_id', user.id).eq('status', 'done');
-    const { error } = await supabase.from('observation_schedules').insert(record);
+    // An object literal: the schema column check reads the first `{` after an
+    // insert, which would otherwise be the ack's `{ name }` below.
+    const { error } = await supabase.from('observation_schedules').insert({ ...record });
     if (error) throw new Error(error.message);
     await WhatsAppService.sendMessage(from, t(lang, 'who_ack', { name: record.teacher_name || '' }));
     logToFile('🔭 observe-who: observed teacher recorded', { userId: user.id, sessionId: parsed.sessionId });
