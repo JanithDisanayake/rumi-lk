@@ -181,6 +181,18 @@ describe('session persistence — a force-close must not log the teacher out', (
   });
 });
 
+describe('backup — the session cookie never leaves the device in a cloud backup', () => {
+  // The app's whole state is a 7-day session cookie in the WebView's store
+  // (app_webview). The Capacitor template's allowBackup="true" would copy it
+  // into the user's cloud backup and restore it onto another device.
+  const manifest = stripXmlComments(read('app/src/main/AndroidManifest.xml'));
+  const application = (manifest.match(/<application[^>]*>/) || [''])[0];
+
+  it('turns app backup off', () => {
+    expect(application).toMatch(/android:allowBackup="false"/);
+  });
+});
+
 describe('no generated or secret files are committed', () => {
   const gitignore = read('.gitignore');
 
