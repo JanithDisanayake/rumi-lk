@@ -223,3 +223,13 @@ describe('plan picker copy', () => {
     expect(list.listData.body.text).toMatch(/Which lesson plan did you teach/);
   });
 });
+
+describe('a pick after a paste (review S1)', () => {
+  test('picking a Rumi plan replaces a plan pasted earlier, so the picked plan is the one graded', async () => {
+    seed('awaiting_lesson_plan', { lesson_plan_text: 'An earlier pasted plan text that is long enough to be a plan.', lesson_plan_excerpt: 'An earlier…', lesson_plan_word_count: 12, lesson_plan_link_method: 'pasted' });
+    await handleLpListSelection(`lp_select_lp-1_${SID}`, 'x');
+    expect(session()).toMatchObject({ linked_lesson_plan_id: 'lp-1', lesson_plan_link_method: 'selected_recent', lesson_plan_text: null, lesson_plan_excerpt: null, lesson_plan_word_count: null });
+    const { resolveFidelitySources } = require('../../../bot/shared/services/coaching/fidelity/fidelity-orchestrator');
+    expect(resolveFidelitySources(session(), { linkedPlanText: 'the picked plan' }).source).toBe('linked');
+  });
+});

@@ -118,6 +118,11 @@ async function handleLPSelection(coachingSessionId, selectionId, opts = {}) {
         linked_lesson_plan_id: lp.id,
         lesson_plan_link_method: 'selected_recent',
         has_lesson_plan: true,
+        // A plan pasted or uploaded earlier for this session is replaced by the pick: the teacher is told the
+        // lesson will be compared with the plan they picked, so that is the plan that must be graded.
+        lesson_plan_text: null,
+        lesson_plan_excerpt: null,
+        lesson_plan_word_count: null,
       })
       .eq('id', coachingSessionId);
 
