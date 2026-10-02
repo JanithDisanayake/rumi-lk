@@ -1,5 +1,5 @@
 -- =============================================================================
--- V2.9.1 - Teacher nudges
+-- V2.5.1 - Teacher nudges
 -- One table for scheduled, proactive messages to teachers ("nudges"): one row
 -- per (teacher, local day, kind). The bot's sweeper books rows, claims the due
 -- ones (pending -> sending, single-flight) and records the outcome.

@@ -14,7 +14,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '../..');
-const MIGRATION = path.join(ROOT, 'infrastructure/supabase/migrations/V2.9.1__teacher_nudges.sql');
+const MIGRATION = path.join(ROOT, 'infrastructure/supabase/migrations/V2.5.1__teacher_nudges.sql');
 const SCHEMA = path.join(ROOT, 'infrastructure/supabase/00_complete-schema.sql');
 const RLS = path.join(ROOT, 'infrastructure/supabase/01_rls-policies.sql');
 
@@ -60,7 +60,7 @@ function checkShape(sql) {
   expect(flat).toMatch(/CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+\w+\s+ON\s+users\s*(USING\s+btree\s*)?\(\s*last_message_at\s*\)/i);
 }
 
-describe('teacher_nudges migration (V2.9.1)', () => {
+describe('teacher_nudges migration (V2.5.1)', () => {
   it('exists with a name the migration runner accepts', () => {
     expect(fs.existsSync(MIGRATION)).toBe(true);
     expect(path.basename(MIGRATION)).toMatch(/^V\d+\.\d+\.\d+__.*\.sql$/);

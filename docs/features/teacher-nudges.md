@@ -114,7 +114,7 @@ again.
 
 1. Apply the schema. Fresh installs already have the `teacher_nudges` table in
    `infrastructure/supabase/00_complete-schema.sql`. Existing installs run the additive migration
-   `infrastructure/supabase/migrations/V2.9.1__teacher_nudges.sql` with
+   `infrastructure/supabase/migrations/V2.5.1__teacher_nudges.sql` with
    `node infrastructure/scripts/migrate.js` (see [pulling updates](../pulling-updates.md)).
 2. Set `TEACHER_NUDGES_ENABLED=true` and restart the SQS worker (`bot/workers/sqs-worker.js`). The first sweep
    runs 90 seconds after boot, then every `TEACHER_NUDGES_SWEEP_MINUTES`.

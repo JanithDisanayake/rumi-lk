@@ -1,5 +1,5 @@
 -- =============================================================================
--- V2.9.0 - Attendance register: staff attendance and Leave
+-- V2.5.0 - Attendance register: staff attendance and Leave
 --
 -- For existing deployments; fresh installs get the same from 00_complete-schema.sql.
 -- Additive and idempotent. The one in-place change is a CHECK WIDENING on

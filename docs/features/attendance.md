@@ -105,7 +105,7 @@ still sent.
 
 ### Upgrading an existing install
 
-Apply `infrastructure/supabase/migrations/V2.9.0__attendance_register.sql` (`node infrastructure/scripts/migrate.js`).
+Apply `infrastructure/supabase/migrations/V2.5.0__attendance_register.sql` (`node infrastructure/scripts/migrate.js`).
 It is additive: `schools`, `users.school_id`, `users.role`, `teacher_attendance_records`,
 `attendance_sessions.leave_count`. Two things touch existing data:
 
