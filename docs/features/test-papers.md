@@ -92,7 +92,7 @@ On by default: test papers need only the LLM key every deployment already has (`
 `OPENAI_API_KEY` with `LLM_PROVIDER=openai`). To use them:
 
 1. **Apply the schema** — fresh installs get the tables from `00_complete-schema.sql`; existing deployments
-   run `infrastructure/supabase/migrations/V2.8.0__test_papers.sql` (additive: two new tables).
+   run `infrastructure/supabase/migrations/V2.4.0__test_papers.sql` (additive: two new tables).
 2. **Give the bot a Chromium** for printing — the same one the reading report uses
    (`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`, or a system `chromium`). Without it the teacher is told plainly
    that PDFs cannot be printed yet.

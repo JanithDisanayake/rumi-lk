@@ -34,7 +34,7 @@ from, the teacher is told so instead of getting an invented one.
 - **`bot/shared/config/model-registry.js`** — a slim per-job model registry (`resolveModelForJob`); test papers
   default to `google/gemini-2.5-pro` via OpenRouter, override with `TESTPAPER_MODEL`.
 - **Schema:** `test_paper_requests` and `test_papers` (versions via `edited_from`), RLS, and migration
-  `V2.8.0__test_papers.sql` (additive).
+  `V2.4.0__test_papers.sql` (additive).
 - `docs/features/test-papers.md`, README and feature-library rows, a SETUP section, a `.env.template` block
   (`TESTPAPER_MODEL`, `TESTPAPER_CURRICULUM`, `RUMI_FEATURE_TEST_PAPER`), and a `test_paper` entry in
   `FEATURES` (on with the LLM key; `RUMI_FEATURE_TEST_PAPER=off` switches every entry point off, including

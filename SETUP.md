@@ -438,7 +438,7 @@ node bot/scripts/testpaper/import-curriculum-corpus.js path/to/curriculum-projec
 ```
 
 Printing needs Chromium on the bot's host (`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`), and papers are written by
-the background worker. Existing databases: apply `infrastructure/supabase/migrations/V2.8.0__test_papers.sql`.
+the background worker. Existing databases: apply `infrastructure/supabase/migrations/V2.4.0__test_papers.sql`.
 See [docs/features/test-papers.md](docs/features/test-papers.md).
 
 ### Add regional-language speech-to-text (optional)

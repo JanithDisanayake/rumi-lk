@@ -11,7 +11,7 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..', '..', 'infrastructure', 'supabase');
 const SCHEMA = fs.readFileSync(path.join(ROOT, '00_complete-schema.sql'), 'utf8');
 const RLS = fs.readFileSync(path.join(ROOT, '01_rls-policies.sql'), 'utf8');
-const MIGRATION_PATH = path.join(ROOT, 'migrations', 'V2.8.0__test_papers.sql');
+const MIGRATION_PATH = path.join(ROOT, 'migrations', 'V2.4.0__test_papers.sql');
 
 const TABLES = ['test_paper_requests', 'test_papers'];
 

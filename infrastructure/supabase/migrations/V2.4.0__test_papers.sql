@@ -1,5 +1,5 @@
 -- =============================================================================
--- V2.8.0 - Test papers (/testpaper)
+-- V2.4.0 - Test papers (/testpaper)
 -- For existing deployments; fresh installs get the same tables from
 -- 00_complete-schema.sql. Additive only: two new tables, their indexes and RLS.
 -- Safe to re-run.
