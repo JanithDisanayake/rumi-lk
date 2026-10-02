@@ -34,23 +34,44 @@ const LATIN_FONTS = { regular: 'Lexend-Regular.ttf', bold: 'Lexend-Bold.ttf' };
 // Nastaliq; the other Arabic-script languages read naturally in Naskh. A
 // language with no entry here (Hebrew, say) falls back to the system serif the
 // browser has — which still lays out right to left, just without a bundled face.
+const NASTALIQ = { regular: 'NotoNastaliqUrdu-Regular.ttf', bold: 'NotoNastaliqUrdu-Bold.ttf' };
+const NASKH = { regular: 'NotoNaskhArabic-Regular.ttf', bold: 'NotoNaskhArabic-Bold.ttf' };
 const SCRIPT_FONTS = {
-  ur: { regular: 'NotoNastaliqUrdu-Regular.ttf', bold: 'NotoNastaliqUrdu-Bold.ttf' },
-  ar: { regular: 'NotoNaskhArabic-Regular.ttf', bold: 'NotoNaskhArabic-Bold.ttf' },
-  fa: { regular: 'NotoNaskhArabic-Regular.ttf', bold: 'NotoNaskhArabic-Bold.ttf' },
-  ps: { regular: 'NotoNaskhArabic-Regular.ttf', bold: 'NotoNaskhArabic-Bold.ttf' },
-  sd: { regular: 'NotoNaskhArabic-Regular.ttf', bold: 'NotoNaskhArabic-Bold.ttf' },
-  ckb: { regular: 'NotoNaskhArabic-Regular.ttf', bold: 'NotoNaskhArabic-Bold.ttf' },
-  ug: { regular: 'NotoNaskhArabic-Regular.ttf', bold: 'NotoNaskhArabic-Bold.ttf' },
+  ur: NASTALIQ,
+  // The platform's region-tagged codes for languages written in Perso-Arabic
+  // script (see config/supported-languages.js): pa-PK (Shahmukhi) and bal-PK
+  // are usually set in Nastaliq, sd-PK and ps-PK in Naskh.
+  'pa-pk': NASTALIQ,
+  'bal-pk': NASTALIQ,
+  'sd-pk': NASKH,
+  'ps-pk': NASKH,
+  ar: NASKH,
+  fa: NASKH,
+  ps: NASKH,
+  sd: NASKH,
+  ckb: NASKH,
+  ug: NASKH,
 };
 
-// Languages whose papers are set right to left.
-const RTL_LANGUAGES = new Set(['ur', 'ar', 'fa', 'ps', 'sd', 'ckb', 'ug', 'he', 'yi', 'dv']);
+// Languages whose papers are set right to left — by base code, plus the
+// region-tagged platform codes whose base alone is ambiguous ("pa" is right to
+// left in Shahmukhi script, pa-PK, and left to right in Gurmukhi).
+const RTL_LANGUAGES = new Set(['ur', 'ar', 'fa', 'ps', 'sd', 'ckb', 'ug', 'he', 'yi', 'dv', 'bal']);
+const RTL_TAGGED = new Set(['pa-pk', 'bal-pk', 'sd-pk', 'ps-pk']);
 
 /** "ur-PK" → "ur"; anything unreadable → "en". */
 function baseLanguage(language) {
   const code = String(language || '').trim().toLowerCase().split(/[-_]/)[0];
   return code || 'en';
+}
+
+function _tag(language) {
+  return String(language || '').trim().toLowerCase().replace('_', '-');
+}
+
+/** The face entry for a language: its exact tag first, then its base code. */
+function _scriptEntry(language) {
+  return SCRIPT_FONTS[_tag(language)] || SCRIPT_FONTS[baseLanguage(language)] || null;
 }
 
 const _fontCache = new Map();
@@ -69,7 +90,7 @@ function fontData(file) {
 
 /** The bundled script face (file name) for a language, or null. */
 function scriptFontFor(language) {
-  const entry = SCRIPT_FONTS[baseLanguage(language)];
+  const entry = _scriptEntry(language);
   return entry ? entry.regular : null;
 }
 
@@ -78,7 +99,7 @@ function fontFaces(language) {
     ? `@font-face{font-family:'${family}';font-weight:${weight};font-style:normal;`
       + `src:url(data:font/ttf;base64,${data}) format('truetype');}`
     : '');
-  const script = SCRIPT_FONTS[baseLanguage(language)];
+  const script = _scriptEntry(language);
   return [
     face('PaperLatin', 400, fontData(LATIN_FONTS.regular)),
     face('PaperLatin', 700, fontData(LATIN_FONTS.bold)),
@@ -138,7 +159,7 @@ function subjectName(subject) {
 
 function isRtl(language) {
   if (!language) return false;
-  return RTL_LANGUAGES.has(baseLanguage(language));
+  return RTL_TAGGED.has(_tag(language)) || RTL_LANGUAGES.has(baseLanguage(language));
 }
 
 /** "Grade 2 · Math", or just "Math" when the source named no grade. */

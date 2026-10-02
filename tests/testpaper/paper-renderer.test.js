@@ -95,7 +95,12 @@ describe('direction and fonts follow the paper language', () => {
     expect(html).toContain(`<html lang="${lang}" dir="rtl">`);
   });
 
-  it.each(['en', 'sw', 'fr', 'hi', null])('%s is left to right', (lang) => {
+  it.each(['pa-PK', 'bal-PK', 'sd-PK', 'ps-PK'])('the platform code %s is right to left, in a Perso-Arabic face', (lang) => {
+    expect(R.isRtl(lang)).toBe(true);
+    expect(R.scriptFontFor(lang)).toBeTruthy();
+  });
+
+  it.each(['en', 'sw', 'fr', 'hi', 'ta-IN', null])('%s is left to right', (lang) => {
     expect(R.isRtl(lang)).toBe(false);
   });
 
