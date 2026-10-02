@@ -21,18 +21,18 @@
  *
  * Identity: `from` is minted here, at the one place Matrix identities enter
  * the system, then carried unchanged through getOrCreateUserByChannel and
- * every downstream send. For a phone-number-shaped localpart (a teacher who
- * registered with "+" + their phone digits, e.g. "@+15550100001:example.org"
- * -- Synapse itself rejects a purely numeric localpart, but does accept a
- * leading "+"; a leading "t" is kept as a fallback form for accounts already
- * created that way) it is the short "mtx:<digits>" form (leading "+"/"t"
- * dropped, e.g. "mtx:15550100001"); for anything else it's the existing
- * prefixed "matrix:<user_id>" form, e.g. "matrix:@teacher:example.org". See
- * matrix-identity.js's header comment for why the short form exists (a
- * varchar(20) column several shared tables write this identity into), the
- * exact character budget behind the "mtx" prefix choice, and the "+" vs "t"
- * ambiguity this file resolves below by recording the REAL observed form the
- * moment an inbound message proves an account exists.
+ * every downstream send. For a phone-number-shaped localpart on the bot's OWN
+ * homeserver (a teacher who registered with "+" + their phone digits, e.g.
+ * "@+15550100001:example.org" -- Synapse itself rejects a purely numeric
+ * localpart, but does accept a leading "+") it is the short "mtx:<digits>"
+ * form; the fallback "t" form ("@t15550100001:example.org", a different
+ * account) is "mtx:t15550100001"; anything else, including every user on
+ * another homeserver, is the prefixed "matrix:<user_id>" form, e.g.
+ * "matrix:@teacher:example.org". See matrix-identity.js's header comment for
+ * why the short form exists (a varchar(20) column several shared tables write
+ * this identity into) and why it is only ever used for our own server.
+ * Senders on a server outside MATRIX_ALLOWED_SERVERS never get this far --
+ * attach() drops their events first.
  *
  * Coverage: plain text messages, image/audio/video/document attachments
  * (mapped by msgtype), and a numbered-menu reply to a pending
@@ -56,31 +56,14 @@ const SYNTHETIC_ENTRY_ID = 'matrix-sync';
 /**
  * Mints the identity `from` carries for a Matrix sender. Delegates to
  * matrix-identity.js#encodeIdentity -- see that file's header comment for the
- * short ("mtx:<digits>") vs. long ("matrix:@user:server") form and why.
+ * short ("mtx:<digits>") vs. long ("matrix:@user:server") form and why. The
+ * short form needs the bot's own user id; without one it is never used.
  *
- * For a phone-shaped account, this is also the ONE place the real "+"/"t"
- * localpart form is ever directly observed (this inbound message proves the
- * account exists), so it's recorded here via
- * matrix-channel.service.js#_rememberPhoneLocalpart -- fire-and-forget
- * (best-effort, matches every other account-data/cache write in this file);
- * this function stays synchronous, returning the identity string immediately,
- * same as before.
+ * @param {string} userId full Matrix user id (event.sender)
+ * @param {string|null} ownUserId the bot's own full Matrix user id
  */
-function toPrefixedIdentity(userId) {
-  const identity = matrixIdentity.encodeIdentity(userId, { logToFile });
-  if (identity.startsWith(`${matrixIdentity.SHORT_PREFIX}:`)) {
-    const parsed = matrixIdentity.splitUserId(userId);
-    if (parsed) {
-      // eslint-disable-next-line global-require -- lazy: avoids a require cycle at module load
-      const matrixChannel = require('../matrix-channel.service');
-      if (typeof matrixChannel._rememberPhoneLocalpart === 'function') {
-        matrixChannel
-          ._rememberPhoneLocalpart(matrixIdentity.phoneDigitsFromLocalpart(parsed.localpart), parsed.localpart)
-          .catch((error) => logToFile('Matrix: failed to remember phone localpart (non-fatal)', { error: error.message }));
-      }
-    }
-  }
-  return identity;
+function toPrefixedIdentity(userId, ownUserId) {
+  return matrixIdentity.encodeIdentity(userId, ownUserId, { logToFile });
 }
 
 // Media ids need the same "matrix:" prefix as user identities -- messaging/index.js's
@@ -328,7 +311,7 @@ async function mapMessageToMetaShape(roomId, event, ownUserId, cutoffTs) {
   // accurately as possible.
   recordInboundRoom(event.sender, roomId);
 
-  const from = toPrefixedIdentity(event.sender);
+  const from = toPrefixedIdentity(event.sender, ownUserId);
   const id = event.event_id;
   const timestamp = Math.floor((event.origin_server_ts || Date.now()) / 1000);
   const content = event.content;
@@ -649,10 +632,10 @@ async function markGreeted(client, userId) {
  * user->DM-room resolution/creation/cache logic) an ordinary outbound Rumi
  * reply uses -- not a hand-rolled room-creation path here.
  */
-async function sendWelcomeDm(client, userId) {
+async function sendWelcomeDm(client, userId, ownUserId) {
   // eslint-disable-next-line global-require -- lazy: avoids a require cycle at module load
   const matrixChannel = require('../matrix-channel.service');
-  const sent = await matrixChannel.sendMessage(toPrefixedIdentity(userId), WELCOME_MESSAGE);
+  const sent = await matrixChannel.sendMessage(toPrefixedIdentity(userId, ownUserId), WELCOME_MESSAGE);
   if (sent) {
     const roomId = await matrixChannel._resolveDmRoomId(userId);
     logToFile('Matrix: sent new-account welcome DM', { channel: 'matrix', event: 'welcome_dm', userId, roomId });
@@ -729,7 +712,7 @@ async function handleWelcomeRoomJoin(client, welcomeRoomId, roomId, event, ownUs
   const matrixChannel = require('../matrix-channel.service');
   const dmRoomId = await matrixChannel._resolveDmRoomId(userId); // creates + invites on first contact
   if (await isJoinedMember(client, dmRoomId, userId)) {
-    await sendWelcomeDm(client, userId);
+    await sendWelcomeDm(client, userId, ownUserId);
     return;
   }
   await setPendingWelcome(client, dmRoomId, userId);
@@ -748,7 +731,7 @@ async function handleDmRoomJoin(client, roomId, event, ownUserId) {
   const userId = event.state_key;
   if (!userId || userId === ownUserId) return;
   if ((await getPendingWelcome(client, roomId)) !== userId) return;
-  if (await hasBeenGreeted(client, userId) || await sendWelcomeDm(client, userId)) {
+  if (await hasBeenGreeted(client, userId) || await sendWelcomeDm(client, userId, ownUserId)) {
     await setPendingWelcome(client, roomId, null);
   }
 }
@@ -922,9 +905,9 @@ function getLastPromptRoom(userId) {
   return entry.roomId;
 }
 
-async function isAnswerToRumisPrompt(roomId, event) {
+async function isAnswerToRumisPrompt(roomId, event, ownUserId) {
   if (getLastPromptRoom(event.sender) !== roomId) return false;
-  const from = toPrefixedIdentity(event.sender);
+  const from = toPrefixedIdentity(event.sender, ownUserId);
   const menu = await pendingOptions.get(from);
   if (menu && pendingOptions.resolveSelection(menu, event.content.body)) return true;
   try {
@@ -955,7 +938,7 @@ async function gateGroupMessage(client, roomId, event, ownUserId, names) {
   let reason = null;
   if (mentionsRumi({ ...content, body: ownBody }, ownUserId, names)) reason = 'mention';
   else if (await isReplyToRumi(client, roomId, content, ownUserId)) reason = 'reply_to_rumi';
-  else if (isText && content.body && (await isAnswerToRumisPrompt(roomId, event))) reason = 'menu_reply';
+  else if (isText && content.body && (await isAnswerToRumisPrompt(roomId, event, ownUserId))) reason = 'menu_reply';
 
   if (!reason) return { process: false, reason: 'group_not_addressed' };
   if (!isText || reason === 'menu_reply') return { process: true, reason, event };

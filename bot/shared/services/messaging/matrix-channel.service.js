@@ -63,9 +63,9 @@ const MEMBERS = parseMembers(fs.readFileSync(META_SOURCE_PATH, 'utf-8'));
 
 /**
  * The bot's own full Matrix user id, used to reconstruct the server name for
- * a short "mtx:<digits>" identity (single-homeserver deployment -- see
- * matrix-identity.js's header comment). MATRIX_USER_ID (the env var) is the
- * primary source, exactly as the product spec calls for; matrix-connection.js's
+ * a short "mtx:<digits>" identity (always an account on the bot's own
+ * server -- see matrix-identity.js's header comment). MATRIX_USER_ID (the env
+ * var) is the primary source, exactly as the product spec calls for; matrix-connection.js's
  * cached whoami result is a fallback for a deployment that leaves
  * MATRIX_USER_ID blank and lets it resolve automatically on connect.
  */
@@ -80,87 +80,23 @@ function ownUserIdHint() {
   }
 }
 
-// ── Phone-number localpart memory ("+" vs "t" -- DIFFERENT Matrix accounts) ──
-// See matrix-identity.js's header comment ("The '+' vs 't' ambiguity on
-// DECODE") for the full why. Two-tier cache (in-memory + client.storageProvider),
-// same shape as dmRoomCache/DM_ROOM_STORAGE_PREFIX right below -- this is
-// deliberately NOT in matrix-identity.js, which stays pure/storage-free.
-const knownLocalpartCache = new Map(); // phone digits -> exact localpart ("+<digits>" or "t<digits>")
-const PHONE_LOCALPART_STORAGE_PREFIX = 'rumi:matrix:phone-localpart:';
-
-/**
- * Records which exact localpart form a phone number's digits actually belong
- * to. Called from matrix-events.adapter.js#toPrefixedIdentity on every
- * inbound message from a phone-shaped account (ground truth: that account
- * just proved it exists and messaged us) and reinforced from resolveDmRoomId
- * below for any other path that already has a real, full user id in hand.
- * Best-effort, non-fatal -- self-heals on the next observation if the write
- * fails, same reasoning as the DM-room cache write just below.
- */
-async function rememberPhoneLocalpart(digits, localpart) {
-  if (!digits || !localpart) return;
-  knownLocalpartCache.set(digits, localpart);
-  try {
-    const client = await getClient();
-    await client.storageProvider?.storeValue?.(`${PHONE_LOCALPART_STORAGE_PREFIX}${digits}`, localpart);
-  } catch (error) {
-    logToFile('Matrix: phone-localpart cache write failed (non-fatal)', { error: error.message });
-  }
-}
-
-/**
- * The real localpart form for these phone digits, if this process (or a
- * prior one, via storageProvider) has ever actually observed it -- or null
- * if nothing is recorded, in which case the caller falls back to the "+"
- * convention (matrix-identity.js#defaultLocalpart). Never guesses here.
- */
-async function resolveKnownLocalpart(digits) {
-  if (knownLocalpartCache.has(digits)) return knownLocalpartCache.get(digits);
-  try {
-    const client = await getClient();
-    const stored = await client.storageProvider?.readValue?.(`${PHONE_LOCALPART_STORAGE_PREFIX}${digits}`);
-    if (stored) {
-      knownLocalpartCache.set(digits, stored);
-      return stored;
-    }
-  } catch (error) {
-    logToFile('Matrix: phone-localpart cache read failed (non-fatal)', { error: error.message });
-  }
-  return null;
-}
-
 /**
  * Resolves the "to" identifier the router hands every method -- either the
- * long "matrix:<user_id>" form or the short "mtx:<digits>" form -- back into
- * a full "@user:server" Matrix user id (itself containing a colon). For the
- * short form, looks up the REAL localpart via resolveKnownLocalpart() first
- * (never assumes "+" over "t" when the true answer is already known -- see
- * matrix-identity.js's header comment); only guesses "+<digits>" (logged)
- * when nothing has ever been recorded for these digits.
+ * long "matrix:<user_id>" form or a short "mtx:<digits>"/"mtx:t<digits>" form
+ * -- back into the full "@user:server" Matrix user id (itself containing a
+ * colon) it was minted from. Lossless: each identity names exactly one
+ * account (see matrix-identity.js's header comment). Async only because its
+ * callers already await it.
  */
 async function matrixUserId(to) {
-  const raw = String(to);
-  if (raw.startsWith(`${matrixIdentity.SHORT_PREFIX}:`)) {
-    const digits = raw.slice(matrixIdentity.SHORT_PREFIX.length + 1);
-    const known = await resolveKnownLocalpart(digits);
-    if (!known) {
-      logToFile(
-        'ℹ️ Matrix: no recorded registration form for these phone digits (never seen an inbound message from '
-        + 'this account yet) -- guessing the "+" convention',
-        { channel: 'matrix', digits }
-      );
-    }
-    return matrixIdentity.decodeIdentity(raw, ownUserIdHint(), known);
-  }
-  return matrixIdentity.decodeIdentity(raw, ownUserIdHint());
+  return matrixIdentity.decodeIdentity(String(to), ownUserIdHint());
 }
 
 // Media ids carry the same "matrix:" prefix as user identities, wrapping the
 // mxc:// URI itself (e.g. "matrix:mxc://example.org/abc123") -- minted by
 // matrix-events.adapter.js so the messaging router can tell an inbound Matrix
 // attachment id apart from a WhatsApp media id with no DB lookup. Media ids
-// are always long-form (never phone-shaped), so this never touches the
-// phone-localpart lookup above -- it's a plain prefix strip either way.
+// are always long-form (never phone-shaped), so this is a plain prefix strip.
 async function stripMatrixPrefix(to) {
   return matrixUserId(to);
 }
@@ -197,18 +133,6 @@ async function createDmRoom(client, targetUserId) {
 
 async function resolveDmRoomId(userId) {
   const client = await getClient();
-
-  // Reinforce the phone-localpart memory (see rememberPhoneLocalpart above)
-  // for ANY path that already has a real, full user id in hand -- not just
-  // the inbound-message path matrix-events.adapter.js normally records it
-  // from. Covers e.g. the welcome DM (sendWelcomeDm passes the exact join
-  // event's userId straight through toPrefixedIdentity, which already
-  // records it -- this is a harmless no-op reinforcement there) and any
-  // future caller that resolves a room from a full id it obtained some other
-  // way. Best-effort: never blocks a send over it.
-  const phoneParsed = matrixIdentity.splitUserId(userId);
-  const phoneDigits = phoneParsed ? matrixIdentity.phoneDigitsFromLocalpart(phoneParsed.localpart) : null;
-  if (phoneDigits) await rememberPhoneLocalpart(phoneDigits, phoneParsed.localpart);
 
   // Prefer the room the user's message ACTUALLY arrived in over anything
   // derived/cached -- see matrix-events.adapter.js's
@@ -273,12 +197,7 @@ async function resolveDmRoomId(userId) {
   return roomId;
 }
 
-/**
- * The room a send targets, resolved from the "matrix:<user_id>"/"mtx:<digits>"
- * identifier. matrixUserId() is now async (it may need a storageProvider
- * round trip to resolve a phone number's real "+"/"t" localpart form), so
- * this simply awaits it before handing the result to resolveDmRoomId().
- */
+/** The room a send targets, resolved from the "matrix:<user_id>"/"mtx:<digits>" identifier. */
 async function getRoomId(to) {
   return resolveDmRoomId(await matrixUserId(to));
 }
@@ -1212,10 +1131,6 @@ for (const { name, isAsync } of MEMBERS) {
 MatrixChannel._matrixUserId = matrixUserId;
 MatrixChannel._cacheIncomingMedia = cacheIncomingMedia;
 MatrixChannel._resolveDmRoomId = resolveDmRoomId;
-// Consumed by matrix-events.adapter.js#toPrefixedIdentity -- see this file's
-// "Phone-number localpart memory" section header.
-MatrixChannel._rememberPhoneLocalpart = rememberPhoneLocalpart;
-MatrixChannel._resolveKnownLocalpart = resolveKnownLocalpart;
 // Consumed by matrix-events.adapter.js to render every text-flow step after the first.
 MatrixChannel._sendTextFlowStep = sendTextFlowStep;
 MatrixChannel._stopTypingIndicator = relayable('_stopTypingIndicator', stopTypingIndicator);

@@ -69,11 +69,14 @@ public `https://` name, not `127.0.0.1` or a LAN-only address. The bot itself ca
 
 ## How teachers are identified
 
-A teacher's Matrix username is their phone number with a leading `+` (or `t`): `@+15550100001:example.org`.
+A teacher's Matrix username is their phone number with a leading `+`: `@+15550100001:example.org`.
 Rumi stores that teacher as `mtx:15550100001`, the same digits a WhatsApp number would have, so it fits the
-existing database columns. rumi-messenger's `teacher.sh add "+1555…" "Name"` creates accounts in this form.
-Any other username (`@teacher:example.org`) works too, as `matrix:@teacher:example.org`. Two numbers that
-differ only in their country code stay two different teachers.
+existing database columns, and records the number for the portal's sign-in. rumi-messenger's
+`teacher.sh add "+1555…" "Name"` creates accounts in this form. The short form is only for accounts on the
+bot's own homeserver. An older `t` username (`@t15550100001:example.org`) is a different account and so a
+different teacher (`mtx:t15550100001`, no phone number recorded). Any other username (`@teacher:example.org`),
+and every account on another homeserver, is stored in full, as `matrix:@teacher:example.org`. Two numbers
+that differ only in their country code stay two different teachers.
 
 ## Encryption
 

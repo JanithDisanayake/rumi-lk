@@ -1,10 +1,7 @@
 /**
  * matrix-identity.js -- shared short/long identity FORMAT codec for the
- * Matrix channel. Pure string logic only (no storage/network) -- the
- * remembered mapping this needs on decode (see below) lives in
- * matrix-channel.service.js, next to its other client.storageProvider-backed
- * caches (dmRoomCache/DM_ROOM_STORAGE_PREFIX), matching this codebase's
- * existing "identity format is pure, storage lives with the client" split.
+ * Matrix channel, and the homeserver allowlist it depends on. Pure string
+ * logic only (no storage/network).
  *
  * ## Why this exists -- the varchar(20) budget (bug: lesson plan creation
  * failing with "value too long for type character varying(20)")
@@ -41,7 +38,7 @@
  * "t15550100001") is kept as a FALLBACK form -- accounts were already
  * created that way before "+" was confirmed to work, and some other
  * homeserver might reject "+" -- so both are treated as "a phone-number
- * username": a localpart that is either "+" or "t"/"T", then 7-15 digits,
+ * username": a localpart that is either "+" or "t", then 7-15 digits,
  * nothing else (7 is a generous floor for a short-but-real national number;
  * 15 is E.164's hard ceiling).
  *
@@ -53,7 +50,7 @@
  * ":x" (2) is comfortably over 20 before a real domain is even added --
  * "matrix:" is out on its own ("matrix:" + up to 16 = 23).
  *
- * The leading "+"/"t" is only a Synapse registration-syntax requirement, not
+ * The leading "+" is only a Synapse registration-syntax requirement, not
  * part of the phone number Rumi actually needs downstream -- so the short
  * wire identity drops it and carries the bare DIGITS, exactly the shape Rumi
  * already expects from WhatsApp:
@@ -61,6 +58,9 @@
  *   20 (tightest column)  -  15 (max E.164 digits)  =  5 characters spare
  *                                                       for a prefix+separator
  *   chosen prefix "mtx:"  =  4 characters  ->  4 + 15 = 19 chars, 1 to spare
+ *
+ * The one spare character is what the "t" form spends: "mtx:t" + 15 digits
+ * = 20, exactly the budget (see "One account per identity" below).
  *
  * ("mx:" (3 chars, 3+15=18) would leave 2 spare instead of 1 -- also fits,
  * and was suggested as an alternative -- but "mtx:" was kept: it was already
@@ -75,24 +75,27 @@
  * driverForIdentifier without disturbing prefixFor('matrix'), which stays
  * 'matrix' -- existing tests depend on that).
  *
- * ## The "+" vs "t" ambiguity on DECODE
+ * ## One account per identity, and only on our own homeserver
  *
- * "@+15550100001:localhost" and "@t15550100001:localhost" are DIFFERENT
- * Matrix accounts. Encoding either one to "mtx:15550100001" is lossy by
- * design (that's the whole point -- the wire identity is digits-only), so
- * decoding back must never GUESS which account a given phone number's digits
- * actually belong to when the real answer is already known -- that would
- * silently reply from/to the wrong room if a teacher's account happens to be
- * the "t" form. decodeIdentity() below therefore takes an OPTIONAL
- * `knownLocalpart` -- the exact form (with its "+"/"t") the caller has
- * actually observed for these digits, e.g. via a real inbound message from
- * that account -- and only falls back to the "+<digits>" convention (the
- * canonical form) when nothing is recorded. See
- * matrix-channel.service.js#resolveKnownLocalpart/rememberPhoneLocalpart for
- * where that memory is populated and persisted (mirrors its own
- * dmRoomCache/DM_ROOM_STORAGE_PREFIX two-tier pattern) and
- * matrix-events.adapter.js#toPrefixedIdentity for where it's recorded, at the
- * one place a real account's exact localpart is observed on the way in.
+ * An identity IS a Rumi teacher: their users row, sessions, classes, and (for
+ * the short form) the phone number the portal signs them in by. So it must
+ * name exactly one Matrix account, and the short form drops the one part of
+ * a user id that makes it unique across homeservers. It is therefore used
+ * ONLY for the bot's own server (MATRIX_USER_ID, or the whoami result):
+ *
+ *   "@+15550100001:<own>"  ->  "mtx:15550100001"   (the canonical account)
+ *   "@t15550100001:<own>"  ->  "mtx:t15550100001"  (a DIFFERENT account)
+ *   "@+15550100001:<other>" -> "matrix:@+15550100001:<other>"
+ *
+ * Both short forms decode back to exactly the account they came from, so no
+ * memory of "which form did this number use" is needed. An earlier version
+ * mapped both forms on any server to "mtx:<digits>" and remembered the last
+ * form seen: anyone who could register "@+<a teacher's number>" on another
+ * homeserver (federation is on by default in Synapse), or the "t" twin on a
+ * server with open registration, became that teacher. If the own server is
+ * not known yet, the long form is used -- never a short form that could
+ * belong to some other server. Which servers may reach Rumi at all is
+ * allowedServers() below (MATRIX_ALLOWED_SERVERS, default: our own).
  *
  * Non-phone-shaped localparts (admin accounts, our own test users like
  * "@teacher:localhost" or "@teacher576594:localhost" -- itself alphanumeric,
@@ -108,9 +111,14 @@
 
 const SHORT_PREFIX = 'mtx';
 const LONG_PREFIX = 'matrix';
-// Either "+" (canonical, matches WhatsApp's own phone-number shape) or "t"/"T"
-// (fallback -- see this file's header comment) followed by 7-15 digits.
-const PHONE_LOCALPART_RE = /^(\+|[tT])(\d{7,15})$/;
+// Either "+" (canonical, matches WhatsApp's own phone-number shape) or "t"
+// (fallback -- see this file's header comment) followed by 7-15 digits. Only
+// lowercase "t": Matrix localparts are lowercase, and "T" could not decode
+// back to the same account.
+const PHONE_LOCALPART_RE = /^(\+|t)(\d{7,15})$/;
+// The part of a short identity after "mtx:": bare digits ("+" account) or
+// "t" + digits ("t" account).
+const SHORT_BODY_RE = /^(t?)(\d{7,15})$/;
 
 // Module-level -- deliberately fires the "may exceed the limit" warning only
 // ONCE per process, not once per message, so a chatty non-phone-username
@@ -122,50 +130,68 @@ function _resetWarnedForTests() {
   warnedNonPhoneOnce = false;
 }
 
-/**
- * True/false-shaped check via return value: the digits (no leading "+"/"t")
- * for a Matrix localpart shaped like our phone-number registration
- * convention, or null if it doesn't match. See PHONE_LOCALPART_RE above.
- * @returns {string|null}
- */
-function phoneDigitsFromLocalpart(localpart) {
-  const match = PHONE_LOCALPART_RE.exec(String(localpart || ''));
-  return match ? match[2] : null;
-}
-
-/** Splits a full "@<localpart>:<server>" Matrix user id, or returns null if it isn't shaped like one. */
+/** Splits a full "@<localpart>:<server>" Matrix user id, or returns null if it isn't shaped like one. The server keeps any port ("localhost:8448"). */
 function splitUserId(fullUserId) {
   const raw = String(fullUserId || '');
   if (!raw.startsWith('@')) return null;
   const colonIdx = raw.indexOf(':');
-  if (colonIdx <= 1) return null; // no colon, or empty localpart ("@:server")
+  if (colonIdx <= 1 || colonIdx === raw.length - 1) return null; // no colon, empty localpart ("@:server") or empty server
   return { localpart: raw.slice(1, colonIdx), server: raw.slice(colonIdx + 1) };
 }
 
-/** The canonical fallback localpart for a set of phone digits when no real registration form is known -- see this file's header comment ("+" vs "t" ambiguity). */
-function defaultLocalpart(digits) {
-  return `+${digits}`;
+/** The bot's own server name, from its full user id, or null if unknown. */
+function ownServerOf(ownUserId) {
+  return splitUserId(ownUserId)?.server || null;
 }
 
 /**
- * Encodes a full Matrix user id into the shortest safe wire identity:
- * "mtx:<digits>" (leading "+"/"t" dropped) for a phone-number-shaped
- * localpart, or the existing "matrix:@<localpart>:<server>" long form
- * otherwise. The short form carries the bare phone digits -- the same shape
- * Rumi already gets from WhatsApp -- not the Matrix-only registration syntax.
+ * The homeservers whose users may reach Rumi: the bot's own server, plus any
+ * listed in MATRIX_ALLOWED_SERVERS (comma-separated server names, compared
+ * exactly as they appear in user ids, port included). The own server is
+ * always in: it is where the bot's account and the admin-created teacher
+ * accounts live. Empty when the own server is unknown and nothing is listed.
+ *
+ * @param {string|null} ownUserId the bot's own full Matrix user id
+ * @param {object} [env] defaults to process.env
+ * @returns {Set<string>}
+ */
+function allowedServers(ownUserId, env = process.env) {
+  const servers = new Set(
+    String(env.MATRIX_ALLOWED_SERVERS || '').split(',').map((s) => s.trim()).filter(Boolean)
+  );
+  const own = ownServerOf(ownUserId);
+  if (own) servers.add(own);
+  return servers;
+}
+
+/** Whether a full Matrix user id belongs to an allowed homeserver (see allowedServers()). */
+function isAllowedSender(fullUserId, ownUserId, env = process.env) {
+  const parsed = splitUserId(fullUserId);
+  return Boolean(parsed && allowedServers(ownUserId, env).has(parsed.server));
+}
+
+/**
+ * Encodes a full Matrix user id into the shortest safe wire identity. On the
+ * bot's own server, a phone-number-shaped localpart becomes "mtx:<digits>"
+ * ("+" form, the "+" dropped) or "mtx:t<digits>" ("t" form). Everything else
+ * -- any other username, any user on another server, or any user at all
+ * while the own server is unknown -- keeps the long "matrix:@<localpart>:<server>"
+ * form. See this file's header comment ("One account per identity").
  *
  * @param {string} fullUserId e.g. "@+15550100001:localhost", "@t15550100001:localhost", or "@teacher:localhost"
+ * @param {string|null} ownUserId the bot's own full Matrix user id (e.g. "@rumi:localhost")
  * @param {{ logToFile?: Function }} [deps] structured logger, injected so this
  *   pure-ish module has no hard dependency on the logger's location
  * @returns {string}
  */
-function encodeIdentity(fullUserId, deps = {}) {
+function encodeIdentity(fullUserId, ownUserId, deps = {}) {
   const raw = String(fullUserId || '');
   const parsed = splitUserId(raw);
-  const digits = parsed ? phoneDigitsFromLocalpart(parsed.localpart) : null;
+  const own = ownServerOf(ownUserId);
+  const match = parsed && own && parsed.server === own ? PHONE_LOCALPART_RE.exec(parsed.localpart) : null;
 
-  if (digits) {
-    return `${SHORT_PREFIX}:${digits}`;
+  if (match) {
+    return `${SHORT_PREFIX}:${match[1] === 't' ? 't' : ''}${match[2]}`;
   }
 
   if (!warnedNonPhoneOnce) {
@@ -183,37 +209,33 @@ function encodeIdentity(fullUserId, deps = {}) {
 }
 
 /**
- * Decodes a wire identity (long OR short form) back into a full Matrix user
- * id ("@localpart:server"), reconstructing the server name from the bot's own
- * user id -- single-homeserver deployment, no federation, so the domain is
- * always ours.
+ * Decodes a wire identity (long OR short form) back into the full Matrix
+ * user id it was encoded from. A short form always names an account on the
+ * bot's own server: "mtx:<digits>" is "@+<digits>:<own>", "mtx:t<digits>" is
+ * "@t<digits>:<own>".
  *
- * For the short form, the localpart ("+"/"t" + digits) is NOT re-derivable
- * from the digits alone ("+1555..." and "t1555..." are different accounts --
- * see this file's header comment) -- pass the real observed form as
- * `knownLocalpart` whenever the caller has one; only when it's null/absent
- * does this fall back to the "+<digits>" convention.
- *
- * @param {string} identity e.g. "mtx:15550100001", "matrix:@teacher:localhost", or an already-bare "@user:server"
+ * @param {string} identity e.g. "mtx:15550100001", "mtx:t15550100001", "matrix:@teacher:localhost", or an already-bare "@user:server"
  * @param {string|null} ownUserId the bot's own full Matrix user id (e.g. "@rumi:localhost") -- only needed to decode the short form
- * @param {string|null} [knownLocalpart] the real localpart (with its "+"/"t") this phone number's account actually has, if known
  * @returns {string} full "@localpart:server" Matrix user id
- * @throws {Error} if given a short-form identity but ownUserId's server name is unknown
+ * @throws {Error} if given a short-form identity but ownUserId's server name
+ *   is unknown, or a short-form identity that is not one of the two phone forms
  */
-function decodeIdentity(identity, ownUserId, knownLocalpart = null) {
+function decodeIdentity(identity, ownUserId) {
   const raw = String(identity || '');
 
   if (raw.startsWith(`${SHORT_PREFIX}:`)) {
-    const digits = raw.slice(SHORT_PREFIX.length + 1);
-    const server = String(ownUserId || '').split(':')[1];
+    const match = SHORT_BODY_RE.exec(raw.slice(SHORT_PREFIX.length + 1));
+    if (!match) {
+      throw new Error(`matrix-identity: "${raw}" is not a short Matrix identity ("mtx:<digits>" or "mtx:t<digits>")`);
+    }
+    const server = ownServerOf(ownUserId);
     if (!server) {
       throw new Error(
         'matrix-identity: cannot decode short identity "' + raw + '" -- the bot\'s own server name is unknown '
         + '(MATRIX_USER_ID is not set and the connection has not resolved its own user id yet)'
       );
     }
-    const localpart = knownLocalpart || defaultLocalpart(digits);
-    return `@${localpart}:${server}`;
+    return `@${match[1] || '+'}${match[2]}:${server}`;
   }
 
   if (raw.startsWith(`${LONG_PREFIX}:`)) {
@@ -227,9 +249,10 @@ module.exports = {
   SHORT_PREFIX,
   LONG_PREFIX,
   PHONE_LOCALPART_RE,
-  phoneDigitsFromLocalpart,
   splitUserId,
-  defaultLocalpart,
+  ownServerOf,
+  allowedServers,
+  isAllowedSender,
   encodeIdentity,
   decodeIdentity,
   _resetWarnedForTests,

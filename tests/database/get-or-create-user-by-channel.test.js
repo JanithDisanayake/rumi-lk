@@ -191,6 +191,22 @@ describe('getOrCreateUserByChannel — Matrix phone-number identities', () => {
     expect(user.phone_number).toBe('15550100001');
   });
 
+  // The number in a username is only a phone number Rumi may record for the
+  // "+" account on the bot's own homeserver (admin-created there). A "t"
+  // twin or an account elsewhere is someone else, and recording "their"
+  // number would hand them the WhatsApp teacher's row later.
+  it.each([
+    ['the "t" account', '@t15550100001:example.org'],
+    ['an account on another homeserver', '@+15550100001:other.example.org'],
+  ])('records no phone number for %s', async (_label, sender) => {
+    const { encodeIdentity } = require('../../bot/shared/services/messaging/matrix-identity');
+    const { resolveChannelIdentity } = require('../../bot/shared/services/messaging/channel-registry');
+    const { channel, channelUserId } = resolveChannelIdentity(encodeIdentity(sender, '@rumi:example.org', { logToFile: jest.fn() }));
+    const user = await getOrCreateUserByChannel(channel, channelUserId);
+    expect(mockState.calls.userInserts[0].phone_number).toBeUndefined();
+    expect(user.phone_number).toBeUndefined();
+  });
+
   it('records nothing for a non-phone Matrix username', async () => {
     await getOrCreateUserByChannel('matrix', '@teacher:example.org');
     expect(mockState.calls.userInserts[0].phone_number).toBeUndefined();

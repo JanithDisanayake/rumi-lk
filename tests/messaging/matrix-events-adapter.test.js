@@ -56,6 +56,31 @@ describe('toPrefixedIdentity', () => {
   });
 });
 
+// An identity is a teacher (users row, sessions, classes). The short form is
+// only for the bot's own homeserver, and the "+" and "t" usernames are two
+// different accounts, so neither may borrow the other's identity.
+describe('the sender identity names exactly one Matrix account', () => {
+  const textFrom = (sender) => ({
+    sender, event_id: `$${sender}`, origin_server_ts: STARTED_AT + 5000, content: { msgtype: 'm.text', body: '/status' },
+  });
+
+  it('a sender on another homeserver does not get the local teacher\'s `from`', async () => {
+    const { resolveChannelIdentity } = require('../../bot/shared/services/messaging/channel-registry');
+    const local = await adapter.mapMessageToMetaShape('!dm1:x', textFrom('@+15550100001:example.org'), OWN_USER_ID, STARTED_AT);
+    const foreign = await adapter.mapMessageToMetaShape('!dm2:x', textFrom('@+15550100001:other.example.org'), OWN_USER_ID, STARTED_AT);
+    expect(local.from).toBe('mtx:15550100001');
+    expect(foreign.from).toBe('matrix:@+15550100001:other.example.org');
+    expect(resolveChannelIdentity(foreign.from)).not.toEqual(resolveChannelIdentity(local.from));
+  });
+
+  it('the "t" and "+" accounts for one number are two Rumi users', async () => {
+    const plus = await adapter.mapMessageToMetaShape('!dm1:x', textFrom('@+15550100001:example.org'), OWN_USER_ID, STARTED_AT);
+    const t = await adapter.mapMessageToMetaShape('!dm2:x', textFrom('@t15550100001:example.org'), OWN_USER_ID, STARTED_AT);
+    expect(t.from).toBe('mtx:t15550100001');
+    expect(t.from).not.toBe(plus.from);
+  });
+});
+
 describe('toPrefixedMediaId', () => {
   it('prefixes an mxc:// URI with "matrix:" -- required so the messaging router (channel-registry.js#driverForIdentifier) sends getMediaInfo/downloadMedia to the Matrix driver, not the WhatsApp one', () => {
     expect(adapter.toPrefixedMediaId('mxc://example.org/abc123')).toBe('matrix:mxc://example.org/abc123');

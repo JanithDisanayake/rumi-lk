@@ -51,7 +51,7 @@ async function main() {
     const metaMessage = req.body.entry[0].changes[0].value.messages[0];
     // Only resolve on a message from the target user -- ignore anything else
     // that lands on this same shared connection while the smoke script runs.
-    if (metaMessage.from === matrixEventsAdapter.toPrefixedIdentity(targetUser)) {
+    if (metaMessage.from === matrixEventsAdapter.toPrefixedIdentity(targetUser, connection.getCachedUserId())) {
       console.log('\n📩 Adapter produced this Meta-shaped payload from the reply:');
       console.log(JSON.stringify(metaMessage, null, 2));
       resolveReply(metaMessage);

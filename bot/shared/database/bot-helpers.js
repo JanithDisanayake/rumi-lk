@@ -101,7 +101,15 @@ async function getOrCreateUser(phoneNumber) {
  *   "channel:id"-prefixed string; that prefix is a messaging-router concern)
  * @returns {Promise<object>} User record (the same shape getOrCreateUser returns)
  */
-/** The phone number a new Matrix user can be recorded with, or null. */
+/**
+ * The phone number a new Matrix user can be recorded with, or null. Only the
+ * bare-digits identity counts ("mtx:<digits>": the "+<digits>" account on the
+ * bot's own homeserver, see matrix-identity.js). The "t" account
+ * ("mtx:t<digits>") and every other server's users keep their number out of
+ * users.phone_number: it is only a username, and recording it would let that
+ * account claim the WhatsApp teacher with the same number. Even for the "+"
+ * account the number is admin-asserted, not verified (docs/channels/matrix.md).
+ */
 async function matrixPhoneNumberFor(channel, channelUserId) {
   if (channel !== 'matrix' || !/^\d{7,15}$/.test(String(channelUserId))) return null;
   const { data: taken } = await supabase
