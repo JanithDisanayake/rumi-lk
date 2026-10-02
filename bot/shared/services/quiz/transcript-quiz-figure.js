@@ -1494,6 +1494,8 @@ async function renderFigurePng(svg, language, opts = {}) {
   const { htmlToImage } = require('../../utils/html-to-pdf');
   const png = await htmlToImage(figureHtml(svg, language, opts), {
     width: PNG_WIDTH, deviceScaleFactor: 1, selector: '.fig',
+    // model-written content: no page script, no network (html-to-pdf)
+    untrusted: true,
   });
   if (!png || !png.length) throw new FigureError('FIGURE_RENDER', 'the figure screenshot came back empty');
   return png;

@@ -156,7 +156,7 @@ ${cue}${rows}
 
 async function renderQuestionCardPng(data) {
   const { htmlToImage } = require('../../utils/html-to-pdf');
-  const png = await htmlToImage(renderQuestionCardHtml(data), { width: CARD_WIDTH, deviceScaleFactor: 1, selector: '.card' });
+  const png = await htmlToImage(renderQuestionCardHtml(data), { width: CARD_WIDTH, deviceScaleFactor: 1, selector: '.card', untrusted: true });
   if (!png || !png.length) throw new Error('the question card screenshot came back empty');
   return png;
 }

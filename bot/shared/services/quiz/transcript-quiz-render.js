@@ -112,6 +112,7 @@ async function renderPdf({ quiz, questions, digest, teacherName, grade, lessonSu
   });
   const buffer = await htmlToPdf(html, {
     timeout: 45000,
+    untrusted: true, // model-written content: no page script, no network
     pdfOptions: { format: 'A4', printBackground: true, margin: { top: '0', right: '0', bottom: '0', left: '0' } },
   });
   if (!buffer || !buffer.length) throw new Error('empty PDF');

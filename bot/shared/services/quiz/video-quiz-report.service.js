@@ -842,7 +842,7 @@ async function sendClassCards({ shareCode, quizRow, done, reason, language, clas
         topic: shareCode.topic || '', subject: (quizRow && quizRow.subject) || '', className: className || '',
         language, rows, targetSessionId: r.sessionId, mode: 'full',
       });
-      const png = await htmlToImage(html, { width: 540, deviceScaleFactor: 2, selector: '.card' });
+      const png = await htmlToImage(html, { width: 540, deviceScaleFactor: 2, selector: '.card', untrusted: true });
       if (!png) throw new Error('empty image');
       await rateLimiter.throttle(r.phone);
       const ok = await sendPngImage(r.phone, png, caption, { prefix: 'class-card' });
@@ -922,6 +922,7 @@ async function renderReportPdf(data) {
   const renderHtml = require('../../templates/video-quiz-report.template');
   return htmlToPdf(renderHtml(data), {
     timeout: 30000,
+    untrusted: true, // children's typed names and classes: no page script, no network
     pdfOptions: {
       format: 'A4',
       printBackground: true,

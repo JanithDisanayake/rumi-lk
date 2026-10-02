@@ -65,7 +65,7 @@ async function renderScorecardImage({ topic, correct, total, pct, subject, taker
     // `language` is the QUIZ's — a child reads their card in whatever language
     // they just answered in, and their name has to render in its own script.
     const html = renderHtml({ topic, correct, total, pct, subject, takerName, language });
-    const png = await htmlToImage(html, { width: 540, deviceScaleFactor: 2, selector: '.card' });
+    const png = await htmlToImage(html, { width: 540, deviceScaleFactor: 2, selector: '.card', untrusted: true });
     return png || null;
   } catch (err) {
     logToFile('⚠️ video-quiz: scorecard render failed', { error: err.message });
