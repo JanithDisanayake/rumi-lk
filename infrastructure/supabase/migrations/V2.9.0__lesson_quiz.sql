@@ -1,5 +1,5 @@
 -- =============================================================================
--- V2.7.0 - Lesson quiz
+-- V2.9.0 - Lesson quiz
 -- A quiz written from the lesson the teacher taught (coaching transcript) or
 -- planned (a Rumi lesson plan), shared with the class by one link.
 --
