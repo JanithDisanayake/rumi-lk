@@ -100,6 +100,7 @@ const fs = require('fs');
 const path = require('path');
 const EventEmitter = require('events');
 const { logToFile } = require('../../utils/logger');
+const matrixIdentity = require('./matrix-identity');
 
 let client = null;
 let clientPromise = null;
@@ -241,16 +242,48 @@ function wrapSetAccountDataSerialized(matrixClient) {
   };
 }
 
+// Inviters already logged as declined, so a server that keeps inviting the
+// bot costs one log line per inviter, not one per invite. Bounded.
+const DECLINED_LOG_MAX = 1000;
+const declinedInviters = new Set();
+
 /**
- * Auto-accepts every room invite, exactly like matrix-bot-sdk's own
- * AutojoinRoomsMixin.setupOnClient() -- except a failed join is caught and
- * logged instead of being left to reject out of an EventEmitter callback.
- * See connect()'s call site for the crash this replaces.
+ * Auto-accepts room invites from an allowed homeserver -- the bot's own, plus
+ * MATRIX_ALLOWED_SERVERS (matrix-identity.js#allowedServers) -- like
+ * matrix-bot-sdk's own AutojoinRoomsMixin.setupOnClient(), except a failed
+ * join is caught and logged instead of being left to reject out of an
+ * EventEmitter callback (see connect()'s call site for that crash). An
+ * invite from any other server is declined (leaveRoom rejects an invite):
+ * with federation on, anyone anywhere could otherwise open a room with Rumi.
+ * If the own server cannot be worked out, nothing is joined (the invite stays
+ * pending) -- never a guess.
  *
  * @param {import('matrix-bot-sdk').MatrixClient} matrixClient
  */
 function autojoinRoomInvites(matrixClient) {
-  matrixClient.on('room.invite', (roomId) => {
+  matrixClient.on('room.invite', async (roomId, event) => {
+    const inviter = event?.sender;
+    try {
+      const ownUserId = process.env.MATRIX_USER_ID || cachedUserId || await matrixClient.getUserId();
+      if (!matrixIdentity.isAllowedSender(inviter, ownUserId)) {
+        if (!declinedInviters.has(inviter)) {
+          if (declinedInviters.size >= DECLINED_LOG_MAX) declinedInviters.clear();
+          declinedInviters.add(inviter);
+          logToFile('🚫 Matrix: declined an invite from a homeserver that is not allowed (see MATRIX_ALLOWED_SERVERS)', {
+            channel: 'matrix', roomId, inviter,
+          });
+        }
+        matrixClient.leaveRoom(roomId).catch((error) => {
+          logToFile('⚠️ Matrix: failed to decline an invite -- not joined', { channel: 'matrix', roomId, error: error.message });
+        });
+        return;
+      }
+    } catch (error) {
+      logToFile('⚠️ Matrix: could not check an invite -- not joined, invite left pending', {
+        channel: 'matrix', roomId, inviter, error: error.message,
+      });
+      return;
+    }
     matrixClient.joinRoom(roomId).catch((error) => {
       logToFile('⚠️ Matrix: failed to auto-join an invited room -- skipped, invite left pending', {
         channel: 'matrix', roomId, error: error.message,
@@ -312,9 +345,9 @@ async function connect() {
   // callback and kills the process -- the exact same crash SHAPE as the
   // DMs.persistCache() one this file already guards against, and one this
   // fix's own live burst-test run actually hit (a leftover stale invite in
-  // the test homeserver's room list). autojoinRoomInvites() below is
-  // functionally identical (still calls client.joinRoom(roomId) for every
-  // invite) but never lets a failed join escape uncaught.
+  // the test homeserver's room list). autojoinRoomInvites() below calls
+  // client.joinRoom(roomId) the same way, for invites from an allowed
+  // homeserver only, and never lets a failed join escape uncaught.
   autojoinRoomInvites(freshClient);
 
   try {

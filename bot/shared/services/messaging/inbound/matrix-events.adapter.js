@@ -413,6 +413,28 @@ async function recordProcessed(storage, marker, event) {
   }
 }
 
+// ── Who can reach Rumi ───────────────────────────────────────────────────────
+// Only users on an allowed homeserver: the bot's own, plus MATRIX_ALLOWED_SERVERS
+// (matrix-identity.js#allowedServers). matrix-connection.js declines invites
+// from anywhere else; this drops the events of anyone else who is in a room
+// with the bot anyway (a room the bot was invited to before this existed, or
+// a group an allowed teacher opened to an outside server). Logged once per
+// sender, not per event, so a busy outside user cannot flood the log.
+const DROPPED_LOG_MAX = 1000;
+const droppedSenders = new Set();
+
+function isFromAllowedServer(userId, ownUserId, logFields = {}) {
+  if (matrixIdentity.isAllowedSender(userId, ownUserId)) return true;
+  if (!droppedSenders.has(userId)) {
+    if (droppedSenders.size >= DROPPED_LOG_MAX) droppedSenders.clear();
+    droppedSenders.add(userId);
+    logToFile('🚫 Matrix inbound: ignoring a user whose homeserver is not an allowed homeserver (see MATRIX_ALLOWED_SERVERS)', {
+      channel: 'matrix', sender: userId, ...logFields,
+    });
+  }
+  return false;
+}
+
 // ── Reply-to-the-room-you-were-messaged-in ───────────────────────────────────
 // The outbound identity a reply is addressed to is only "matrix:<user_id>" --
 // there's no room in it -- so matrix-channel.service.js has to RESOLVE a room
@@ -538,9 +560,9 @@ function buildSyntheticResponse() {
 // server-side equivalent of the removed client feature.
 //
 // A user inviting the BOT into a DM (rather than the bot reaching out first)
-// needs no equivalent: AutojoinRoomsMixin (see matrix-connection.js) already
-// accepts that invite unconditionally, and no welcome message is sent because
-// the user is the one who initiated contact.
+// needs no equivalent: matrix-connection.js#autojoinRoomInvites already
+// accepts that invite (from an allowed homeserver), and no welcome message is
+// sent because the user is the one who initiated contact.
 const WELCOME_MESSAGE = "Hi, we're glad you're here. This is your space with Rumi. Ask us anything about "
   + "your class, your lessons, or your day. You're not teaching alone.";
 const GREETED_STORAGE_PREFIX = 'rumi:matrix:welcomed:';
@@ -706,6 +728,7 @@ async function handleWelcomeRoomJoin(client, welcomeRoomId, roomId, event, ownUs
   if (!event || event.type !== 'm.room.member' || event.content?.membership !== 'join') return;
   const userId = event.state_key;
   if (!userId || userId === ownUserId) return;
+  if (!isFromAllowedServer(userId, ownUserId, { roomId })) return;
   if (await hasBeenGreeted(client, userId)) return;
 
   // eslint-disable-next-line global-require -- lazy: avoids a require cycle at module load
@@ -730,6 +753,7 @@ async function handleDmRoomJoin(client, roomId, event, ownUserId) {
   if (!event || event.type !== 'm.room.member' || event.content?.membership !== 'join') return;
   const userId = event.state_key;
   if (!userId || userId === ownUserId) return;
+  if (!isFromAllowedServer(userId, ownUserId, { roomId })) return;
   if ((await getPendingWelcome(client, roomId)) !== userId) return;
   if (await hasBeenGreeted(client, userId) || await sendWelcomeDm(client, userId, ownUserId)) {
     await setPendingWelcome(client, roomId, null);
@@ -997,6 +1021,9 @@ async function attach(dispatch) {
 
   client.on('room.message', async (roomId, event) => {
     try {
+      // First of all: a sender on a homeserver that is not allowed never
+      // reaches the marker, the group gate, the room record or dispatch.
+      if (!isFromAllowedServer(event?.sender, ownUserId, { roomId, eventId: event?.event_id })) return;
       if (isDuplicateDelivery(event?.event_id)) {
         logToFile('⚠️ Matrix inbound: duplicate event delivery skipped', { eventId: event?.event_id });
         return;

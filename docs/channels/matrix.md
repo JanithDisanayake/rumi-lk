@@ -53,6 +53,7 @@ trip with one account. Stop the bot first: it opens its own connection.
 | `MATRIX_HOMESERVER_URL` | yes | — | With the token, switches the channel on |
 | `MATRIX_ACCESS_TOKEN` | yes | — | The bot account's token. Keep it secret; rotating it means a new device (see below) |
 | `MATRIX_USER_ID` | no | looked up | The bot's own id |
+| `MATRIX_ALLOWED_SERVERS` | no | the bot's own server | Other homeservers whose users may reach Rumi, comma-separated (`example.org,other.example.org`). Invites from any other server are declined and its users' messages ignored |
 | `MATRIX_STORAGE_DIR` | no | `./.matrix-storage` | Sync position and the encryption store |
 | `MATRIX_E2EE` | no | `on` | Only `off` runs without encryption |
 | `MATRIX_WELCOME_ROOM_ALIAS` | no | `#rumi-announcements:<server>` | The room new accounts are auto-joined to; Rumi greets each newcomer in a DM |
@@ -77,6 +78,15 @@ bot's own homeserver. An older `t` username (`@t15550100001:example.org`) is a d
 different teacher (`mtx:t15550100001`, no phone number recorded). Any other username (`@teacher:example.org`),
 and every account on another homeserver, is stored in full, as `matrix:@teacher:example.org`. Two numbers
 that differ only in their country code stay two different teachers.
+
+### Who can reach Rumi
+
+Only users on the bot's own homeserver, plus any listed in `MATRIX_ALLOWED_SERVERS`. Rumi declines invites
+from every other server and ignores its users' messages, even in a room it shares with them. Within your
+server, Rumi trusts the username: the phone number in `@+15550100001` is whatever the account was created
+with, not a verified number, and it decides which teacher (and which portal sign-in) the account gets. So run
+the homeserver the way rumi-messenger does: accounts created by an admin only (registration closed) and
+federation off. Never allow a server where people pick their own usernames.
 
 ## Encryption
 
