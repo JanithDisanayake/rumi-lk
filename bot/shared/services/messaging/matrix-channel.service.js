@@ -566,12 +566,16 @@ async function downloadMedia(mediaId) {
  * encrypts the EVENT automatically in an E2EE room, but not the uploaded bytes:
  * an attachment uploaded as-is sits in the homeserver's media store in the
  * clear, readable by anyone who learns its mxc url, and Element marks it as not
- * encrypted. With crypto present, a failed room lookup throws, so the send
- * fails loudly instead of quietly downgrading a private room to plaintext media.
+ * encrypted. The SDK's own isRoomEncrypted() does NOT throw when its room
+ * lookup fails -- it answers "not encrypted" -- so this asks
+ * matrix-connection.js#roomIsEncrypted, which rejects instead; the upload then
+ * never happens and the send fails loudly rather than quietly downgrading a
+ * private room to plaintext media.
  */
 async function roomNeedsEncryptedMedia(client, roomId) {
   if (!client.crypto) return false;
-  return client.crypto.isRoomEncrypted(roomId);
+  // eslint-disable-next-line global-require -- lazy, matches getClient() above
+  return require('./matrix-connection').roomIsEncrypted(client, roomId);
 }
 
 /**

@@ -46,6 +46,10 @@ function loadService({ sendMessageImpl, fetchImpl, dmRoomId = '!room:example.org
   jest.doMock('../../bot/shared/services/messaging/matrix-connection', () => ({
     getClient: jest.fn(async () => client),
     isE2eeActive: jest.fn(() => false),
+    // The real one confirms the SDK's answer with the homeserver
+    // (matrix-encrypted-send-guard.test.js); here it passes the stubbed
+    // client.crypto answer, or its rejection, straight through.
+    roomIsEncrypted: jest.fn(async (c, roomId) => c.crypto.isRoomEncrypted(roomId)),
   }));
 
   if (fetchImpl) global.fetch = fetchImpl;

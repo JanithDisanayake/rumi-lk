@@ -95,6 +95,11 @@ package that `matrix-bot-sdk` installs, on **Node 22 or newer**. If it cannot lo
 the Matrix channel refuses to start with an error saying why, the bot keeps serving its other channels, and
 `rumi doctor` reports it. Set `MATRIX_E2EE=off` only if plaintext is acceptable on your homeserver.
 
+Sends fail closed too. Before the first send to a room the bot does not yet know as encrypted, it reads the
+room's encryption state from the homeserver. Only a "not found" answer allows a plaintext send. If that read
+fails (a 5xx or a timeout), the message or attachment is not sent, and the log line
+`cannot confirm whether the room is encrypted` names the room.
+
 **`MATRIX_STORAGE_DIR` must persist.** It holds the encryption keys of the bot's device, paired with its
 access token. On a host with an ephemeral disk (most PaaS services), mount a volume there. If the store is
 lost, the old token can no longer encrypt: log in again for a new token (a new device) and, if you

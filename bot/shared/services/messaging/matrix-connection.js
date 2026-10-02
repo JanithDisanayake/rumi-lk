@@ -53,6 +53,17 @@
  * explicit `MATRIX_E2EE=off` starts without encryption (and skips the
  * attempt entirely); "auto" and any other value now mean "on".
  *
+ * Sends never assume a room is unencrypted (guardEncryptedSends): with E2EE
+ * on, matrix-bot-sdk's MatrixClient#sendEvent encrypts only when its
+ * RoomTracker says the room is encrypted, and RoomTracker reads a room's
+ * m.room.encryption state the first time the bot sends there -- swallowing a
+ * FAILED read as "no encryption" (matrix-bot-sdk/lib/e2ee/RoomTracker.js:
+ * `catch (e) { return; // failure == no encryption }`). A 502 or a timeout on
+ * that one request sent the message, or the attachment's bytes, into an
+ * encrypted room in plaintext. roomIsEncrypted() asks the homeserver itself
+ * whenever the SDK says "not encrypted": M_NOT_FOUND is the only answer that
+ * allows plaintext; any other failure refuses the send.
+ *
  * `events` is the one place to observe connection lifecycle, mirroring
  * discord-connection.js's/baileys-connection.js's own `events` emitter.
  *
@@ -106,6 +117,10 @@ let client = null;
 let clientPromise = null;
 let cachedUserId = null;
 let cryptoEnabled = false;
+// Rooms confirmed encrypted. Only "encrypted" is remembered: a room's
+// encryption can never be turned off again, but an unencrypted room can be
+// switched on at any time, and a failed lookup proves nothing.
+const encryptedRooms = new Set();
 const events = new EventEmitter();
 const connectionState = { connected: false };
 
@@ -247,6 +262,94 @@ function wrapSetAccountDataSerialized(matrixClient) {
 const DECLINED_LOG_MAX = 1000;
 const declinedInviters = new Set();
 
+const ENCRYPTION_LOOKUP_TIMEOUT_MS = 15000;
+
+/** Rejects if `promise` has not settled within `ms`. */
+function withTimeout(promise, ms, what) {
+  let timer;
+  const timeout = new Promise((resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what} timed out after ${ms} ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Whether `roomId` is end-to-end encrypted, as far as a SEND must care:
+ * resolves true (encrypted, and the SDK knows it), false (genuinely not
+ * encrypted, or E2EE is off on this connection), or REJECTS when that can't be
+ * established -- the caller must then not send. See the file header ("Sends
+ * never assume a room is unencrypted").
+ *
+ * @param {import('matrix-bot-sdk').MatrixClient} matrixClient
+ * @param {string} roomId
+ * @returns {Promise<boolean>}
+ */
+async function roomIsEncrypted(matrixClient, roomId) {
+  if (!matrixClient.crypto) return false;
+  if (encryptedRooms.has(roomId)) return true;
+
+  const refuse = (reason, detail = {}) => {
+    logToFile('❌ Matrix: cannot confirm whether the room is encrypted -- refusing to send rather than risk plaintext', {
+      channel: 'matrix', roomId, reason, ...detail, level: 'error',
+    });
+    return new Error(`Matrix: refusing to send to ${roomId}: its encryption state is unknown (${reason})`);
+  };
+
+  // The SDK's own answer first: a room already in its crypto store costs no
+  // round trip. Its "false" is not trusted -- that is the swallowed failure.
+  if (await matrixClient.crypto.isRoomEncrypted(roomId)) {
+    encryptedRooms.add(roomId);
+    return true;
+  }
+
+  let encryption;
+  try {
+    encryption = await withTimeout(
+      matrixClient.getRoomStateEvent(roomId, 'm.room.encryption', ''),
+      ENCRYPTION_LOOKUP_TIMEOUT_MS,
+      'the m.room.encryption lookup'
+    );
+  } catch (error) {
+    if (error && error.errcode === 'M_NOT_FOUND') return false; // genuinely no encryption state
+    throw refuse('the m.room.encryption lookup failed', {
+      error: error?.message, statusCode: error?.statusCode, errcode: error?.errcode,
+    });
+  }
+  if (!encryption || typeof encryption !== 'object') throw refuse('the homeserver returned no m.room.encryption content');
+
+  // The room IS encrypted and the SDK has not recorded it. Record it in the
+  // SDK's own crypto store, exactly as RoomTracker#queueRoomCheck would have
+  // (the state content, algorithm defaulted the same way), so sendEvent
+  // encrypts -- then ask the SDK again rather than trusting the write.
+  try {
+    await matrixClient.cryptoStore.storeRoom(roomId, { ...encryption, algorithm: encryption.algorithm ?? 'UNKNOWN' });
+  } catch (error) {
+    throw refuse('could not record the room as encrypted in the crypto store', { error: error.message });
+  }
+  if (!(await matrixClient.crypto.isRoomEncrypted(roomId))) {
+    throw refuse('the room is encrypted but matrix-bot-sdk still reports it as not encrypted');
+  }
+  encryptedRooms.add(roomId);
+  return true;
+}
+
+/**
+ * Wraps the live client's own `sendEvent` -- the one method every Matrix
+ * event send goes through (sendMessage, and the SDK's sendText/sendNotice/
+ * reply* helpers, all call it) -- so it first runs roomIsEncrypted(), which
+ * rejects instead of letting the SDK fall back to plaintext. Patched on the
+ * client, like wrapSetAccountDataSerialized(), so no call site can miss it.
+ *
+ * @param {import('matrix-bot-sdk').MatrixClient} matrixClient
+ */
+function guardEncryptedSends(matrixClient) {
+  const original = matrixClient.sendEvent.bind(matrixClient);
+  matrixClient.sendEvent = async function guardedSendEvent(roomId, eventType, content) {
+    await roomIsEncrypted(matrixClient, roomId);
+    return original(roomId, eventType, content);
+  };
+}
+
 /**
  * Auto-accepts room invites from an allowed homeserver -- the bot's own, plus
  * MATRIX_ALLOWED_SERVERS (matrix-identity.js#allowedServers) -- like
@@ -330,6 +433,7 @@ async function connect() {
   // arriving once the sync loop is running, so this must be in place first.
   // See the file header comment ("Serialized/retried account data") for why.
   wrapSetAccountDataSerialized(freshClient);
+  if (freshClient.crypto) guardEncryptedSends(freshClient);
 
   // Auto-accepts room invites (a teacher DMing the bot for the first time
   // arrives as an invite the bot must join before it can reply) -- the direct
@@ -466,6 +570,7 @@ function _resetForTests() {
   cryptoEnabled = false;
   connectionState.connected = false;
   shuttingDown = false;
+  encryptedRooms.clear();
   events.removeAllListeners();
 }
 
@@ -476,6 +581,7 @@ module.exports = {
   e2eeMode,
   getCachedUserId,
   isJoinedToRoom,
+  roomIsEncrypted,
   close,
   events,
   _resetForTests,
