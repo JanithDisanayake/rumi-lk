@@ -98,6 +98,26 @@ const { routeTestPaperText } = require('./testpaper-trigger');
 const { ownCoaching } = require('../services/coaching/own-coaching');
 
 /**
+ * May this share code join on this deployment? True unless video quizzes are
+ * switched off for the region AND the code is a video quiz's or names nothing.
+ * The same rule as video-quiz-share's videoQuizzesAllowed; asked here so the
+ * answer is known before the join is acked. A failed read says yes: the join
+ * itself then decides, as before.
+ */
+async function shareCodeAdmitted(code) {
+  try {
+    const { isVideoQuizzesEnabled } = require('../services/region-features.service');
+    const { detectRegion } = require('../utils/region');
+    if (await isVideoQuizzesEnabled(detectRegion())) return true;
+    const sc = await require('../services/quiz/video-quiz-invite.service').resolveInvite(code);
+    return !!(sc && !sc.video_id);
+  } catch (err) {
+    logToFile('⚠️ video-quiz: share-code region check failed — the join decides', { error: err.message });
+    return true;
+  }
+}
+
+/**
  * Runs before the quiz-state intercepts below, so a `QUIZ-<code>` text always
  * reaches the join, even when the sender already has a post-quiz chat state or
  * an active/invited session from an earlier quiz (a child tapping a SECOND
@@ -111,6 +131,14 @@ async function tryShareCodeJoin(from, messageBody, typingController) {
     const VideoQuizShare = require('../services/quiz/video-quiz-share.service');
     const code = VideoQuizShare.parseShareCode(messageBody);
     if (!code) return false;
+
+    // The region gate, decided BEFORE the ack. With video quizzes off for this
+    // region a video code (or a code that names nothing) is not ours: on main
+    // beginFromCode returned false and the message went on to ordinary chat.
+    // Acked first, that false would reach nobody and the text would be
+    // swallowed. A lesson quiz's code (no video) still joins. The common case
+    // (video quizzes on) costs no extra read.
+    if (!(await shareCodeAdmitted(code))) return false;
 
     // ACK FIRST. A class tapping a forwarded link within the same minute would
     // otherwise run every join (identity lookup, share-code resolution, the

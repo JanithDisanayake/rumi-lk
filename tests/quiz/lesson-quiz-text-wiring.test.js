@@ -120,6 +120,16 @@ const mockShare = {
 };
 jest.mock('../../bot/shared/services/quiz/video-quiz-share.service', () => mockShare);
 
+// Video quizzes on for this region: the share code is acked and joined without
+// a lookup in the handler (the region-off case has its own suite,
+// video-quiz-share-code-region-gate).
+jest.mock('../../bot/shared/services/region-features.service', () => ({
+  isVideoQuizzesEnabled: jest.fn(async () => true),
+  getRegionFeatures: jest.fn(async () => ({ video_quizzes_enabled: true })),
+  isCurriculumLpEnabled: jest.fn(async () => false),
+  isPicLpEnabled: jest.fn(async () => false),
+}));
+
 const mockOffer = { enabled: jest.fn(() => process.env.TRANSCRIPT_QUIZ_ENABLED === 'true') };
 jest.mock('../../bot/shared/services/quiz/transcript-quiz-offer.service', () => mockOffer);
 
