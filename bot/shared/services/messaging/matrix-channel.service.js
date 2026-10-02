@@ -230,6 +230,16 @@ async function resolveDmRoomId(userId) {
     // eslint-disable-next-line global-require -- lazy, see file header
     const connection = require('./matrix-connection');
     if (connection.isJoinedToRoom(client, lastInboundRoomId)) {
+      // Also persisted: the in-memory map is gone after a restart, and a
+      // proactive send then (a reminder, a delivered report) must still go to
+      // the room the teacher last used, not the one stored when the DM opened.
+      if (dmRoomCache.get(userId) !== lastInboundRoomId) {
+        try {
+          await client.storageProvider?.storeValue?.(`${DM_ROOM_STORAGE_PREFIX}${userId}`, lastInboundRoomId);
+        } catch (error) {
+          logToFile('Matrix: DM room cache write failed (non-fatal)', { error: error.message });
+        }
+      }
       dmRoomCache.set(userId, lastInboundRoomId);
       return lastInboundRoomId;
     }

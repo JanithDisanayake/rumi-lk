@@ -75,6 +75,25 @@ describe('reply-to-the-room-you-were-messaged-in', () => {
     expect(client.dms.getOrCreateDm).not.toHaveBeenCalled();
   });
 
+  // After a restart the in-memory map is empty, and a proactive send (a
+  // reminder, a delivered report) went to the DM room stored when the DM was
+  // first opened -- not the room the teacher had since moved to.
+  it('(a2) the room a reply went to is remembered across a restart', async () => {
+    const stored = new Map();
+    const first = loadModules();
+    first.client.storageProvider.readValue.mockImplementation(async (k) => stored.get(k) || null);
+    first.client.storageProvider.storeValue.mockImplementation(async (k, v) => { stored.set(k, v); });
+    first.adapter.recordInboundRoom('@teacher:example.org', '!newer-room:localhost');
+    await first.service.sendMessage('matrix:@teacher:example.org', 'reply');
+
+    const second = loadModules(); // a fresh process: nothing in memory
+    second.client.storageProvider.readValue.mockImplementation(async (k) => stored.get(k) || null);
+    await second.service.sendMessage('matrix:@teacher:example.org', 'your report is ready');
+
+    expect(second.client.sendMessage).toHaveBeenCalledWith('!newer-room:localhost', expect.anything());
+    expect(second.client.dms.getOrCreateDm).not.toHaveBeenCalled();
+  });
+
   it('(b) no recorded room falls back to getOrCreateDm (e.g. a bot-initiated welcome DM -- the user never sent a room.message)', async () => {
     const { service, adapter, client } = loadModules();
     expect(adapter.getLastInboundRoom('@newteacher:example.org')).toBeNull();
