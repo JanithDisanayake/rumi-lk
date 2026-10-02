@@ -66,7 +66,7 @@ GRANT EXECUTE ON FUNCTION public.exec_sql(text) TO service_role;
 NOTIFY pgrst, 'reload schema';
 ```
 
-The migration `V1.0.1__exec_sql_service_role_only.sql` applies the same `REVOKE` to an existing helper,
+The migration `V2.7.0__exec_sql_service_role_only.sql` applies the same `REVOKE` to an existing helper,
 and stops with an error if it could not.
 
 ### 3. Install New Dependencies

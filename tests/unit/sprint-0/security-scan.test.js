@@ -188,7 +188,7 @@ describe('Security Scan', () => {
             // Allow the migration that revokes the helper from PUBLIC, anon
             // and authenticated on existing databases: it narrows exec_sql,
             // it does not create or call it.
-            if (file.includes('migrations/V1.0.1__exec_sql_service_role_only.sql')) continue;
+            if (file.includes('migrations/V2.7.0__exec_sql_service_role_only.sql')) continue;
             throw new Error(`Active exec_sql reference found at ${file}:${i + 1}: ${line.trim()}`);
           }
         }

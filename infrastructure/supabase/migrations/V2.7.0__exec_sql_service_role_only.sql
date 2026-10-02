@@ -1,5 +1,5 @@
 -- =============================================================================
--- V1.0.1 - exec_sql is callable by service_role only
+-- V2.7.0 - exec_sql is callable by service_role only
 -- The one-time exec_sql helper (SETUP.md) runs any SQL as postgres. Earlier
 -- copies of it never revoked EXECUTE, and Postgres grants EXECUTE on a new
 -- function to PUBLIC (Supabase also grants it to anon and authenticated). On
