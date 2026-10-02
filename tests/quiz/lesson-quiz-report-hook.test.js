@@ -114,6 +114,7 @@ describe('scheduleTranscriptQuiz', () => {
       language: 'en',
       transcriptChars: 4200,
       source: 'self',
+      reportTopic: undefined,
     });
   });
 

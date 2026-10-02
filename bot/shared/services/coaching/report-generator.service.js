@@ -324,9 +324,11 @@ class ReportGeneratorService {
    * non-fatal — the report is already sent.
    *
    * One ask at a time: when the lesson-quiz offer is on its way, Trigger 3
-   * and the suggestion stay quiet (both asks are about a quiz). With
-   * TRANSCRIPT_QUIZ_ENABLED unset the offer answers false without a read or
-   * a write, so the two blocks below run exactly as they did before.
+   * and the suggestion stay quiet (both asks are about a quiz) — and if the
+   * offer job later decides not to offer, it runs them itself
+   * (transcript-quiz-offer runReportFollowUps). With TRANSCRIPT_QUIZ_ENABLED
+   * unset the offer answers false without a read or a write, so the two
+   * follow-ups run here exactly as they did before.
    *
    * @param {object} session            coaching_sessions row (with users join)
    * @param {string} coachingSessionId
@@ -336,14 +338,28 @@ class ReportGeneratorService {
   static async afterReportOffers(session, coachingSessionId, from, enhancedAnalysis) {
     const reportLanguage = session.users?.preferred_language || session.transcript_language || 'en';
     const quizOfferScheduled = await this.scheduleTranscriptQuiz(
-      session, coachingSessionId, from, reportLanguage
+      session, coachingSessionId, from, reportLanguage, enhancedAnalysis?.topic
     );
+    if (!quizOfferScheduled) {
+      await this.reportFollowUps(session, coachingSessionId, from, enhancedAnalysis?.topic);
+    }
+  }
 
-    // Trigger 3: Offer quiz to teacher's students after coaching report.
-    // Suppressed only when the lesson-quiz offer is already scheduled.
-    if (!quizOfferScheduled) try {
-      const language = reportLanguage;
-      const quizTopic = enhancedAnalysis?.topic;
+  /**
+   * Trigger 3 and the next-feature suggestion, exactly as the report has
+   * always sent them. Called by afterReportOffers, and by the lesson-quiz
+   * offer job when it held them back and then made no offer — which is why
+   * it needs only the teacher's id, their language and the lesson's topic.
+   *
+   * @param {object} session            { user_id, users?: { preferred_language }, transcript_language? }
+   * @param {string} coachingSessionId
+   * @param {string} from               teacher recipient id
+   * @param {string} [quizTopic]        the analysed lesson's topic
+   */
+  static async reportFollowUps(session, coachingSessionId, from, quizTopic) {
+    // Trigger 3: Offer quiz to teacher's students after coaching report
+    try {
+      const language = session.users?.preferred_language || session.transcript_language || 'en';
       if (quizTopic) {
         // Find the most recent lesson plan for this teacher to anchor the quiz
         const { data: recentLP } = await supabase
@@ -368,10 +384,9 @@ class ReportGeneratorService {
       logToFile('⚠️ Trigger 3: Error offering quiz after coaching', { error: error.message });
     }
 
-    // Suggest next feature after coaching completion — unless the lesson-quiz
-    // offer is on its way: one ask at a time, so the offer is the only ask.
-    if (!quizOfferScheduled) try {
-      const language = reportLanguage;
+    // Suggest next feature after coaching completion
+    try {
+      const language = session.users?.preferred_language || session.transcript_language || 'en';
       await FeatureLinkerService.suggestNext(
         'coaching',
         session.user_id,
@@ -397,9 +412,10 @@ class ReportGeneratorService {
    * @param {string} coachingSessionId
    * @param {string} from               teacher recipient id
    * @param {string} outputLanguage     the report's language
+   * @param {string} [reportTopic]      the analysed topic, for the follow-ups the job may run
    * @returns {Promise<boolean>} true when the offer is scheduled
    */
-  static async scheduleTranscriptQuiz(session, coachingSessionId, from, outputLanguage) {
+  static async scheduleTranscriptQuiz(session, coachingSessionId, from, outputLanguage, reportTopic) {
     try {
       const TranscriptQuizOffer = require('../quiz/transcript-quiz-offer.service');
       const scheduled = await TranscriptQuizOffer.scheduleOffer({
@@ -409,6 +425,7 @@ class ReportGeneratorService {
         language: outputLanguage,
         transcriptChars: String(session.transcript_text || '').length,
         source: 'self',
+        reportTopic,
       });
       return Boolean(scheduled);
     } catch (error) {

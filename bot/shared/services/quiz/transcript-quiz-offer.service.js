@@ -127,7 +127,7 @@ async function alreadyOffered(userId) {
 // ─── 1. Schedule (called from the report generator, on the worker) ──────────
 
 async function scheduleOffer({ coachingSessionId, userId, phone, language, transcriptChars = 0,
-                               delaySeconds = OFFER_DELAY_SECONDS, source = 'self' }) {
+                               delaySeconds = OFFER_DELAY_SECONDS, source = 'self', reportTopic = null }) {
   if (!enabled()) return false;
   if (!coachingSessionId || !userId || !phone) {
     logToFile('transcript quiz: schedule skipped, missing field', { coachingSessionId, userId, hasPhone: Boolean(phone) });
@@ -146,8 +146,11 @@ async function scheduleOffer({ coachingSessionId, userId, phone, language, trans
   // "no offer is coming", never as one.
   try {
     const SQSQueueService = require('../queue');
+    // `followUps`: what the report held back for this offer (Trigger 3 and
+    // the next-feature suggestion). The job runs them if it ends up not
+    // offering — see runReportFollowUps.
     await SQSQueueService.queueJob(coachingSessionId, 'quiz_offer', {
-      coachingSessionId, userId, phone, language, source,
+      coachingSessionId, userId, phone, language, source, followUps: { topic: reportTopic || null },
     }, { delaySeconds });
   } catch (err) {
     logToFile('⚠️ transcript quiz: offer could not be queued (non-fatal)', { coachingSessionId, error: err.message });
@@ -232,6 +235,53 @@ async function markSkipped(quizId, reason, extra = {}) {
     .eq('id', quizId);
 }
 
+/**
+ * Trigger 3 and the next-feature suggestion, held back by the report because
+ * this offer was coming (report-generator afterReportOffers), for an offer job
+ * that skipped. The worker passes the report generator in
+ * (`ReportGenerator.reportFollowUps`): it already requires this module, so
+ * requiring it back from here would be a cycle. Only the job the
+ * report scheduled carries them (`payload.followUps`); the survey's early job
+ * does not. Once per session: when the session has an offer row, it must be a
+ * SKIPPED one (an offer that went out, or a quiz being made, means the teacher
+ * has their ask) and the run is stamped on it (`meta.follow_ups_at`,
+ * compare-and-set), so a redelivery or the second of the two jobs sends
+ * nothing more. Never throws.
+ */
+async function runReportFollowUps(coachingSessionId, payload = {}, ReportGenerator = null) {
+  if (!payload.followUps || !payload.userId || !payload.phone) return false;
+  if (!ReportGenerator || typeof ReportGenerator.reportFollowUps !== 'function') return false;
+  try {
+    const { data: row } = await supabase.from('quizzes')
+      .select('id, status, meta')
+      .eq('coaching_session_id', coachingSessionId).eq('quiz_source', TRANSCRIPT).maybeSingle();
+    if (row) {
+      const meta = row.meta || {};
+      if (row.status !== 'skipped' || meta.follow_ups_at) return false;
+      const { data: stamped } = await supabase.from('quizzes')
+        .update({ meta: { ...meta, follow_ups_at: new Date().toISOString() } })
+        .eq('id', row.id).eq('status', 'skipped').is('meta->>follow_ups_at', null)
+        .select('id');
+      if (!stamped || !stamped.length) return false;
+    }
+    // The report's own language rule (preferred, else 'en') was applied when it
+    // scheduled the offer: `payload.language` is its answer.
+    await ReportGenerator.reportFollowUps(
+      { user_id: payload.userId, users: { preferred_language: payload.language || null } },
+      coachingSessionId, payload.phone, payload.followUps.topic || null,
+    );
+    logEvent('transcript_quiz.report_follow_ups_run', { coachingSessionId, userId: payload.userId });
+    return true;
+  } catch (err) {
+    logToFile('⚠️ transcript quiz: report follow-ups failed (non-fatal)', { coachingSessionId, error: err.message });
+    return false;
+  }
+}
+
+/**
+ * The offer job. When it ends without offering (`{ skipped }`), the worker
+ * runs runReportFollowUps for it (sqs-worker quiz_offer).
+ */
 async function processOffer(coachingSessionId, payload = {}) {
   if (!enabled()) return { skipped: 'disabled' };
 
@@ -330,7 +380,10 @@ async function processOffer(coachingSessionId, payload = {}) {
   ];
   const sent = await WhatsAppService.sendInteractiveButtons(phone, { body, buttons });
   // Marks "this teacher has had the offer" — what `once` mode reads next time.
-  await FeatureIntro.markVideoShown(session.user_id, FEATURE_KEY);
+  // Only when it went out: an offer that never arrived must not use up the
+  // teacher's one offer.
+  if (sent) await FeatureIntro.markVideoShown(session.user_id, FEATURE_KEY);
+  else logToFile('⚠️ transcript quiz: offer not delivered', { coachingSessionId, quizId });
 
   logEvent('transcript_quiz.offered', {
     coachingSessionId, quizId, userId: session.user_id, subject: digest.subject, language, teacherLang,
@@ -665,7 +718,7 @@ async function handleLanguageButton(buttonId, phone, user) {
 
 module.exports = {
   enabled, offerMode, subjectAllowed, alreadyOffered, staleMs, isStaleGenerating, STALE_MINUTES,
-  scheduleOffer, triggerEarly, processOffer, handleOfferButton, handleLanguageButton, claimRow, reclaimStaleOffer, languageByPhone,
+  scheduleOffer, triggerEarly, processOffer, runReportFollowUps, handleOfferButton, handleLanguageButton, claimRow, reclaimStaleOffer, languageByPhone,
   sendLanguageAsk, startGenerating, tellAlready, queueLpQuiz, remakeLpQuiz,
   OFFER_YES, OFFER_NO, MIN_TRANSCRIPT_CHARS, OFFER_DELAY_SECONDS, OFFER_LEASE_MS, MIN_CONFIDENCE, MIN_SLOS, FEATURE_KEY, SESSION_SELECT,
 };

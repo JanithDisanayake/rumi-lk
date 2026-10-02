@@ -461,7 +461,14 @@ class SQSCoachingWorker {
         }
         const TranscriptQuizOffer = require('../shared/services/quiz/transcript-quiz-offer.service');
         const p = (body && body.payload) ? body.payload : (payload || {});
-        await TranscriptQuizOffer.processOffer(p.coachingSessionId || (body && body.groupId), p);
+        const coachingSessionId = p.coachingSessionId || (body && body.groupId);
+        const offered = await TranscriptQuizOffer.processOffer(coachingSessionId, p);
+        // No offer after all: the report's Trigger 3 and next-feature
+        // suggestion, which it held back for this offer, run now (once).
+        if (offered && offered.skipped) {
+          const ReportGenerator = require('../shared/services/coaching/report-generator.service');
+          await TranscriptQuizOffer.runReportFollowUps(coachingSessionId, p, ReportGenerator);
+        }
         break;
       }
       case 'quiz_generate': {
