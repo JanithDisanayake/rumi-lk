@@ -42,6 +42,7 @@ const {
   storeLessonPlan
 } = require('../database/bot-helpers');
 const { driverForIdentifier } = require('../services/messaging/channel-registry');
+const { nativeFlowIdFor } = require('../services/messaging/channel-capabilities');
 const supabase = require('../config/supabase');
 const fs = require('fs');
 
@@ -1396,7 +1397,7 @@ async function handleTextMessage(message, from, messageBody, user = null) {
     }
     try {
       typingController.stop();
-      const STATUS_FLOW_ID = process.env.STATUS_FLOW_ID || '';
+      const STATUS_FLOW_ID = nativeFlowIdFor(from, process.env.STATUS_FLOW_ID);
       if (STATUS_FLOW_ID) {
         await WhatsAppService.sendFlow(from, {
           flowId: STATUS_FLOW_ID,
@@ -1429,7 +1430,7 @@ async function handleTextMessage(message, from, messageBody, user = null) {
   // HOMEWORK_FLOW_ID; offers the homework request flow.
   // ============================================================
   {
-    const HOMEWORK_FLOW_ID = process.env.HOMEWORK_FLOW_ID || '';
+    const HOMEWORK_FLOW_ID = nativeFlowIdFor(from, process.env.HOMEWORK_FLOW_ID);
     const hwDecision = evaluateHomeworkTrigger({ messageBody, user, homeworkFlowId: HOMEWORK_FLOW_ID });
     if (hwDecision.match) {
       typingController.stop();
@@ -1466,7 +1467,7 @@ async function handleTextMessage(message, from, messageBody, user = null) {
     logToFile('📋 Edit class keyword detected', { userId: user.id });
     typingController.stop();
 
-    const EDIT_CLASS_FLOW_ID = process.env.EDIT_CLASS_FLOW_ID || '';
+    const EDIT_CLASS_FLOW_ID = nativeFlowIdFor(from, process.env.EDIT_CLASS_FLOW_ID);
     if (!EDIT_CLASS_FLOW_ID) {
       await WhatsAppService.sendMessage(from, 'Sorry, class editing is not available yet. Please try again later.');
       return;

@@ -18,6 +18,7 @@ const { logToFile } = require('../utils/logger');
 const WhatsAppService = require('./whatsapp.service');
 const AudioService = require('./audio.service');
 const { TEMP_DIR } = require('../utils/constants');
+const { nativeFlowIdFor } = require('./messaging/channel-capabilities');
 
 class FeatureRegistrationService {
   /**
@@ -189,8 +190,9 @@ class FeatureRegistrationService {
     // form instead of the conversational name question. Unset (default) → the
     // conversational path below. The Flow completes via
     // FlowResponseHandler.handleRegistrationFlow (it does not set
-    // registration_pending_name, which is the text-name path's flag).
-    const REGISTRATION_FLOW_ID = process.env.REGISTRATION_FLOW_ID || '';
+    // registration_pending_name, which is the text-name path's flag). A
+    // channel that can't draw the Flow (Matrix, Baileys) always asks in text.
+    const REGISTRATION_FLOW_ID = nativeFlowIdFor(phoneNumber, process.env.REGISTRATION_FLOW_ID);
     if (REGISTRATION_FLOW_ID) {
       try {
         await WhatsAppService.sendFlow(phoneNumber, {

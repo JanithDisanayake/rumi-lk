@@ -40,6 +40,7 @@ const flowEndpointRoutes = require('./shared/routes/flow-endpoint.routes');
 // WhatsApp phone number. Lives in channel-registry so it can be unit-tested
 // without booting this file.
 const { resolveChannelIdentity } = require('./shared/services/messaging/channel-registry');
+const { nativeFlowIdFor } = require('./shared/services/messaging/channel-capabilities');
 
 // Create Express app
 const app = express();
@@ -896,7 +897,7 @@ async function handleWebhookPost(req, res) {
         logToFile('📋 Edit class button selected', { listId, userId: user?.id, from });
         if (!user?.id) {
           await WhatsAppService.sendMessage(from, 'Sorry, I could not identify your account. Please try "edit class" again.');
-        } else if (!constants.EDIT_CLASS_FLOW_ID) {
+        } else if (!nativeFlowIdFor(from, constants.EDIT_CLASS_FLOW_ID)) {
           await WhatsAppService.sendMessage(from, 'Sorry, class editing is not available right now. Please try again later.');
         } else {
           const { data: classRow } = await supabase
