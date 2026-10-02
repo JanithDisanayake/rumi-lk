@@ -45,7 +45,7 @@ function load() {
   jest.doMock('bullmq', () => ({ Queue, Worker, Job }), { virtual: true });
   jest.doMock('ioredis', () => function IORedis() { return {}; }, { virtual: true });
   jest.doMock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn() }));
-  jest.doMock('../../bot/shared/services/cache/railway-redis.service', () => ({ set: redisSet }), { virtual: true });
+  jest.doMock('../../bot/shared/services/cache/railway-redis.service', () => ({ set: redisSet }));
   jest.doMock('../../bot/shared/utils/structured-logger', () => ({ getCurrentCorrelationId: () => 'c1', logEvent: jest.fn() }));
 
   process.env.REDIS_URL = 'redis://localhost:6379';

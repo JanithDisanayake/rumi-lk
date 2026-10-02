@@ -55,7 +55,7 @@ describe('transcription.service.downloadAudio — file:// URLs', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rumi-reading-'));
     jest.doMock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn() }));
     jest.doMock('../../bot/shared/utils/constants', () => ({ TEMP_DIR: tmpDir, SONIOX_API_KEY: 'k' }));
-    jest.doMock('../../bot/shared/config/supabase', () => ({ from: jest.fn() }), { virtual: true });
+    jest.doMock('../../bot/shared/config/supabase', () => ({ from: jest.fn() }));
     const downloadFromR2 = jest.fn();
     jest.doMock('../../bot/shared/storage/r2', () => ({
       downloadFromR2,
