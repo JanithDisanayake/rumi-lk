@@ -135,7 +135,7 @@ but is not something this release has exercised. What it involves:
 ### Keystore custody
 
 Whoever holds the signing key is the only one who can ship an update to installed apps. Lose it and every
-teacher has to uninstall and reinstall a new app (losing local history); leak it and someone else can ship an
+teacher has to uninstall and install a new app; leak it and someone else can ship an
 "update". So:
 
 - Generate it once: `keytool -genkeypair -v -keystore messenger-release.jks -alias messenger -keyalg RSA
@@ -175,7 +175,19 @@ memory, rebuild, and re-test sign-in, a message to Rumi, a photo and a voice not
 
 ### What this release proved, and on what
 
-Built from a clean clone in this release's workspace: the fork at `rumi-brand` `376ae66a95`, debug and signed
-release; installed on an Android 15 emulator; a scripted test teacher signed in to a local homeserver and
-talked to a locally running Rumi with text, a voice note and a photo. Evidence and limits are in the release
-notes for v2.4.0.
+Built from a clean clone of the fork at `rumi-brand` `376ae66a95` (debug, and a signed release with a
+throwaway key), installed on an Android 15 emulator, and signed in to a local homeserver with a test teacher
+account. Proven end to end against a locally running Rumi: sign-in in about 9 seconds with no "Create account"
+button; Rumi's invite and greeting; a quiz answered from a numbered menu; a photo and a voice note answered on
+their content (with a spoken reply); a lesson-plan PDF delivered and opened in the app; and, after an uninstall
+and reinstall on the "new phone", a message in the existing chat sent without being blocked. **Not proven:**
+calls and notifications with the app closed — that needs a UnifiedPush distributor on the phone and an ntfy your
+homeserver is allowed to reach.
+
+### Troubleshooting sign-in
+
+- **"We couldn't reach this account provider"** with a correct address: the app follows your server's
+  `/.well-known/matrix/client` `base_url`. It must be an address **phones** can reach (not `127.0.0.1` or a
+  name that only resolves inside your network).
+- **"An error occurred, you may not receive notifications"** right after sign-in: no UnifiedPush distributor is
+  installed. Chats still work while the app is open; install ntfy for notifications.
