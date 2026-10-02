@@ -1618,6 +1618,8 @@ STRUCTURE (90 seconds total):
 
 If "hasLessonPlan" is true in the observation data, explicitly reference how closely the teacher followed their plan (use the fidelityScore if provided) either in the strength or growth portion.
 
+If "lessonPlanFidelity" is present, it is the measured comparison of the lesson with the teacher's plan. When "assessed" is true, say how closely the plan was followed using "band_words" and "planned_moves_delivered" in natural speech; never say a percentage or a score for it. When "lesson_mismatch" is true, say gently that the recording did not seem to match the linked plan, not that the teacher failed. When "assessed" is false, do not guess how closely the plan was followed.
+
 TONE:
 - Warm, respectful, mentor-like
 - Conversational (as you would speak naturally)

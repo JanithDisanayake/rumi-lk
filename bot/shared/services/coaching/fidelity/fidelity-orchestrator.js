@@ -59,8 +59,14 @@ function fidelityRuns() {
   return runs;
 }
 
+/** LP_FIDELITY_ENABLED=true, and not paused from the console (RUMI_FEATURE_LP_FIDELITY=off). */
 function isFidelityEnabled() {
-  return process.env.LP_FIDELITY_ENABLED === 'true';
+  if (process.env.LP_FIDELITY_ENABLED !== 'true') return false;
+  try {
+    return require('../../../config/feature-overrides').isEnabled('lp_fidelity');
+  } catch (_) {
+    return true;
+  }
 }
 
 function capPlanText(text) {
