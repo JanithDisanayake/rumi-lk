@@ -432,6 +432,42 @@ describe('matrix-channel.service -- media upload + send', () => {
     expect(sentMessages[0].content.msgtype).toBe('m.audio');
   });
 
+  // Rumi's spoken replies used to arrive as an "audio.mp3" file to download;
+  // Element and the Rumi Android app show a voice-message bubble only for an
+  // m.audio carrying the MSC3245 voice flag and its MSC1767 audio block.
+  it('sendAudio sends a spoken reply as a voice message, with its duration', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const { service, sentMessages } = loadService();
+    const mp3 = fs.readFileSync(path.join(__dirname, '../fixtures/audio/two-seconds.mp3'));
+    await service.sendAudio(TO, mp3);
+    const { content } = sentMessages[0];
+    expect(content.msgtype).toBe('m.audio');
+    expect(content['org.matrix.msc3245.voice']).toEqual({});
+    expect(content['org.matrix.msc1767.audio'].duration).toBeGreaterThan(1500);
+    expect(content.info.duration).toBe(content['org.matrix.msc1767.audio'].duration);
+  });
+
+  // A caption went out as plain text, so WhatsApp markup showed literally
+  // ("📋 *Monthly Attendance Register*") while plain messages rendered bold.
+  it('renders WhatsApp markup in a file caption as HTML, as for a message', async () => {
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const tmpFile = path.join(os.tmpdir(), `matrix-test-caption-${Date.now()}.xlsx`);
+    fs.writeFileSync(tmpFile, 'data');
+    try {
+      const { service, sentMessages } = loadService();
+      await service.sendDocument(TO, tmpFile, 'register.xlsx', '📋 *Monthly Attendance Register*\nClass 3 - A');
+      const { content } = sentMessages[0];
+      expect(content.body).toBe('📋 *Monthly Attendance Register*\nClass 3 - A');
+      expect(content.format).toBe('org.matrix.custom.html');
+      expect(content.formatted_body).toBe('📋 <strong>Monthly Attendance Register</strong><br/>Class 3 - A');
+    } finally {
+      fs.unlinkSync(tmpFile);
+    }
+  });
+
   it('sendSticker rejects a path that does not exist on disk', async () => {
     const { service, client } = loadService();
     const result = await service.sendSticker(TO, '/tmp/does-not-exist-matrix-sticker.png');

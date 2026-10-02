@@ -640,20 +640,75 @@ async function uploadForRoom(client, roomId, buffer, mimeType, filename) {
   return { url: await client.uploadContent(buffer, mimeType, filename) };
 }
 
+// ── Voice messages ───────────────────────────────────────────────────────────
+// Element and the Rumi Android app show a voice-message bubble (play button,
+// length) only for an m.audio carrying the MSC3245 voice flag plus an MSC1767
+// audio block; without them Rumi's spoken replies were an "audio.mp3" file to
+// download. The length comes from the MP3 itself (the Xing/Info frame count,
+// or bit rate and size for a plain constant-bit-rate stream), with no ffprobe
+// round trip. Unparseable audio just goes without a length.
+const MP3_BITRATES_V1_L3 = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320];
+const MP3_BITRATES_V2_L3 = [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160];
+const MP3_SAMPLE_RATES_V1 = [44100, 48000, 32000];
+
+function mp3DurationMs(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 10) return null;
+  let offset = 0;
+  if (buffer.toString('latin1', 0, 3) === 'ID3') {
+    // Syncsafe tag size (7 bits per byte) plus the 10-byte header.
+    offset = 10 + (((buffer[6] & 0x7f) << 21) | ((buffer[7] & 0x7f) << 14) | ((buffer[8] & 0x7f) << 7) | (buffer[9] & 0x7f));
+  }
+  for (let i = offset; i < Math.min(buffer.length - 4, offset + 4096); i += 1) {
+    if (buffer[i] !== 0xff || (buffer[i + 1] & 0xe0) !== 0xe0) continue;
+    const version = (buffer[i + 1] >> 3) & 0x03; // 3 = MPEG-1, 2 = MPEG-2, 0 = MPEG-2.5
+    const layer = (buffer[i + 1] >> 1) & 0x03; // 1 = Layer III
+    const index = buffer[i + 2] >> 4;
+    const rateIndex = (buffer[i + 2] >> 2) & 0x03;
+    if (layer !== 1 || version === 1 || index === 0 || index === 15 || rateIndex === 3) continue;
+    const sampleRate = MP3_SAMPLE_RATES_V1[rateIndex] / (version === 3 ? 1 : version === 2 ? 2 : 4);
+    // A Xing/Info frame (written by most encoders) counts the frames exactly;
+    // its own bit rate is not the stream's.
+    const head = buffer.toString('latin1', i + 4, Math.min(buffer.length, i + 64));
+    const tag = Math.max(head.indexOf('Xing'), head.indexOf('Info'));
+    if (tag !== -1 && i + 4 + tag + 12 <= buffer.length && (buffer.readUInt32BE(i + 4 + tag + 4) & 1)) {
+      const frames = buffer.readUInt32BE(i + 4 + tag + 8);
+      return Math.round((frames * (version === 3 ? 1152 : 576) * 1000) / sampleRate);
+    }
+    const kbps = (version === 3 ? MP3_BITRATES_V1_L3 : MP3_BITRATES_V2_L3)[index];
+    return Math.round(((buffer.length - i) * 8) / kbps);
+  }
+  return null;
+}
+
+function voiceMessageFields(buffer) {
+  const duration = mp3DurationMs(buffer);
+  return {
+    info: duration ? { duration } : {},
+    extra: { 'org.matrix.msc3245.voice': {}, 'org.matrix.msc1767.audio': duration ? { duration } : {} },
+  };
+}
+
 /** Uploads a buffer to the homeserver's media repo, then sends it as the given msgtype. Returns the event id. */
-async function uploadAndSend(to, buffer, mimeType, filename, msgtype, caption) {
+async function uploadAndSend(to, buffer, mimeType, filename, msgtype, caption, { voice = false } = {}) {
   const roomId = await getRoomId(to);
   const client = await getClient();
   const media = await uploadForRoom(client, roomId, buffer, mimeType, filename);
+  const voiceFields = voice ? voiceMessageFields(buffer) : null;
   const content = {
     msgtype,
     body: caption || filename,
     ...media,
-    info: { mimetype: mimeType, size: buffer.length },
+    info: { mimetype: mimeType, size: buffer.length, ...(voiceFields ? voiceFields.info : {}) },
+    ...(voiceFields ? voiceFields.extra : {}),
   };
   // MSC2530: with a caption, `body` is the caption and `filename` names the
   // file -- without it Element shows the caption as the file's name.
   if (caption && caption !== filename) content.filename = filename;
+  // A caption gets the same WhatsApp-markup-to-HTML rendering as a message.
+  if (caption && isMarkdownish(caption)) {
+    content.format = 'org.matrix.custom.html';
+    content.formatted_body = renderMarkdownToHtml(caption);
+  }
   const eventId = await client.sendMessage(roomId, content);
   logOutbound(roomId, eventId, msgtype);
   return eventId;
@@ -672,7 +727,7 @@ async function sendDocument(to, filePath, filename, caption) {
 
 async function sendAudio(to, audioBuffer) {
   try {
-    await uploadAndSend(to, audioBuffer, 'audio/mpeg', 'audio.mp3', 'm.audio');
+    await uploadAndSend(to, audioBuffer, 'audio/mpeg', 'audio.mp3', 'm.audio', undefined, { voice: true });
     return true;
   } catch (error) {
     logToFile('❌ Matrix: error sending audio', { ...matrixErrorDetail(error) });
@@ -694,7 +749,7 @@ async function sendDocumentFromUrl(to, documentUrl, filename, caption) {
 async function sendAudioFromUrl(to, audioUrl) {
   try {
     const buffer = await resolveMediaBuffer(audioUrl);
-    await uploadAndSend(to, buffer, 'audio/mpeg', 'audio.mp3', 'm.audio');
+    await uploadAndSend(to, buffer, 'audio/mpeg', 'audio.mp3', 'm.audio', undefined, { voice: true });
     return true;
   } catch (error) {
     logToFile('❌ Matrix: error sending audio from URL', { ...matrixErrorDetail(error), audioUrl });
@@ -705,7 +760,7 @@ async function sendAudioFromUrl(to, audioUrl) {
 async function sendAudioFromUrlReturningId(to, audioUrl) {
   try {
     const buffer = await resolveMediaBuffer(audioUrl);
-    const eventId = await uploadAndSend(to, buffer, 'audio/mpeg', 'audio.mp3', 'm.audio');
+    const eventId = await uploadAndSend(to, buffer, 'audio/mpeg', 'audio.mp3', 'm.audio', undefined, { voice: true });
     return eventId || null;
   } catch (error) {
     logToFile('❌ Matrix: error sending audio from URL (returning id)', { ...matrixErrorDetail(error), audioUrl });
