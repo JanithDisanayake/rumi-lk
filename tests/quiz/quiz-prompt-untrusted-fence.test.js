@@ -58,3 +58,27 @@ test('the topic digest fences the typed topic', () => {
   expect(body).toContain('Photosynthesis');
   expect(prompt).toMatch(DATA_LINE);
 });
+
+describe('the author prompt fences what it carries of the lesson', () => {
+  const Author = require('../../bot/shared/services/quiz/transcript-quiz-author.service');
+  const digest = { slos: [{ id: 'S1', text: 'add fractions' }] };
+  const base = { digest, language: 'en', n: 3, gradeBand: '4-5', previousErrors: null, allowMulti: false };
+
+  test('a typed topic', () => {
+    const prompt = Author.buildAuthorPrompt({ ...base, lessonPlan: `Photosynthesis ${ATTACK}`, topicOnly: true });
+    expect(fenced(prompt, 'teacher_topic')).toContain('Photosynthesis');
+    expect(prompt).toMatch(DATA_LINE);
+  });
+
+  test('a lesson plan', () => {
+    const prompt = Author.buildAuthorPrompt({ ...base, lessonPlan: `Adding fractions, worked example. ${ATTACK}` });
+    expect(fenced(prompt, 'lesson_plan')).toContain('Adding fractions');
+    expect(prompt).toMatch(DATA_LINE);
+  });
+
+  test('transcript excerpts', () => {
+    const prompt = Author.buildAuthorPrompt({ ...base, excerpts: `Today we added fractions. ${ATTACK}` });
+    expect(fenced(prompt, 'lesson_transcript')).toContain('Today we added fractions.');
+    expect(prompt).toMatch(DATA_LINE);
+  });
+});

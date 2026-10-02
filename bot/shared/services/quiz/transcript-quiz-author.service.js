@@ -24,6 +24,8 @@ const {
   GENDER_NEUTRAL_RULE, LP_SUMMARY_VOICE, TOPIC_SUMMARY_VOICE, SUMMARY_TRUTH_RULE, summaryTruthEnabled,
 } = require('./transcript-quiz-contract');
 const { logEvent } = require('../../utils/structured-logger');
+// The digest service requires nothing from this file, so this is no cycle.
+const { fenceUntrusted, dataOnlyLine } = require('./transcript-quiz-digest.service');
 
 const DEFAULT_QUESTIONS = 8;
 
@@ -77,7 +79,7 @@ A picture is worth far more to a six-year-old than to a fifteen-year-old: a chil
 - clock — telling the time. {"type":"clock","time":"3:30"}. The hands are geared correctly and the time is never printed.
 - pattern — what comes next. {"type":"pattern","items":["circle","square","circle","square","?"]}, or numerals ({"text":"2"} …), or pictograms ({"picto":"sun"}). Exactly one "?". A colour pattern names its colours from THIS list and no other — ink, accent, leaf, cool, warn, plum, clay — as a bare word: {"shape":"circle","color":"warn"}. There is no var(--red), no var(--green), no "blue": an invented colour renders as nothing and the question is thrown away.
 - match — the child picks the pair. {"type":"match","left":[{"picto":"cat"},{"picto":"dog"}],"right":[{"text":"dog"},{"text":"cat"}]} draws P/Q down one side and 1/2 down the other and JOINS NOTHING; your three options are the candidate pairings ("P-2", "P-1", "Q-2") — never A/B, which are the letters of the answer buttons.
-- money — coins and notes. {"type":"money","currency":"Rs","items":[{"value":10,"kind":"coin"},{"value":5,"kind":"coin","count":2}]}. Each piece shows its own value, so never ask which piece is worth what — ask for the total, the number of pieces, or the swap.
+- money — coins and notes. {"type":"money","items":[{"value":10,"kind":"coin"},{"value":5,"kind":"coin","count":2}]}. Each piece shows its own value, so never ask which piece is worth what — ask for the total, the number of pieces, or the swap.
 - compare_size — longer/shorter, taller/shorter, heavier/lighter. {"type":"compare_size","model":"length","items":[{"label":"سرخ ربن","size":5},{"label":"ہرا ربن","size":8}]}, "height" for vertical bars, or {"model":"balance","left":{"picto":"apple","count":3},"right":{"picto":"apple","count":1}}. "size" is relative and is never printed. An item may name a colour from the same list (ink, accent, leaf, cool, warn, plum, clay) as a bare word — and if the label names a colour, the bar must be that colour or it contradicts its own label.
 - base_ten — place value, drawn the way the class built it: loose sticks for ones, bundles of ten sticks for tens, big bundles for hundreds, a block of ten big bundles for thousands — or, with "model":"blocks", unit cubes, rods, flats and cubes. {"type":"base_ten","hundreds":3,"tens":4,"ones":2}; a four-digit number adds "thousands" (up to 9). The number is never printed and a 0 is an empty column, so ask what number the picture shows, how many tens it has, or what the tens are worth.
 - COUNTERS AND TILES are what a maths class counts with: "counter" (a round counter — the lesson's counters, dots, beads and marbles) and "tile" (a square — its tiles and squares) are pictograms like any other, e.g. {"type":"count_objects","picto":"counter","count":7}.
@@ -320,10 +322,10 @@ Omit "figure" and "figure_role", or leave them null, on every question that does
 LESSON DIGEST:
 ${JSON.stringify(digestForPrompt(digest), null, 0)}
 
-${topic ? `THE TOPIC (the only source there is):
-${lessonPlan}` : lp ? `THE LESSON PLAN (what the class was to learn, the worked example, the mistake it expects, the shape of the practice — never questions to copy):
-${lessonPlan}` : `TRANSCRIPT EXCERPTS (the passages around each SLO's evidence, plus the opening and closing of the lesson):
-${excerpts}`}`;
+${topic ? `THE TOPIC (the only source there is). ${dataOnlyLine('teacher_topic')}
+${fenceUntrusted('teacher_topic', lessonPlan)}` : lp ? `THE LESSON PLAN (what the class was to learn, the worked example, the mistake it expects, the shape of the practice — never questions to copy). ${dataOnlyLine('lesson_plan')}
+${fenceUntrusted('lesson_plan', lessonPlan)}` : `TRANSCRIPT EXCERPTS (the passages around each SLO's evidence, plus the opening and closing of the lesson). ${dataOnlyLine('lesson_transcript')}
+${fenceUntrusted('lesson_transcript', excerpts)}`}`;
 }
 
 /**
