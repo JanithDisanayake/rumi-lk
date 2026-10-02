@@ -57,6 +57,12 @@ const coach = () => mockDb.tables.users[0];
 const session = (id) => mockDb.tables.coaching_sessions.find((s) => s.id === id);
 const delivery = (id) => (session(id).analysis_data || {}).teacher_delivery || {};
 const sent = () => WhatsAppService.sendMessage.mock.calls.map((c) => c[1]);
+// Every preview has its own id: on the row, on the job, and as the job's dedup nonce.
+const expectPreviewQueued = (id) => {
+  const previewId = delivery(id).preview_id;
+  expect(previewId).toMatch(/^[0-9a-f]{12}$/);
+  expect(Queue.queueObserveTeacherReport).toHaveBeenCalledWith(id, { phase: 'preview', from: FROM, previewId, dedupNonce: previewId });
+};
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -82,7 +88,7 @@ describe('who receives it', () => {
     expect(delivery('bound-1')).toMatchObject({
       teacher_name: 'Sam Taylor', teacher_phone: 'mtx:15550100002', status: 'previewing', target: 'session_binding',
     });
-    expect(Queue.queueObserveTeacherReport).toHaveBeenCalledWith('bound-1', { phase: 'preview', from: FROM });
+    expectPreviewQueued('bound-1');
     expect(WhatsAppService.sendInteractiveMessage).not.toHaveBeenCalled();
     expect(sent()[0]).toMatch(/Sam Taylor \(\+15550100002\)/);
     expect((await ObserveState.getState('coach-1')).state).toBe('awaiting_send_confirm');
@@ -100,7 +106,7 @@ describe('who receives it', () => {
     // the tap resolves against the snapshot the coach saw
     expect(await handleObserveInteractive(coach(), FROM, 'observe_pickt_1')).toBe(true);
     expect(delivery('bare-1')).toMatchObject({ teacher_name: 'Sam Taylor', teacher_phone: 'mtx:15550100002', target: 'roster_pick' });
-    expect(Queue.queueObserveTeacherReport).toHaveBeenCalledWith('bare-1', { phase: 'preview', from: FROM });
+    expectPreviewQueued('bare-1');
   });
 
   test('"New teacher" arms awaiting_teacher_details; typed details keep their capitals and resolve the channel identity', async () => {
@@ -112,7 +118,7 @@ describe('who receives it', () => {
     // +1 555 010 0004 is Jordan's Matrix identity — resolved, not sent to the bare number
     expect(await handleObserveText(coach(), FROM, 'Jordan Lee, +1 555 010 0004')).toBe(true);
     expect(delivery('bare-1')).toMatchObject({ teacher_name: 'Jordan Lee', teacher_phone: 'mtx:15550100004', target: 'typed' });
-    expect(Queue.queueObserveTeacherReport).toHaveBeenCalledWith('bare-1', { phase: 'preview', from: FROM });
+    expectPreviewQueued('bare-1');
   });
 
   test('a typed number nobody uses falls back to the bare digits', async () => {
@@ -147,10 +153,12 @@ describe('who receives it', () => {
 });
 
 describe('the preview buttons', () => {
-  test('Send now queues delivery and clears the state', async () => {
+  test('Send now queues delivery of THAT preview and clears the state', async () => {
+    session('bound-1').analysis_data = { teacher_delivery: { status: 'awaiting_confirm', preview_id: 'a1b2c3d4e5f6', teacher_phone: 'mtx:15550100002', report_kind: 'text' } };
     await ObserveState.setState('coach-1', 'awaiting_send_confirm', { sessionId: 'bound-1' });
-    await handleObserveInteractive(coach(), FROM, 'observe_send_confirm_bound-1');
-    expect(Queue.queueObserveTeacherReport).toHaveBeenCalledWith('bound-1', { phase: 'deliver', from: FROM });
+    await handleObserveInteractive(coach(), FROM, 'observe_send_confirm_bound-1.a1b2c3d4e5f6');
+    expect(Queue.queueObserveTeacherReport).toHaveBeenCalledWith('bound-1',
+      { phase: 'deliver', from: FROM, previewId: 'a1b2c3d4e5f6', dedupNonce: 'a1b2c3d4e5f6-0' });
     expect(sent().pop()).toMatch(/Sending the report/);
     expect(await ObserveState.getState('coach-1')).toBeNull();
   });

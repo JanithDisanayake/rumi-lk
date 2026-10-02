@@ -20,15 +20,27 @@
  *
  * Delivery state lives in analysis_data.teacher_delivery (merge-write, no
  * DDL): { teacher_name, teacher_phone, teacher_user_id, target, status,
- * caption, companion_text, report_kind, report_key|report_path|report_text,
- * sent_at, ... }. status: previewing → awaiting_confirm → sent |
- * awaiting_teacher_tap | operator_review | send_failed | preview_failed |
- * cancelled.
+ * preview_id, caption, companion_text, report_kind,
+ * report_key|report_path|report_text, sent_at, ... }. status: previewing →
+ * awaiting_confirm → sent | awaiting_teacher_tap | operator_review |
+ * send_failed | preview_failed | cancelled.
+ *
+ * Every preview has its own preview_id, and its "Send now / Someone else /
+ * Cancel" buttons carry it (observe_send_confirm_<sessionId>.<previewId>).
+ * Choosing a recipient starts a new preview id and clears the previous
+ * package in the same write; "Someone else" and Cancel clear the id. So a
+ * button from an older preview — or a queued job for one — can never send a
+ * package rendered for one teacher to another, or send after a Cancel: the
+ * tap is refused, and the worker re-checks the id before it sends anything.
+ * Only the observer may press any of the buttons. The id is also the queue
+ * job's identity, so a second preview or a retry is never dropped as a
+ * duplicate of the first, while a double tap of one button still is.
  *
  * Every teacher-bound text passes the trust firewall
  * (observe-teacher-report) at preview AND again right before it is sent.
  */
 
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { t, observeLang } = require('./observe-strings');
@@ -50,6 +62,20 @@ const BTN = {
   cancel: 'observe_send_cancel_',
 };
 const PICK_PREFIX = 'observe_pickt_';
+// Session ids are UUIDs, so '.' never appears in one and can separate the
+// preview id on a button. Button ids stay far below the 256-character cap.
+const PREVIEW_ID_SEP = '.';
+const PREVIEW_ID_RE = /^[0-9a-f]{6,32}$/;
+const newPreviewId = () => crypto.randomBytes(6).toString('hex');
+// What a preview writes. Cleared whenever the recipient changes, so a package
+// rendered for one teacher can never be sent to another.
+const PACKAGE_RESET = Object.freeze({
+  report_kind: null, report_key: null, report_path: null, report_text: null, caption: null,
+  companion_text: null, notes: null, previewed_at: null, last_error: null, failed_at: null,
+});
+// The states a "Send now" may act on: the preview is showing, or the last
+// send failed and the coach is retrying it.
+const CONFIRMABLE = ['awaiting_confirm', 'send_failed'];
 const TEMPLATE_PAYLOAD_PREFIX = 'observe_report_';
 
 // The states in which a TYPED name + number is a valid answer. The pick list
@@ -92,7 +118,13 @@ function parseTeacherDetails(text) {
 function parseSendButtonId(id) {
   if (!id || typeof id !== 'string') return null;
   for (const [action, prefix] of Object.entries(BTN)) {
-    if (id.startsWith(prefix)) return { action, sessionId: id.slice(prefix.length) };
+    if (!id.startsWith(prefix)) continue;
+    const rest = id.slice(prefix.length);
+    const cut = rest.lastIndexOf(PREVIEW_ID_SEP);
+    if (cut > 0 && PREVIEW_ID_RE.test(rest.slice(cut + 1))) {
+      return { action, sessionId: rest.slice(0, cut), previewId: rest.slice(cut + 1) };
+    }
+    return { action, sessionId: rest, previewId: null };
   }
   return null;
 }
@@ -114,13 +146,15 @@ function buildSendChoiceButtons(sessionId, lang) {
   };
 }
 
-function buildSendConfirmButtons(sessionId, lang) {
+/** The preview's buttons, bound to that preview by its id. */
+function buildSendConfirmButtons(sessionId, lang, previewId) {
+  const ref = previewId ? `${sessionId}${PREVIEW_ID_SEP}${previewId}` : sessionId;
   return {
     body: t(lang, 'send_confirm_body'),
     buttons: [
-      { id: `${BTN.confirm}${sessionId}`, title: clip(t(lang, 'btn_send_now'), 20) },
-      { id: `${BTN.other}${sessionId}`, title: clip(t(lang, 'btn_send_other'), 20) },
-      { id: `${BTN.cancel}${sessionId}`, title: clip(t(lang, 'btn_send_cancel'), 20) },
+      { id: `${BTN.confirm}${ref}`, title: clip(t(lang, 'btn_send_now'), 20) },
+      { id: `${BTN.other}${ref}`, title: clip(t(lang, 'btn_send_other'), 20) },
+      { id: `${BTN.cancel}${ref}`, title: clip(t(lang, 'btn_send_cancel'), 20) },
     ],
   };
 }
@@ -173,13 +207,20 @@ function reportTemplateConfig() {
 
 // ── DB helpers ─────────────────────────────────────────────────────────
 
-/** Read-merge-write analysis_data.teacher_delivery — never clobbers siblings. */
-async function mergeTeacherDelivery(sessionId, patch) {
+/**
+ * Read-merge-write analysis_data.teacher_delivery — never clobbers siblings.
+ * With `ifPreviewId`, writes only while that preview is still the current one
+ * and returns null (no write) once it has been superseded or cancelled.
+ */
+async function mergeTeacherDelivery(sessionId, patch, { ifPreviewId } = {}) {
   const supabase = db();
   const { data: row, error } = await supabase
     .from('coaching_sessions').select('analysis_data').eq('id', sessionId).single();
   if (error || !row) throw new Error(`teacher_delivery merge: load failed: ${error && error.message}`);
   const analysis = row.analysis_data || {};
+  if (ifPreviewId !== undefined && ((analysis.teacher_delivery || {}).preview_id || null) !== (ifPreviewId || null)) {
+    return null;
+  }
   const merged = { ...analysis, teacher_delivery: { ...(analysis.teacher_delivery || {}), ...patch } };
   const { error: upErr } = await supabase
     .from('coaching_sessions').update({ analysis_data: merged }).eq('id', sessionId);
@@ -237,20 +278,27 @@ async function offerSendReport(coachUser, to, sessionId) {
   return true;
 }
 
-/** Record the chosen recipient, arm the confirm state, queue the preview. */
+/**
+ * Record the chosen recipient, arm the confirm state, queue the preview. A
+ * new recipient is a new preview: a fresh preview id, and the previous
+ * package cleared in the same write.
+ */
 async function _chooseRecipient(user, from, sessionId, recipient, target) {
   const lang = observeLang(user);
+  const previewId = newPreviewId();
   try {
     await mergeTeacherDelivery(sessionId, {
+      ...PACKAGE_RESET,
       teacher_name: recipient.name || '',
       teacher_phone: recipient.phone,
       teacher_user_id: recipient.userId || null,
       target,
       status: 'previewing',
+      preview_id: previewId,
     });
     await state().setState(user.id, 'awaiting_send_confirm', { sessionId });
     await wa().sendMessage(from, fillPreviewComing(lang, recipient.name, recipient.phone));
-    await queue().queueObserveTeacherReport(sessionId, { phase: 'preview', from });
+    await queue().queueObserveTeacherReport(sessionId, { phase: 'preview', from, previewId, dedupNonce: previewId });
     logToFile('📤 observe send: recipient chosen', { sessionId, observerId: user.id, target });
   } catch (err) {
     logToFile('❌ observe send: recipient capture failed', { sessionId, error: err.message });
@@ -273,6 +321,59 @@ async function _offerPickOrAsk(user, from, sessionId) {
   await wa().sendInteractiveMessage(from, buildTeacherPickPayload(teachers, lang));
 }
 
+const deliveryOf = (session) => (session && session.analysis_data && session.analysis_data.teacher_delivery) || {};
+
+/** Already sent, with the reviewer, or the invite is out: say so, true when replied. */
+async function _replyIfOnItsWay(delivery, lang, from) {
+  if (delivery.status === 'sent') {
+    await wa().sendMessage(from, t(lang, 'send_already_sent'));
+    return true;
+  }
+  if (delivery.status === 'operator_review') {
+    await wa().sendMessage(from, t(lang, 'send_operator_review_fo'));
+    return true;
+  }
+  if (delivery.status === 'awaiting_teacher_tap') {
+    const day = delivery.template_sent_at ? String(delivery.template_sent_at).slice(0, 10) : '';
+    await wa().sendMessage(from, t(lang, 'send_waiting_tap_info', { name: delivery.teacher_name || '', date: day }));
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Load the session behind a preview button and check the tapper is its
+ * observer — the same check startSendFlow makes. Replies and returns null
+ * when the tap must do nothing.
+ */
+async function _ownedSession(sessionId, from, user, { open = true } = {}) {
+  const lang = observeLang(user);
+  let session;
+  try {
+    session = await _loadSession(sessionId);
+  } catch (_) {
+    await wa().sendMessage(from, t(lang, 'debrief_load_error'));
+    return null;
+  }
+  if (!user || session.observer_user_id !== user.id) {
+    logToFile('🚫 observe send: a send button from someone other than the observer — refused', { sessionId, userId: user && user.id });
+    await wa().sendMessage(from, t(lang, 'send_not_yours'));
+    return null;
+  }
+  if (open) {
+    const { isTerminalStatus } = require('./observe-terminal');
+    if (isTerminalStatus(session.status)) {
+      await wa().sendMessage(from, t(lang, 'send_session_closed'));
+      return null;
+    }
+    if (deliveryOf(session).status === 'sent') {
+      await wa().sendMessage(from, t(lang, 'send_already_sent'));
+      return null;
+    }
+  }
+  return session;
+}
+
 /** "Send report" — resolve the recipient. */
 async function startSendFlow(sessionId, from, user) {
   const lang = observeLang(user);
@@ -292,20 +393,7 @@ async function startSendFlow(sessionId, from, user) {
     await wa().sendMessage(from, t(lang, 'send_session_closed'));
     return;
   }
-  const delivery = (session.analysis_data && session.analysis_data.teacher_delivery) || {};
-  if (delivery.status === 'sent') {
-    await wa().sendMessage(from, t(lang, 'send_already_sent'));
-    return;
-  }
-  if (delivery.status === 'operator_review') {
-    await wa().sendMessage(from, t(lang, 'send_operator_review_fo'));
-    return;
-  }
-  if (delivery.status === 'awaiting_teacher_tap') {
-    const day = delivery.template_sent_at ? String(delivery.template_sent_at).slice(0, 10) : '';
-    await wa().sendMessage(from, t(lang, 'send_waiting_tap_info', { name: delivery.teacher_name || '', date: day }));
-    return;
-  }
+  if (await _replyIfOnItsWay(deliveryOf(session), lang, from)) return;
 
   // The observation already knows whose lesson it was: go straight to the
   // preview with that teacher's own identity rather than asking — asking is
@@ -373,10 +461,32 @@ async function handleTeacherDetailsText(user, from, text, observeState) {
   return true;
 }
 
-async function handleSendConfirm(sessionId, from, user) {
+/**
+ * The deliver job's identity: the preview, plus the failure being retried.
+ * A double tap in one state is the same job (the queue drops the second); a
+ * retry after a failed send is a new one.
+ */
+function _deliverNonce(previewId, d) {
+  const attempt = d.status === 'send_failed' ? String(d.failed_at || 'failed').replace(/[^A-Za-z0-9]/g, '') : '0';
+  return `${previewId}-${attempt}`;
+}
+
+/** "Send now" — only for the preview the button belongs to, only from its observer. */
+async function handleSendConfirm(sessionId, from, user, previewId = null) {
   const lang = observeLang(user);
+  const session = await _ownedSession(sessionId, from, user);
+  if (!session) return;
+  const d = deliveryOf(session);
+  if (!CONFIRMABLE.includes(d.status) || !previewId || previewId !== d.preview_id) {
+    if (await _replyIfOnItsWay(d, lang, from)) return;
+    logToFile('🚫 observe send: a stale "Send now" — refused', { sessionId, status: d.status || null });
+    await wa().sendMessage(from, t(lang, 'send_confirm_stale'));
+    return;
+  }
   try {
-    await queue().queueObserveTeacherReport(sessionId, { phase: 'deliver', from });
+    await queue().queueObserveTeacherReport(sessionId, {
+      phase: 'deliver', from, previewId, dedupNonce: _deliverNonce(previewId, d),
+    });
     await wa().sendMessage(from, t(lang, 'send_delivering'));
     await state().clearState(user.id);
   } catch (err) {
@@ -385,21 +495,35 @@ async function handleSendConfirm(sessionId, from, user) {
   }
 }
 
+/** Cancel — whichever preview it came from, the current one dies with it. */
 async function handleSendCancel(sessionId, from, user) {
-  await mergeTeacherDelivery(sessionId, { status: 'cancelled' }).catch(() => {});
+  if (!(await _ownedSession(sessionId, from, user))) return;
+  await mergeTeacherDelivery(sessionId, { status: 'cancelled', preview_id: null }).catch(() => {});
   await state().clearState(user.id);
   await wa().sendMessage(from, t(observeLang(user), 'send_cancel_ack'));
+}
+
+/** "Someone else" — the current preview is dead before a new recipient is asked for. */
+async function handleSendOther(sessionId, from, user) {
+  const session = await _ownedSession(sessionId, from, user);
+  if (!session) return;
+  if (await _replyIfOnItsWay(deliveryOf(session), observeLang(user), from)) return;
+  await mergeTeacherDelivery(sessionId, { preview_id: null });
+  await _offerPickOrAsk(user, from, sessionId);
 }
 
 /** Every observe_send_* button. */
 async function handleSendButton(user, from, buttonId) {
   const parsed = parseSendButtonId(buttonId);
   if (!parsed || !parsed.sessionId) return false;
-  const { action, sessionId } = parsed;
+  const { action, sessionId, previewId } = parsed;
   if (action === 'start') await startSendFlow(sessionId, from, user);
-  else if (action === 'later') await wa().sendMessage(from, t(observeLang(user), 'send_later_ack'));
-  else if (action === 'confirm') await handleSendConfirm(sessionId, from, user);
-  else if (action === 'other') await _offerPickOrAsk(user, from, sessionId);
+  else if (action === 'later') {
+    if (await _ownedSession(sessionId, from, user, { open: false })) {
+      await wa().sendMessage(from, t(observeLang(user), 'send_later_ack'));
+    }
+  } else if (action === 'confirm') await handleSendConfirm(sessionId, from, user, previewId);
+  else if (action === 'other') await handleSendOther(sessionId, from, user);
   else if (action === 'cancel') await handleSendCancel(sessionId, from, user);
   return true;
 }
@@ -413,7 +537,11 @@ async function handleReportTap(from, payload) {
   const sessionId = matchReportTapPayload(payload);
   if (!sessionId) return false;
   try {
-    await queue().queueObserveTeacherReport(sessionId, { phase: 'teacher_tap', from });
+    // Each tapping number is its own job: a tap from an unexpected number is
+    // refused by the worker and must not swallow the real teacher's tap as a
+    // duplicate. Hashed so a phone number never becomes part of a queue id.
+    const dedupNonce = crypto.createHash('sha1').update(String(from || '')).digest('hex').slice(0, 16);
+    await queue().queueObserveTeacherReport(sessionId, { phase: 'teacher_tap', from, dedupNonce });
   } catch (err) {
     logToFile('❌ observe send: could not queue the teacher tap', { sessionId, error: err.message });
   }
@@ -459,14 +587,18 @@ async function _extractNotes(session, coachName, teacherLang, material) {
 
 const reportDir = () => path.join(require('../../utils/constants').TEMP_DIR, 'observe-reports');
 
-async function _storePng(sessionId, png) {
+// One file per preview: a superseded preview still rendering must never
+// overwrite the image another preview's row points at.
+const pngName = (sessionId, previewId) => `${sessionId}${previewId ? `-${previewId}` : ''}.png`;
+
+async function _storePng(sessionId, png, previewId) {
   const r2 = require('../../storage/r2');
   if (r2.isR2Configured()) {
-    return { report_key: await r2.uploadImageBuffer(png, `observe-reports/${sessionId}.png`) };
+    return { report_key: await r2.uploadImageBuffer(png, `observe-reports/${pngName(sessionId, previewId)}`) };
   }
   // No bucket (a sandbox): keep it on local disk for the deliver step.
   fs.mkdirSync(reportDir(), { recursive: true });
-  const file = path.join(reportDir(), `${sessionId}.png`);
+  const file = path.join(reportDir(), pngName(sessionId, previewId));
   fs.writeFileSync(file, png);
   return { report_path: file };
 }
@@ -477,7 +609,7 @@ async function _pngPath(sessionId, d) {
     const { downloadFromR2 } = require('../../storage/r2');
     const buf = await downloadFromR2(d.report_key);
     fs.mkdirSync(reportDir(), { recursive: true });
-    const file = path.join(reportDir(), `${sessionId}.png`);
+    const file = path.join(reportDir(), pngName(sessionId, d.preview_id));
     fs.writeFileSync(file, buf);
     return file;
   }
@@ -485,7 +617,7 @@ async function _pngPath(sessionId, d) {
 }
 
 /** Render the teacher's package. Image when it can, text when it can't. */
-async function _buildPackage(session, { teacherName, notes, teacherLang, material }) {
+async function _buildPackage(session, { teacherName, notes, teacherLang, material, previewId }) {
   const TR = require('./observe-teacher-report');
   const analysis = session.analysis_data || {};
   try {
@@ -502,7 +634,7 @@ async function _buildPackage(session, { teacherName, notes, teacherLang, materia
         TR.assertTeacherSafe(TR.viewModelTexts(vm), { material });
       },
     });
-    return { report_kind: 'image', ...(await _storePng(session.id, png)) };
+    return { report_kind: 'image', ...(await _storePng(session.id, png, previewId)) };
   } catch (err) {
     logToFile('⚠️ observe send: image report unavailable — sending the text report', {
       sessionId: session.id, error: err.message,
@@ -544,21 +676,31 @@ async function _sendReportTemplate(d, coachName, sessionId) {
   ]);
 }
 
-/** Record a failure and tell the coach — never a silent drop. */
-async function _fail(sessionId, coachTo, lang, reason, key = 'send_failed_fo', extra = {}) {
+/**
+ * Record a failure and tell the coach — never a silent drop. With
+ * `ifPreviewId`, a preview that has meanwhile been superseded or cancelled
+ * records and says nothing (the newer preview owns the row).
+ */
+async function _fail(sessionId, coachTo, lang, reason, key = 'send_failed_fo', extra = {}, { ifPreviewId } = {}) {
   logToFile('❌ observe send: teacher delivery did not happen', { sessionId, reason, ...extra });
-  await mergeTeacherDelivery(sessionId, {
+  const written = await mergeTeacherDelivery(sessionId, {
     status: key === 'send_preview_failed_fo' ? 'preview_failed' : 'send_failed',
     last_error: reason,
     failed_at: new Date().toISOString(),
-  }).catch(() => {});
+  }, ifPreviewId === undefined ? {} : { ifPreviewId }).catch(() => undefined);
+  if (written === null) return { status: 'noop', reason: 'stale_preview' };
   if (coachTo) await wa().sendMessage(coachTo, t(lang, key)).catch(() => {});
   return { status: 'failed', reason };
 }
 
-async function _preview(session, ctx) {
+/** A preview job acts only while it is THE current preview. */
+const isCurrentPreview = (delivery, payload) => delivery.status === 'previewing'
+  && !!payload.previewId && payload.previewId === delivery.preview_id;
+
+async function _preview(session, payload, ctx) {
   const TR = require('./observe-teacher-report');
   const { coachTo, coachName, lang, teacherLang, delivery } = ctx;
+  const previewId = payload.previewId;
   const material = TR.coachOnlyMaterial(session.analysis_data || {});
   const notes = await _extractNotes(session, coachName, teacherLang, material);
   let companion = null;
@@ -568,16 +710,23 @@ async function _preview(session, ctx) {
     logToFile('⚠️ observe send: companion dropped by the firewall', { sessionId: session.id, error: err.message });
   }
   const caption = t(teacherLang, 'report_caption_teacher', { fo: coachName });
-  const pkg = await _buildPackage(session, { teacherName: delivery.teacher_name, notes, teacherLang, material });
+  const pkg = await _buildPackage(session, { teacherName: delivery.teacher_name, notes, teacherLang, material, previewId });
   const d = { ...delivery, caption, companion_text: companion, notes, ...pkg };
   _assertPackageSafe(session, d);
 
-  await mergeTeacherDelivery(session.id, {
+  // Rendering takes a while: the coach may have picked someone else or
+  // cancelled meanwhile. Then this package is for nobody — write and show nothing.
+  const written = await mergeTeacherDelivery(session.id, {
     status: 'awaiting_confirm', caption, companion_text: companion, notes, ...pkg, previewed_at: new Date().toISOString(),
-  });
+  }, { ifPreviewId: previewId });
+  if (!written) {
+    if (pkg.report_path) fs.promises.unlink(pkg.report_path).catch(() => {});
+    logToFile('⏭️ observe send: preview superseded while rendering — dropped', { sessionId: session.id });
+    return { status: 'noop', reason: 'stale_preview' };
+  }
   // The coach sees EXACTLY what the teacher would receive, then decides.
   await _sendPackage(coachTo, session, d);
-  await wa().sendInteractiveButtons(coachTo, buildSendConfirmButtons(session.id, lang));
+  await wa().sendInteractiveButtons(coachTo, buildSendConfirmButtons(session.id, lang, previewId));
   logToFile('🔎 observe send: preview delivered to the coach', { sessionId: session.id, kind: pkg.report_kind });
   return { status: 'previewed', kind: pkg.report_kind };
 }
@@ -592,9 +741,16 @@ async function _deliver(session, phase, payload, ctx) {
       logToFile('🚫 observe send: template tap from an unexpected number — refused', { sessionId });
       return { status: 'refused' };
     }
-  } else if (d.status === 'operator_review' || (d.status === 'awaiting_teacher_tap' && d.template_sent_at)) {
-    // Already with the reviewer / invite already out — a redelivered job must not repeat it.
-    return { status: 'noop', reason: d.status };
+  } else {
+    // "Send now" acts only on the preview the coach confirmed, while it is
+    // still showing (or its send failed). Anything else — cancelled, a newer
+    // preview for someone else, already with the reviewer, invite already
+    // out, a redelivered job — sends nothing to anyone.
+    if (!CONFIRMABLE.includes(d.status)) return { status: 'noop', reason: d.status || 'no_delivery' };
+    if (!payload.previewId || payload.previewId !== d.preview_id) {
+      logToFile('🚫 observe send: deliver job for a preview that is no longer current — dropped', { sessionId });
+      return { status: 'noop', reason: 'stale_preview' };
+    }
   }
 
   if (!d.teacher_phone || !d.report_kind) return _fail(sessionId, coachTo, lang, 'delivery_state_incomplete');
@@ -671,10 +827,13 @@ async function processTeacherReport(sessionId, payload = {}) {
   if (delivery.status === 'sent') return { status: 'noop', reason: 'already_sent' };
 
   if (phase === 'preview') {
+    // A cancelled or superseded preview, or a redelivery of one that already
+    // completed, must not message anyone.
+    if (!isCurrentPreview(delivery, payload)) return { status: 'noop', reason: 'stale_preview' };
     try {
-      return await _preview(session, ctx);
+      return await _preview(session, payload, ctx);
     } catch (err) {
-      return _fail(sessionId, coachTo, lang, err.message, 'send_preview_failed_fo');
+      return _fail(sessionId, coachTo, lang, err.message, 'send_preview_failed_fo', {}, { ifPreviewId: payload.previewId });
     }
   }
   if (phase === 'deliver' || phase === 'teacher_tap') return _deliver(session, phase, payload, ctx);
@@ -764,6 +923,7 @@ module.exports = {
   handleTeacherDetailsText,
   handleSendConfirm,
   handleSendCancel,
+  handleSendOther,
   handleReportTap,
   processTeacherReport,
   processUntappedDelivery,

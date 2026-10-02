@@ -67,6 +67,7 @@ const ObserveSend = require('../../bot/shared/services/observe/observe-send.serv
 const TR = require('../../bot/shared/services/observe/observe-teacher-report');
 
 const COACH_TO = 'mtx:15550100001';
+const PID = 'a1b2c3d4e5f6';   // the current preview's id (set when the recipient was chosen)
 const FEEDBACK = {
   wins: ['You opened with specific praise about the counting sticks game'],
   try: 'Next time wait longer after asking your reflective question before speaking again',
@@ -86,7 +87,7 @@ function seed(delivery = {}, extra = {}) {
       strengths: [{ title: 'Warm, clear explanations' }],
       observer_notes: 'Honestly the pacing was poor and half the class was lost by minute ten',
       observer_debrief: { transcript: TRANSCRIPT, feedback: FEEDBACK },
-      teacher_delivery: { teacher_name: 'Sam Taylor', teacher_phone: 'mtx:15554000002', status: 'previewing', ...delivery },
+      teacher_delivery: { teacher_name: 'Sam Taylor', teacher_phone: 'mtx:15554000002', status: 'previewing', preview_id: PID, ...delivery },
       ...extra,
     },
   });
@@ -114,7 +115,7 @@ afterAll(() => { delete process.env.CHANNEL_DRIVER; fs.rmSync(mockTmp, { recursi
 describe('preview', () => {
   test('the coach sees the exact package: scoreless image, caption, companion — then three buttons', async () => {
     seed();
-    const out = await ObserveSend.processTeacherReport('obs-1', { phase: 'preview', from: COACH_TO });
+    const out = await ObserveSend.processTeacherReport('obs-1', { phase: 'preview', from: COACH_TO, previewId: PID });
     expect(out.status).toBe('previewed');
 
     const hero = mockHero.calls[0];
@@ -128,7 +129,7 @@ describe('preview', () => {
     expect(img[2]).toMatch(/Robin Coach/);
     expect(textsTo(COACH_TO).join('\n')).toMatch(/I will ask how they know/);
     const buttons = WhatsAppService.sendInteractiveButtons.mock.calls[0][1].buttons.map((b) => b.id);
-    expect(buttons).toEqual(['observe_send_confirm_obs-1', 'observe_send_other_obs-1', 'observe_send_cancel_obs-1']);
+    expect(buttons).toEqual([`observe_send_confirm_obs-1.${PID}`, `observe_send_other_obs-1.${PID}`, `observe_send_cancel_obs-1.${PID}`]);
     expect(delivery()).toMatchObject({ status: 'awaiting_confirm', report_kind: 'image' });
     // nothing reached the teacher yet
     expect(WhatsAppService.sendMessage.mock.calls.some((c) => c[0] === 'mtx:15554000002')).toBe(false);
@@ -147,7 +148,7 @@ describe('preview', () => {
       commitment: 'I will get 40/50 next time.',
     } });
 
-    await ObserveSend.processTeacherReport('obs-1', { phase: 'preview', from: COACH_TO });
+    await ObserveSend.processTeacherReport('obs-1', { phase: 'preview', from: COACH_TO, previewId: PID });
 
     const vm = mockHero.calls[0].vm;
     expect(vm.narrative.score_framing).toBeUndefined();
@@ -164,7 +165,7 @@ describe('preview', () => {
 
   test('a harmful debrief gets no teacher notes at all (and the model is not even asked)', async () => {
     seed({}, { observer_debrief: { transcript: TRANSCRIPT, feedback: { ...FEEDBACK, rubric: { disparaged_teacher: true } } } });
-    await ObserveSend.processTeacherReport('obs-1', { phase: 'preview', from: COACH_TO });
+    await ObserveSend.processTeacherReport('obs-1', { phase: 'preview', from: COACH_TO, previewId: PID });
     expect(mockNotes).not.toHaveBeenCalled();
     expect(delivery().companion_text).toBeNull();
   });
@@ -172,7 +173,7 @@ describe('preview', () => {
   test('no image renderer → the text report, firewall-checked', async () => {
     seed();
     mockHero.throws = new Error('no browser');
-    await ObserveSend.processTeacherReport('obs-1', { phase: 'preview', from: COACH_TO });
+    await ObserveSend.processTeacherReport('obs-1', { phase: 'preview', from: COACH_TO, previewId: PID });
     expect(delivery()).toMatchObject({ status: 'awaiting_confirm', report_kind: 'text' });
     expect(textsTo(COACH_TO)[0]).toMatch(/What went well[\s\S]*Warm, clear explanations/);
     expect(WhatsAppService.sendImage).not.toHaveBeenCalled();
@@ -181,7 +182,7 @@ describe('preview', () => {
   test('a preview that cannot reach the coach is recorded and said — once', async () => {
     seed();
     WhatsAppService.sendImage.mockResolvedValueOnce(false);
-    const out = await ObserveSend.processTeacherReport('obs-1', { phase: 'preview', from: COACH_TO });
+    const out = await ObserveSend.processTeacherReport('obs-1', { phase: 'preview', from: COACH_TO, previewId: PID });
     expect(out.status).toBe('failed');
     expect(delivery().status).toBe('preview_failed');
     expect(textsTo(COACH_TO).pop()).toMatch(/couldn't prepare the report preview/);
@@ -190,14 +191,14 @@ describe('preview', () => {
 
 async function previewed(delivery = {}) {
   seed(delivery);
-  await ObserveSend.processTeacherReport('obs-1', { phase: 'preview', from: COACH_TO });
+  await ObserveSend.processTeacherReport('obs-1', { phase: 'preview', from: COACH_TO, previewId: PID });
   jest.clearAllMocks();
 }
 
 describe('deliver — branches on the recipient identity', () => {
   test('CHANNEL_DRIVER=meta and a Matrix teacher (mtx:15554000002): straight out, no window check, no template', async () => {
     await previewed();
-    await ObserveSend.processTeacherReport('obs-1', { phase: 'deliver', from: COACH_TO });
+    await ObserveSend.processTeacherReport('obs-1', { phase: 'deliver', from: COACH_TO, previewId: PID });
     expect(imagesTo('mtx:15554000002')).toHaveLength(1);
     expect(textsTo('mtx:15554000002').join('\n')).toMatch(/I will ask how they know/);
     expect(mockWindowOpen).not.toHaveBeenCalled();
@@ -208,7 +209,7 @@ describe('deliver — branches on the recipient identity', () => {
 
   test('a bare number on Meta with the window open: direct', async () => {
     await previewed({ teacher_phone: '15554000002' });
-    await ObserveSend.processTeacherReport('obs-1', { phase: 'deliver', from: COACH_TO });
+    await ObserveSend.processTeacherReport('obs-1', { phase: 'deliver', from: COACH_TO, previewId: PID });
     expect(mockWindowOpen).toHaveBeenCalledWith('15554000002');
     expect(imagesTo('15554000002')).toHaveLength(1);
     expect(delivery().status).toBe('sent');
@@ -218,7 +219,7 @@ describe('deliver — branches on the recipient identity', () => {
     process.env.OBSERVE_REPORT_TEMPLATE = 'observation_report';
     await previewed({ teacher_phone: '15554000002' });
     mockWindowOpen.mockResolvedValue(false);
-    await ObserveSend.processTeacherReport('obs-1', { phase: 'deliver', from: COACH_TO });
+    await ObserveSend.processTeacherReport('obs-1', { phase: 'deliver', from: COACH_TO, previewId: PID });
     const [to, name, lang, components] = WhatsAppService.sendTemplate.mock.calls[0];
     expect([to, name, lang]).toEqual(['15554000002', 'observation_report', 'en']);
     expect(JSON.stringify(components)).toContain('observe_report_obs-1');
@@ -233,7 +234,7 @@ describe('deliver — branches on the recipient identity', () => {
     await previewed({ teacher_phone: '15554000002' });
     mockWindowOpen.mockResolvedValue(false);
     WhatsAppService.sendTemplate.mockResolvedValueOnce(false);
-    await ObserveSend.processTeacherReport('obs-1', { phase: 'deliver', from: COACH_TO });
+    await ObserveSend.processTeacherReport('obs-1', { phase: 'deliver', from: COACH_TO, previewId: PID });
     expect(delivery().status).toBe('send_failed');
     expect(textsTo(COACH_TO).pop()).toMatch(/couldn't be sent/);
   });
@@ -241,7 +242,7 @@ describe('deliver — branches on the recipient identity', () => {
   test('window closed and no template configured: told why, never a silent drop', async () => {
     await previewed({ teacher_phone: '15554000002' });
     mockWindowOpen.mockResolvedValue(false);
-    await ObserveSend.processTeacherReport('obs-1', { phase: 'deliver', from: COACH_TO });
+    await ObserveSend.processTeacherReport('obs-1', { phase: 'deliver', from: COACH_TO, previewId: PID });
     expect(WhatsAppService.sendTemplate).not.toHaveBeenCalled();
     expect(delivery()).toMatchObject({ status: 'send_failed', last_error: 'window_closed_no_template' });
     expect(textsTo(COACH_TO).pop()).toMatch(/hasn't messaged me recently/);
@@ -250,7 +251,7 @@ describe('deliver — branches on the recipient identity', () => {
   test('a failed direct send is recorded and told', async () => {
     await previewed();
     WhatsAppService.sendImage.mockResolvedValueOnce(false);
-    await ObserveSend.processTeacherReport('obs-1', { phase: 'deliver', from: COACH_TO });
+    await ObserveSend.processTeacherReport('obs-1', { phase: 'deliver', from: COACH_TO, previewId: PID });
     expect(delivery().status).toBe('send_failed');
     expect(textsTo(COACH_TO).pop()).toMatch(/couldn't be sent/);
   });
@@ -258,7 +259,7 @@ describe('deliver — branches on the recipient identity', () => {
   test('the firewall runs again at delivery: a tampered package never leaves', async () => {
     await previewed();
     row().analysis_data.teacher_delivery.companion_text = 'You scored 34/50.';
-    await ObserveSend.processTeacherReport('obs-1', { phase: 'deliver', from: COACH_TO });
+    await ObserveSend.processTeacherReport('obs-1', { phase: 'deliver', from: COACH_TO, previewId: PID });
     expect(WhatsAppService.sendImage).not.toHaveBeenCalled();
     expect(textsTo('mtx:15554000002')).toEqual([]);
     expect(delivery()).toMatchObject({ status: 'send_failed', last_error: 'trust_firewall' });
@@ -267,7 +268,7 @@ describe('deliver — branches on the recipient identity', () => {
   test('an already-sent report is a no-op', async () => {
     await previewed();
     row().analysis_data.teacher_delivery.status = 'sent';
-    expect((await ObserveSend.processTeacherReport('obs-1', { phase: 'deliver', from: COACH_TO })).status).toBe('noop');
+    expect((await ObserveSend.processTeacherReport('obs-1', { phase: 'deliver', from: COACH_TO, previewId: PID })).status).toBe('noop');
     expect(WhatsAppService.sendImage).not.toHaveBeenCalled();
   });
 });
@@ -277,7 +278,7 @@ describe('review gate', () => {
     process.env.OBSERVE_REVIEW_MODE = 'operator';
     process.env.OBSERVE_REVIEW_NUMBER = 'mtx:15550100999';
     await previewed();
-    await ObserveSend.processTeacherReport('obs-1', { phase: 'deliver', from: COACH_TO });
+    await ObserveSend.processTeacherReport('obs-1', { phase: 'deliver', from: COACH_TO, previewId: PID });
     expect(textsTo('mtx:15550100999')[0]).toMatch(/For review — to: Sam Taylor \(\+15554000002\) · from: Robin Coach/);
     expect(imagesTo('mtx:15550100999')).toHaveLength(1);
     expect(imagesTo('mtx:15554000002')).toHaveLength(0);
@@ -288,7 +289,7 @@ describe('review gate', () => {
   test('operator mode with no review number configured fails loudly — there is no default number', async () => {
     process.env.OBSERVE_REVIEW_MODE = 'operator';
     await previewed();
-    await ObserveSend.processTeacherReport('obs-1', { phase: 'deliver', from: COACH_TO });
+    await ObserveSend.processTeacherReport('obs-1', { phase: 'deliver', from: COACH_TO, previewId: PID });
     expect(WhatsAppService.sendImage).not.toHaveBeenCalled();
     expect(delivery()).toMatchObject({ status: 'send_failed', last_error: 'review_number_missing' });
   });
