@@ -155,7 +155,9 @@ node bot/scripts/fidelity-calibration.js --repeats 3 --out calibration.json
 - **Scanned or photographed plans** have no text layer and are "plan unreadable" (no vision read yet).
 - **Uploaded documents need object storage** (R2) for the background reading job; pasted text and Rumi-made plans
   do not.
-- **A plan Rumi made** is read from the text stored when it was generated (or from its PDF for older plans).
+- **A plan Rumi made** is read from the text stored when it was generated (or from its PDF for older plans). Its move
+  list is extracted once and kept on the plan (`lesson_plans.content.fidelity_moves`), so every lesson taught from it
+  is graded against the same moves; the verdicts themselves still vary by a few points between gradings.
 - **Quotes in scripts other than Latin or Arabic** may not render in the PDF's built-in font; the gloss next to them
   does.
 - A recording that ends early can make late moves look missed; the scorer flags a grader that says so and counts
