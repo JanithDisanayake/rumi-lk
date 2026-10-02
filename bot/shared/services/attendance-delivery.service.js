@@ -278,10 +278,14 @@ class AttendanceDeliveryService {
   /**
    * Save a class's day: one session row, one record per student.
    *
-   * A day already on file is REPLACED — its records deleted and rewritten, its
-   * tallies updated — rather than refused. The old duplicate guard dead-ended a
-   * teacher who had made a mistake; a correction is the commonest reason to mark a
-   * day twice.
+   * A day already on file is REPLACED — its records rewritten, its tallies
+   * updated — rather than refused. The old duplicate guard dead-ended a teacher who
+   * had made a mistake; a correction is the commonest reason to mark a day twice.
+   * The new records are written BEFORE the old ones are removed, and the tallies
+   * last, so a write that fails part-way leaves the day already on file intact.
+   *
+   * Only the teacher whose class it is can file or replace its day: a stray token
+   * or session naming someone else's list is refused before anything is written.
    *
    * @returns {Promise<{sessionId: string, replaced: boolean, summary: Object}>}
    */
@@ -298,6 +302,16 @@ class AttendanceDeliveryService {
       leave: records.filter(r => r.status === 'leave').length
     };
 
+    const { data: list } = await supabase
+      .from('student_lists')
+      .select('id, user_id')
+      .eq('id', listId)
+      .maybeSingle();
+    if (!list || list.user_id !== userId) {
+      logToFile('❌ Attendance refused: the class is not this teacher\'s', { listId, userId, owner: list?.user_id || null });
+      throw new Error('This class is not on your account');
+    }
+
     const existingSession = await this.checkExistingSession(listId, sessionDateStr, sessionType);
     const counts = {
       total_students: summary.total,
@@ -307,26 +321,19 @@ class AttendanceDeliveryService {
     };
 
     let sessionId;
+    let oldRecordIds = [];
     if (existingSession) {
       sessionId = existingSession.id;
       logToFile('📋 Day already on file — replacing it', { sessionId, listId, sessionDate: sessionDateStr });
 
-      const { error: deleteError } = await supabase
+      const { data: oldRecords, error: oldError } = await supabase
         .from('attendance_records')
-        .delete()
+        .select('id')
         .eq('session_id', sessionId);
-      if (deleteError) {
-        throw new Error(`Failed to replace attendance records: ${deleteError.message}`);
+      if (oldError) {
+        throw new Error(`Failed to read the day on file: ${oldError.message}`);
       }
-
-      await supabase
-        .from('attendance_sessions')
-        .update({
-          ...counts,
-          marking_method: sessionData.markingMethod || 'voice',
-          was_manually_edited: true
-        })
-        .eq('id', sessionId);
+      oldRecordIds = (oldRecords || []).map(r => r.id);
     } else {
       const { data: session, error: sessionError } = await supabase
         .from('attendance_sessions')
@@ -370,8 +377,31 @@ class AttendanceDeliveryService {
       .insert(recordInserts);
 
     if (recordsError) {
-      logToFile('❌ Attendance records insert failed', { sessionId, error: recordsError.message });
-      throw new Error(`Saved the day but not the students: ${recordsError.message}`);
+      logToFile('❌ Attendance records insert failed', { sessionId, error: recordsError.message, replacing: Boolean(existingSession) });
+      throw new Error(existingSession
+        ? `Could not save the correction; the day on file is unchanged: ${recordsError.message}`
+        : `Saved the day but not the students: ${recordsError.message}`);
+    }
+
+    if (existingSession) {
+      if (oldRecordIds.length > 0) {
+        const { error: deleteError } = await supabase
+          .from('attendance_records')
+          .delete()
+          .in('id', oldRecordIds);
+        if (deleteError) {
+          throw new Error(`Saved the correction but could not remove the old records: ${deleteError.message}`);
+        }
+      }
+
+      await supabase
+        .from('attendance_sessions')
+        .update({
+          ...counts,
+          marking_method: sessionData.markingMethod || 'voice',
+          was_manually_edited: true
+        })
+        .eq('id', sessionId);
     }
 
     logToFile('✅ Attendance saved to database', {

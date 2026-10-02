@@ -16,6 +16,13 @@ const DEFAULT_TZ = 'UTC';
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+// A month as a whole word — "sep", "sept", "september" — never a prefix of
+// another word ("3 marks" is not 3 March).
+const MONTH_WORD = '(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?'
+  + '|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+// A number right after one of these words names a class, not a day: "class 9/10",
+// "grade 5/6" (combined grades are common in multi-grade schools).
+const CLASS_WORD_BEFORE = /(?:class|grade|section|کلاس)\s*$/;
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -93,6 +100,10 @@ function shiftDays(dateString, days) {
  *   "attendance 30 sep" / "sep 30" → that day this year (last year if it would be ahead)
  *   "attendance 30/9"              → day/month, this year (same rule)
  *
+ * A bare d/m with no year is ambiguous ("9/10" may be a class), so it is only read
+ * as a day when that day is in range; otherwise the message opens today. A number
+ * right after "class", "grade" or "section" is never read as a day.
+ *
  * Returns { date } or { error } — a future day, or one too far back to be a
  * correction (ATTENDANCE_MAX_BACKDATE_DAYS, default 62), is refused rather than guessed.
  */
@@ -114,9 +125,9 @@ function parseRequestedDate(text, now = new Date()) {
   };
 
   if (!date) {
-    const named = new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(${MONTHS.join('|')})[a-z]*\\b`).exec(lower)
-      || new RegExp(`\\b(${MONTHS.join('|')})[a-z]*\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b`).exec(lower);
-    if (named) {
+    const named = new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH_WORD}\\b`).exec(lower)
+      || new RegExp(`\\b${MONTH_WORD}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b`).exec(lower);
+    if (named && !CLASS_WORD_BEFORE.test(lower.slice(0, named.index))) {
       const dayFirst = /^\d/.test(named[1]);
       const d = Number(dayFirst ? named[1] : named[2]);
       const m = MONTHS.indexOf((dayFirst ? named[2] : named[1]).slice(0, 3)) + 1;
@@ -126,10 +137,15 @@ function parseRequestedDate(text, now = new Date()) {
 
   if (!date) {
     const slash = /\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/.exec(lower);
-    if (slash) {
+    if (slash && !CLASS_WORD_BEFORE.test(lower.slice(0, slash.index))) {
       const [, d, m, y] = slash;
       if (y) date = `${y.length === 2 ? `20${y}` : y}-${pad(m)}-${pad(d)}`;
-      else date = inPast(Number(m), Number(d));
+      else {
+        const guess = inPast(Number(m), Number(d));
+        const maxBackDays = Number(process.env.ATTENDANCE_MAX_BACKDATE_DAYS) || 62;
+        if (!isValidDateString(guess) || guess < shiftDays(today, -maxBackDays)) return null;
+        date = guess;
+      }
     }
   }
 

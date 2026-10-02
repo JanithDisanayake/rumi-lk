@@ -117,6 +117,12 @@ async function sendMarkingForm(user, from, result) {
       rosterSize: result.students?.length,
     });
   } else {
+    // The session already moved on to wait for the form's answer; put it back on
+    // the method menu so the "1" or "3" offered here is answered as promised.
+    await AttendanceConversationService.saveSessionState(user.id, {
+      ...sessionState,
+      state: AttendanceConversationService.STATES.AWAITING_MARKING_METHOD,
+    });
     await WhatsAppService.sendMessage(from, 'The marking form is not available on this channel. Reply *1* to mark by voice note, or *3* if everyone is present.');
     logToFile('⚠️ Attendance marking flow unavailable on this channel', { userId: user.id });
   }

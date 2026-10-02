@@ -30,7 +30,9 @@ they record different things:
    - a **head teacher** marks the school's **staff** — the role has already answered "whose attendance?".
      A head teacher who also teaches says **"class attendance"** to reach their class.
 2. **Name a day to mark or correct it:** "attendance yesterday", "attendance 30 sep", "attendance 2026-09-30".
-   Future days are refused; days older than `ATTENDANCE_MAX_BACKDATE_DAYS` are refused.
+   Future days are refused; days older than `ATTENDANCE_MAX_BACKDATE_DAYS` are refused. A number after
+   "class", "grade" or "section" is a class, never a day ("attendance grade 5/6" opens today), and a bare
+   `9/10` that would land outside that window is read as a class too.
 3. **Choose how:** `1` voice roll call, `2` tap to mark, `3` everyone present.
 4. **Mark by exception** — name who is away; everyone else is present:
 
@@ -44,6 +46,8 @@ they record different things:
 5. **Rumi saves the day, then rebuilds and sends the month's register** to the chat it was marked from.
    **Marking a day again replaces it** — that is how a mistake is corrected — and the whole month is
    regenerated, so the corrected file still holds every other day. A new month starts a new register.
+   The new marks are written before the old ones are removed, so a correction that fails to save leaves
+   the day already on file as it was. Only the teacher whose class it is can mark or correct its days.
 
 ## What the teacher experiences
 
