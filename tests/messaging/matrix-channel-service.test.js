@@ -398,6 +398,26 @@ describe('matrix-channel.service -- media upload + send', () => {
     }
   });
 
+  // The attendance register is a spreadsheet; it used to go out as
+  // application/octet-stream, so the teacher's app showed a generic file.
+  it.each([
+    ['Attendance_3_A_October_2026.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+    ['students.csv', 'text/csv'],
+  ])('sendDocument labels %s with its real mime type', async (filename, mimetype) => {
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const tmpFile = path.join(os.tmpdir(), `matrix-test-${Date.now()}-${filename}`);
+    fs.writeFileSync(tmpFile, 'data');
+    try {
+      const { service, sentMessages } = loadService();
+      await service.sendDocument(TO, tmpFile, filename, 'your register');
+      expect(sentMessages[0].content.info.mimetype).toBe(mimetype);
+    } finally {
+      fs.unlinkSync(tmpFile);
+    }
+  });
+
   it('sendVideo uploads and sends an m.video message', async () => {
     const { service, sentMessages } = loadService();
     const result = await service.sendVideo(TO, Buffer.alloc(1024), '/tmp', 'caption');

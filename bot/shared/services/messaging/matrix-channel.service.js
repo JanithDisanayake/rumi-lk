@@ -329,6 +329,7 @@ const EXT_MIME_TYPES = {
   '.pdf': 'application/pdf', '.txt': 'text/plain',
   '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.csv': 'text/csv',
 };
 
 function guessMimeType(filename) {
