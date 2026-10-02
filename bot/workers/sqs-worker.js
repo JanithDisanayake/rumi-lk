@@ -411,6 +411,22 @@ class SQSCoachingWorker {
         break;
       }
 
+      case 'observe_debrief': {
+        // A coach's recorded debrief conversation → coach-the-coach feedback.
+        const ObserveDebrief = require('../shared/services/observe/observe-debrief.service');
+        await ObserveDebrief.processDebriefRecording(sessionId, payload);
+        break;
+      }
+
+      // Observe: the teacher's report (preview to the coach, delivery, or the
+      // teacher's tap on the invite). It records its own delivery state and
+      // tells the coach about failures, so it never throws for a send.
+      case 'observe_teacher_report': {
+        await SQSQueueService.extendJobTimeout(receiptHandle, 300); // hero render + sends
+        await require('../shared/services/observe/observe-send.service').processTeacherReport(sessionId, payload);
+        break;
+      }
+
       // Test papers (/testpaper): write or revise one version, then print and
       // send the paper + answer key. A long paper in a right-to-left script can
       // take a few minutes end to end, so the job gets ten.
@@ -422,13 +438,6 @@ class SQSCoachingWorker {
           ...payload,
           action: jobType === 'testpaper_revise' ? 'revise' : 'generate',
         });
-          break;
-        }
-
-      case 'observe_debrief': {
-        // A coach's recorded debrief conversation → coach-the-coach feedback.
-        const ObserveDebrief = require('../shared/services/observe/observe-debrief.service');
-        await ObserveDebrief.processDebriefRecording(sessionId, payload);
         break;
       }
 
@@ -475,9 +484,10 @@ class SQSCoachingWorker {
       }
 
       // The observe jobs belong to an observation whose lesson pipeline already
-      // succeeded: a failed debrief (or report) must never mark the session
-      // 'failed'. Their own state lives in analysis_data, and the debrief
-      // retry sweep re-queues a stuck recording.
+      // succeeded: a failed debrief or report must never mark the session
+      // 'failed'. Their own state lives in analysis_data (the send service owns
+      // teacher_delivery and tells the coach), and the debrief retry sweep
+      // re-queues a stuck recording.
       if (jobType === 'observe_debrief' || jobType === 'observe_teacher_report') {
         logToFile('Observe job failure left to its own retry path', { sessionId, jobType });
         return;
@@ -1120,9 +1130,6 @@ function startWorker() {
 
     logToFile('Periodic stale job recovery enabled (every 5 minutes)');
 
-    // Scheduled teacher nudges — a no-op unless TEACHER_NUDGES_ENABLED is on.
-    armTeacherNudges();
-
     // Debrief retry sweep: boot run (a redeploy resets the timer) + every 15
     // minutes. A no-op when /observe is unused (nothing matches the query).
     const runDebriefRetry = async () => {
@@ -1136,6 +1143,9 @@ function startWorker() {
     setTimeout(runDebriefRetry, 2 * 60 * 1000);
     setInterval(runDebriefRetry, DEBRIEF_RETRY_INTERVAL_MS);
     logToFile('Debrief retry sweep enabled (OBSERVE_DEBRIEF_RETRY_OFF=true disables)', { enabled: !debriefRetryOff() });
+
+    // Scheduled teacher nudges — a no-op unless TEACHER_NUDGES_ENABLED is on.
+    armTeacherNudges();
   });
 }
 
@@ -1145,6 +1155,6 @@ if (require.main === module) {
 
 // Export for testing
 module.exports = {
-  SQSCoachingWorker, WORKER_ID, startWorker, recoverStaleVideoRequests, worker, teacherNudgesSweepMs,
-  runDebriefRetrySweep,
+  SQSCoachingWorker, WORKER_ID, startWorker, recoverStaleVideoRequests, runDebriefRetrySweep, worker,
+  teacherNudgesSweepMs,
 };
