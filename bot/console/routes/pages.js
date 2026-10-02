@@ -142,11 +142,7 @@ module.exports = function pagesRouter({ runtime, posture, mount }) {
 /** The bot's version, read the same way /health reads it. */
 function version() {
   try {
-    const fs = require('fs');
-    const path = require('path');
-    const file = path.join(__dirname, '../../VERSION');
-    if (fs.existsSync(file)) return fs.readFileSync(file, 'utf8').trim();
-    return require('../../package.json').version;
+    return require('../../shared/utils/version').rumiVersion();
   } catch {
     return 'unknown';
   }

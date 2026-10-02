@@ -1668,17 +1668,7 @@ app.get('/stats', (req, res) => {
  * Health check endpoint
  */
 app.get('/health', (req, res) => {
-  const path = require('path');
-  const versionFile = path.join(__dirname, 'VERSION');
-  let version = require('./package.json').version; // single source: package.json, overridden by VERSION file below
-
-  try {
-    if (fs.existsSync(versionFile)) {
-      version = fs.readFileSync(versionFile, 'utf8').trim();
-    }
-  } catch (err) {
-    console.error('Error reading VERSION file:', err);
-  }
+  const version = require('./shared/utils/version').rumiVersion();
 
   res.json({
     status: 'healthy',
@@ -1967,18 +1957,7 @@ function startServer() {
   registerChannelShutdownHandlers();
   exitOnChannelLogout();
   return app.listen(constants.PORT, () => {
-  // Read version from VERSION file
-  const path = require('path');
-  const versionFile = path.join(__dirname, 'VERSION');
-  let version = require('./package.json').version; // single source: package.json, overridden by VERSION file below
-
-  try {
-    if (fs.existsSync(versionFile)) {
-      version = fs.readFileSync(versionFile, 'utf8').trim();
-    }
-  } catch (err) {
-    console.error('Error reading VERSION file:', err);
-  }
+  const version = require('./shared/utils/version').rumiVersion();
 
   const startupMessage = `\n${'='.repeat(70)}
 🤖 Rumi v${version}
