@@ -453,7 +453,7 @@ Teachers can reach Rumi on an app you own instead of WhatsApp. Two separate apps
 1. **Rumi Messenger** (chat with Rumi and colleagues): first run Rumi on a Matrix server
    ([docs/channels/matrix.md](docs/channels/matrix.md)), then brand, build and publish the Android app —
    [docs/android-app.md](docs/android-app.md).
-2. **Portal app** (the teacher dashboard): on the dashboard service set `SESSION_COOKIE_SAMESITE=none` (and
+2. **Portal app** (the teacher dashboard): on the dashboard service set `PORTAL_APP_ENABLED=true` (and
    `ANDROID_APP_PACKAGE` + `ANDROID_APP_SHA256_FINGERPRINTS` for tapped links), then
    `cd portal && cp .env.app.example .env.app && npm run android:debug` — full guide in
    [portal/ANDROID.md](portal/ANDROID.md). Needs JDK 21 and the Android SDK.

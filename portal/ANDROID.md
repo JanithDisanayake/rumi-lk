@@ -69,11 +69,17 @@ Set these on the **dashboard** service (the one that serves `/api/portal`), see 
 
 | Setting | Why |
 |---|---|
-| CORS | Nothing to set: `https://localhost` (Android) and `capacitor://localhost` (iOS) are always in the portal's CORS allow-list (`dashboard/lib/portal-app-origins.js`). Without them every API call is blocked before it is sent. |
-| `SESSION_COOKIE_SAMESITE=none` | A bundled app's origin is cross-site to your API, so the default `lax` cookie is never stored and login "silently" fails on the next request. `none` lets the app hold a session. It applies to web sessions too (a real, bounded widening: the allow-list is explicit, the cookie is `httpOnly` and `Secure`). With [OTA](#ota-updates) on, the app is same-site and `lax` works — but the bundled fallback still needs `none`. |
+| `PORTAL_APP_ENABLED=true` | Two things the bundled app needs. **CORS:** adds `https://localhost` (Android) and `capacitor://localhost` (iOS) to the portal API's credentialed allow-list (`dashboard/lib/portal-app-origins.js`); without them every API call is blocked before it is sent. **Session:** the app's origin is cross-site to your API, so a `SameSite=Lax` cookie is never stored and login "silently" fails on the next request. A portal login or setup whose `Origin` is the app's gets a `SameSite=None` cookie for that session only. |
 | `ANDROID_APP_PACKAGE`, `ANDROID_APP_SHA256_FINGERPRINTS` | Publishes `/.well-known/assetlinks.json` so tapped portal links open the app. See [App Links](#app-links). |
 
 The session cookie is `Secure`, so the portal must be served over **https** — which the app requires anyway.
+
+**What is widened, and what never is.** Only sessions created by the app's own login are `SameSite=None`.
+The cookie that carries web portal sessions and admin (`/observability`) sessions stays `SameSite=Lax`
+whatever you set: the dashboard has no CSRF token and accepts form posts, so a `None` admin cookie would ride
+along on a form any website submits (CORS does not stop a form post). If an app session is ever used outside
+`/api/portal`, it is put back to `Lax`. With [OTA](#ota-updates) on, the app loads pages from your portal
+host, its requests are same-site, and its sessions stay `Lax`.
 
 ## Install and test
 
@@ -217,7 +223,7 @@ never stuck. Do not set the config to `false`.
 | 4 | Brand colour (icon background, launch screen) | `android/app/src/main/res/values/ic_launcher_background.xml` |
 | 5 | Launch-screen mark | `android/app/src/main/res/drawable-xxhdpi/splash_mark.png` |
 | 6 | Signing | `PORTAL_KEYSTORE_*` (environment or `android/keystore.properties`) |
-| 7 | Portal server | `SESSION_COOKIE_SAMESITE=none`, `ANDROID_APP_PACKAGE`, `ANDROID_APP_SHA256_FINGERPRINTS` |
+| 7 | Portal server | `PORTAL_APP_ENABLED=true`, `ANDROID_APP_PACKAGE`, `ANDROID_APP_SHA256_FINGERPRINTS` |
 | 8 | Bot links to the portal | `PORTAL_URL` in the bot's `.env` (`bot/shared/config/branding.js`) — with App Links verified, those links open the app |
 
 You do not move any Java source to change the package id: `MainActivity` lives in the fixed namespace

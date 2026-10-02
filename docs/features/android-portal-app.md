@@ -27,8 +27,8 @@ what Rumi has produced for them.
    verified against `/.well-known/assetlinks.json` served by the portal); the back key closes dialogs, goes
    back a page, or leaves from a home page; the session cookie is flushed to disk when the app is
    backgrounded, so a force-close does not log the teacher out.
-5. **Server side.** The portal API allows the app's origin (CORS) and, with `SESSION_COOKIE_SAMESITE=none`,
-   lets the app hold a session.
+5. **Server side.** With `PORTAL_APP_ENABLED=true` the portal API allows the app's origin (CORS) and gives
+   a login made from the app a cookie it can hold (`SameSite=None`). Web and admin sessions stay `SameSite=Lax`.
 
 ## What the teacher experiences
 
@@ -48,7 +48,7 @@ npm ci
 npm run android:debug             # needs JDK 21 + the Android SDK
 ```
 
-On the dashboard service set `SESSION_COOKIE_SAMESITE=none`, and for App Links `ANDROID_APP_PACKAGE` and
+On the dashboard service set `PORTAL_APP_ENABLED=true`, and for App Links `ANDROID_APP_PACKAGE` and
 `ANDROID_APP_SHA256_FINGERPRINTS` (all in `.env.template`). Release builds, signing, publishing an APK, Google
 Play, OTA and the full white-label checklist: **[portal/ANDROID.md](../../portal/ANDROID.md)**.
 
@@ -59,7 +59,7 @@ Play, OTA and the full white-label checklist: **[portal/ANDROID.md](../../portal
 | `PORTAL_APP_NAME` | `portal/.env.app` | launcher label |
 | `PORTAL_APP_OTA` | `portal/.env.app` | `1` = load the portal from your server on launch |
 | `PORTAL_KEYSTORE_PATH`, `PORTAL_KEYSTORE_PASSWORD`, `PORTAL_KEY_ALIAS`, `PORTAL_KEY_PASSWORD` | build environment | release signing |
-| `SESSION_COOKIE_SAMESITE` | dashboard `.env` | `none` so the app can hold a session (default `lax`) |
+| `PORTAL_APP_ENABLED` | dashboard `.env` | `true` so the app is allowed (CORS) and can hold a session (default off) |
 | `ANDROID_APP_PACKAGE`, `ANDROID_APP_SHA256_FINGERPRINTS` | dashboard `.env` | publish `assetlinks.json` for App Links |
 
 ## Limits
