@@ -178,6 +178,42 @@ describe('observe form endpoint', () => {
     expect(WhatsAppService.sendMessage).toHaveBeenCalledTimes(1);        // once, not per tap
   });
 
+  test('a completed observation refuses a stale form: nothing re-scored, status kept, the coach told once', async () => {
+    // The report is already with the teacher; the old Flow is still tappable.
+    const analysis = packAnalysis(3);
+    analysis.teacher_delivery = { status: 'sent', sent_at: '2026-10-01T10:00:00Z' };
+    seed('obs-1', { status: 'completed', debrief_status: 'done', analysis_data: analysis });
+    const before = JSON.stringify(row('obs-1').analysis_data);
+    const res = await handleObserveFormRequest(req('data_exchange', { data: { _screen: 'DOMAIN_4', r_9: '1' } }));
+    expectNoVersion(res);
+    expect(res.screen).toBeUndefined();
+    expect(res.data.error_message).toMatch(/already saved/);
+    expect(row('obs-1').status).toBe('completed');
+    expect(JSON.stringify(row('obs-1').analysis_data)).toBe(before);
+    expect(WhatsAppService.sendMessage).toHaveBeenCalledTimes(1);
+    expect(WhatsAppService.sendMessage.mock.calls[0]).toEqual(['15550100001', res.data.error_message]);
+  });
+
+  test('a form already submitted (observer_review_complete) does not reopen or resubmit', async () => {
+    seed('obs-1', { status: 'observer_review_complete' });
+    const init = await handleObserveFormRequest(req('INIT'));
+    expect(init.screen).toBeUndefined();
+    expect(init.data.error_message).toMatch(/already saved/);
+    const res = await handleObserveFormRequest(req('data_exchange', { data: { _screen: 'DOMAIN_4', r_9: '1' } }));
+    expect(res.screen).toBeUndefined();
+    expect(row('obs-1').analysis_data.observer_edit_summary).toBeUndefined();
+  });
+
+  test('finished between load and write: the last screen does not reach SUCCESS, and says why', async () => {
+    seed('obs-1');
+    const ObserveEdits = require('../../bot/shared/services/observe/observe-edits.service');
+    const spy = jest.spyOn(ObserveEdits, 'applyObserverEdits').mockResolvedValueOnce({ refused: 'not_in_review' });
+    const res = await handleObserveFormRequest(req('data_exchange', { data: { _screen: 'DOMAIN_4', r_9: '1' } }));
+    expect(res.screen).toBeUndefined();
+    expect(res.data.error_message).toMatch(/already saved/);
+    spy.mockRestore();
+  });
+
   test('cancelled between load and write: the last screen does not reach SUCCESS', async () => {
     seed('obs-1');
     const ObserveEdits = require('../../bot/shared/services/observe/observe-edits.service');

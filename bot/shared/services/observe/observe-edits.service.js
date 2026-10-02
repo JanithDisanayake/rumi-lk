@@ -9,13 +9,19 @@
 
 const supabase = require('../../config/supabase');
 const { getObservePack, scaleBounds } = require('./observe-framework');
-const { TERMINAL_IN_FILTER } = require('./observe-terminal');
+const { isTerminalStatus } = require('./observe-terminal');
 const { logToFile } = require('../../utils/logger');
 
 // The full text stays in analysis_data regardless of what a form shows. 600 is
 // the Flow TextArea's own allowance — the evidence is the whole point of the
 // review step, and a coach can't judge a rating from a truncated quote.
 const PREFILL_TEXT_CAP = 600;
+
+// The only status in which the coach's edits are accepted. Before it there is
+// no draft to edit; after it the ratings are saved — and may already be in a
+// report the teacher holds, so a stale form must never re-score them or flip a
+// completed observation back.
+const IN_REVIEW_STATUS = 'awaiting_observer_review';
 
 // Indicator ids are numbers in some rubrics (7) and dotted strings in others
 // ("A1.2"); form field names need neither dots nor a number type.
@@ -34,6 +40,12 @@ function clipWords(s, n) {
 const evidenceOf = (ind) => String(ind.evidence_summary || ind.evidence || ind.evidence_sw || '');
 const improvementOf = (ind) => String(ind.improvement || ind.improvement_sw || '');
 
+/** Why edits are refused in this status, or null when they are accepted. */
+function refusalFor(status) {
+  if (isTerminalStatus(status)) return 'terminal';
+  return status === IN_REVIEW_STATUS ? null : 'not_in_review';
+}
+
 async function loadSession(sessionId) {
   const { data: session, error } = await supabase
     .from('coaching_sessions')
@@ -51,10 +63,15 @@ async function loadSession(sessionId) {
  * improvement) into a v2 analysis, recompute scores, stamp the summary,
  * persist. v1 (autofill_analysis_data) is never touched here.
  *
- * @returns {Promise<object>} the summary, or { refused: 'terminal' }
+ * @returns {Promise<object>} the summary, or { refused: 'terminal' | 'not_in_review' }
  */
 async function applyObserverEdits(sessionId, edits) {
   const session = await loadSession(sessionId);
+  const refusal = refusalFor(session.status);
+  if (refusal) {
+    logToFile('🚫 observe: observer edits refused', { sessionId, status: session.status, refused: refusal });
+    return { refused: refusal };
+  }
   const v1 = session.autofill_analysis_data || session.analysis_data;
   const v2 = JSON.parse(JSON.stringify(session.analysis_data || {}));
   const pack = getObservePack();
@@ -100,19 +117,22 @@ async function applyObserverEdits(sessionId, edits) {
   const freshDebrief = freshRow && freshRow.analysis_data && freshRow.analysis_data.observer_debrief;
   if (freshDebrief) v2.observer_debrief = freshDebrief;
 
-  // Both guards are needed — the read stops the common case, the predicate the race.
+  // Both guards are needed — the read stops the common case, the predicate the
+  // race (a cancel, or the other form surface submitting first).
   const { data: written, error } = await supabase.from('coaching_sessions')
     .update({ analysis_data: v2, status: 'observer_review_complete' })
     .eq('id', sessionId)
-    .not('status', 'in', TERMINAL_IN_FILTER)
+    .eq('status', IN_REVIEW_STATUS)
     .select('id');
   if (error) throw new Error(`observe: failed to persist v2 edits: ${error.message}`);
   if (!written || !written.length) {
-    // The observation went terminal under us. Say so rather than reporting a
-    // successful edit — a caller that believes this succeeded would go on to
-    // send the teacher a report that was cancelled.
-    logToFile('🚫 observe: observer edits refused — observation is terminal', { sessionId });
-    return { refused: 'terminal' };
+    // The row left review under us. Say so rather than reporting a successful
+    // edit — a caller that believes this succeeded would go on to start the
+    // debrief and report chain again.
+    const { data: now } = await supabase.from('coaching_sessions').select('status').eq('id', sessionId).maybeSingle();
+    const refused = refusalFor(now && now.status) || 'not_in_review';
+    logToFile('🚫 observe: observer edits refused at write — observation left review', { sessionId, refused });
+    return { refused };
   }
 
   logToFile('📝 observe: observer edits applied (v2)', { sessionId, ...summary });
@@ -120,5 +140,5 @@ async function applyObserverEdits(sessionId, edits) {
 }
 
 module.exports = {
-  applyObserverEdits, clipWords, evidenceOf, improvementOf, fid, PREFILL_TEXT_CAP,
+  applyObserverEdits, clipWords, evidenceOf, improvementOf, fid, PREFILL_TEXT_CAP, IN_REVIEW_STATUS,
 };

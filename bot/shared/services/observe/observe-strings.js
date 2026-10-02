@@ -46,6 +46,7 @@ const EN = {
   flow_button: 'Open the form',
   submitted_ack: '✅ Thank you! Your {fw} observation is saved, with your edits.',
   flow_terminal_refused: 'This observation was cancelled, so the form can no longer be submitted.',
+  flow_already_finished: 'The ratings for this observation are already saved, so this form can no longer be changed.',
   // The published form's static copy (scripts/generate-observe-flow-json.js).
   // A published Flow is one document, so these are baked in at generation time.
   flow_screen_title: '{fw} review {n}/{total}',

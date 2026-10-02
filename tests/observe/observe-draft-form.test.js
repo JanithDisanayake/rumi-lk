@@ -205,6 +205,17 @@ describe('the stepwise chat form', () => {
     expect(lastText()).toMatch(/isn't yours/);
   });
 
+  test('a chat form finished after the ratings were already saved elsewhere changes nothing', async () => {
+    await openForm('obs-16');
+    row('obs-16').status = 'observer_review_complete';   // e.g. the Meta form submitted meanwhile
+    const before = JSON.stringify(row('obs-16').analysis_data);
+    await handleObserveText(COACH, TO, '1 1');
+    for (let i = 0; i < 4; i += 1) await handleObserveText(COACH, TO, 'ok');
+    expect(JSON.stringify(row('obs-16').analysis_data)).toBe(before);
+    expect(lastText()).toMatch(/already saved/);
+    expect(mockDebrief.offerDebriefChoice).not.toHaveBeenCalled();
+  });
+
   test('a form submitted after the observation was cancelled is refused', async () => {
     await openForm('obs-15');
     row('obs-15').status = 'cancelled';
@@ -217,12 +228,47 @@ describe('the stepwise chat form', () => {
 
 describe('applyObserverEdits', () => {
   test('clamps to the pack scale and keeps a debrief the worker merged meanwhile', async () => {
-    seed('obs-20', { autofill_analysis_data: teachAnalysis(3) });
+    seed('obs-20', { status: 'awaiting_observer_review', autofill_analysis_data: teachAnalysis(3) });
     row('obs-20').analysis_data.observer_debrief = { feedback: 'kept' };
     const summary = await ObserveDraft.applyObserverEdits('obs-20', { r_T: '9' });
     expect(summary.indicators_rescored).toBe(1);
     expect(row('obs-20').analysis_data.domains.time_on_task.indicators[0].score).toBe(5);
     expect(row('obs-20').analysis_data.observer_debrief).toEqual({ feedback: 'kept' });
+  });
+
+  test('edits are accepted only while the observation is in review', async () => {
+    for (const [id, status] of [['obs-22', 'observer_review_complete'], ['obs-23', 'completed'], ['obs-24', 'analyzing']]) {
+      seed(id, { status, autofill_analysis_data: teachAnalysis(3) });
+      const before = JSON.stringify(row(id).analysis_data);
+      expect(await ObserveDraft.applyObserverEdits(id, { r_T: '1' })).toEqual({ refused: 'not_in_review' });
+      expect(row(id).status).toBe(status);
+      expect(JSON.stringify(row(id).analysis_data)).toBe(before);
+    }
+    seed('obs-25', { status: 'cancelled', autofill_analysis_data: teachAnalysis(3) });
+    expect(await ObserveDraft.applyObserverEdits('obs-25', { r_T: '1' })).toEqual({ refused: 'terminal' });
+  });
+
+  test('the write itself is conditional: a row finished after the read is never rewritten', async () => {
+    seed('obs-26', { status: 'awaiting_observer_review', autofill_analysis_data: teachAnalysis(3) });
+    const before = JSON.stringify(row('obs-26').analysis_data);
+    // The coach's other submit lands between this call's read and its write.
+    const origFrom = mockDb.client.from;
+    let reads = 0;
+    mockDb.client.from = (name) => {
+      const b = origFrom(name);
+      if (name === 'coaching_sessions' && (reads += 1) === 1) {
+        const origThen = b.then;
+        b.then = (res, rej) => origThen.call(b, (v) => { row('obs-26').status = 'completed'; return res(v); }, rej);
+      }
+      return b;
+    };
+    try {
+      expect(await ObserveDraft.applyObserverEdits('obs-26', { r_T: '1' })).toEqual({ refused: 'not_in_review' });
+    } finally {
+      mockDb.client.from = origFrom;
+    }
+    expect(row('obs-26').status).toBe('completed');
+    expect(JSON.stringify(row('obs-26').analysis_data)).toBe(before);
   });
 
   test('MEWAKA ids with dots are addressed by their underscore form', async () => {
@@ -231,7 +277,7 @@ describe('applyObserverEdits', () => {
     const analysis = { domains: {} };
     for (const d of pack.domainOrder) analysis.domains[d] = { indicators: pack.domains[d].indicators.map((i) => ({ id: i.id, score: 2 })) };
     pack.computeScores(analysis);
-    seed('obs-21', { analysis_data: analysis, autofill_analysis_data: JSON.parse(JSON.stringify(analysis)) });
+    seed('obs-21', { status: 'awaiting_observer_review', analysis_data: analysis, autofill_analysis_data: JSON.parse(JSON.stringify(analysis)) });
     await ObserveDraft.applyObserverEdits('obs-21', { r_A1_1: '3' });
     expect(row('obs-21').analysis_data.domains.introduction.indicators[0].score).toBe(3);
   });
