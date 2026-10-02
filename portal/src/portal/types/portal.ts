@@ -2,6 +2,8 @@ export interface User {
   firstName: string;
   lastName: string;
   phoneNumber: string;
+  /** In the observe role family: shows the coach's "Observations" area. */
+  isCoach?: boolean;
 }
 
 export interface DashboardStats {
@@ -135,4 +137,44 @@ export interface VideoDetail extends VideoRequest {
   thumbnailUrl?: string; // Presigned URL from backend
   current_step?: number;
   error_message?: string;
+}
+
+// Coach's view ("My observations"). No scores and no coach-the-coach feedback
+// are ever sent to the portal for these.
+export type ObservationStage = 'form' | 'debrief' | 'report' | 'inProgress' | 'completed';
+
+export interface CoachVisit {
+  id: string;
+  teacherName: string | null;
+  teacherUserId: string | null;
+  schoolName: string | null;
+  scheduledFor: string | null;
+  scheduledSlot: string | null;
+  overdue: boolean;
+}
+
+export interface CoachObservation {
+  id: string;
+  createdAt: string | null;
+  stage: ObservationStage;
+  teacherUserId: string | null;
+  teacherName: string | null;
+  schoolName: string | null;
+  reportStatus: string | null;
+  reportSentAt: string | null;
+}
+
+export interface CoachObservationsData {
+  upcoming: CoachVisit[];
+  waiting: { form: CoachObservation[]; debrief: CoachObservation[]; report: CoachObservation[] };
+  inProgress: CoachObservation[];
+  completed: CoachObservation[];
+}
+
+export interface CoachTeacher {
+  id: string;
+  name: string;
+  schoolName: string | null;
+  observationCount: number;
+  lastObservedAt: string | null;
 }

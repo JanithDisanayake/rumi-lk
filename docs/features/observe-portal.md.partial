@@ -1,0 +1,62 @@
+## The coach's view in the portal
+
+A coach who has a portal account sees an **Observations** item in the portal's
+navigation. It opens **My observations** (`/portal/observe`):
+
+- **Upcoming visits** — the visits they scheduled with `/observe`, earliest
+  first. A visit whose date has passed is marked **Overdue**.
+- **Waiting on you** — observations that need the coach next:
+  **Check the form** (the AI's draft ratings are ready to review),
+  **Do the debrief** (the form is done, the feedback conversation is not), and
+  **Send the report** (the debrief is done, the teacher has not had their report yet).
+- **Being prepared** — recordings still being transcribed or analysed.
+- **Completed** — the debrief is done and the report has reached the teacher.
+- **My teachers** — the teachers in the coach's schools, with how many times
+  the coach has observed each and when they last did. Opening a teacher
+  (`/portal/observe/teacher/<id>`) lists the coach's past observations of them.
+
+The page is read-only. Recording, checking the form, debriefing and sending the
+report all happen in chat with `/observe`; the portal shows where each one stands.
+
+### Who sees it
+
+Only users whose `users.role` is in the coach role family —
+`OBSERVE_LEADER_ROLES` (default `coach,school_leader,supervisor,principal`),
+the same setting the chat command uses. The portal API checks this on every
+request: anyone else gets `403` from `/api/portal/coach/*`, and the navigation
+item is not shown to them. A coach sees only their own visits and observations,
+and only teachers in the schools assigned to them (`leader_schools`); asking for
+any other teacher returns `404`.
+
+Because the dashboard runs as its own service, it keeps a copy of the default
+role list; a test fails if it ever differs from the bot's.
+
+### What it never shows
+
+- **No scores or ratings.** None of the coach-view responses include a score.
+- **No coach-the-coach feedback.** The feedback a coach receives on their own
+  debrief is never sent to the portal.
+- **Teachers never see a coach's observation of them.** The teacher pages
+  (dashboard, coaching sessions, a session's detail, analytics) list only the
+  teacher's own recordings. A coach's observation holds the coach's ratings, so
+  it never appears there, even when it is filed under the teacher.
+
+### API
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/portal/coach/observations` | `{ upcoming, waiting: { form, debrief, report }, inProgress, completed }` |
+| `GET /api/portal/coach/teachers` | `{ teachers: [{ id, name, schoolName, observationCount, lastObservedAt }] }` |
+| `GET /api/portal/coach/teacher/:id` | `{ teacher, observations }`, or `404` if the teacher is not in the coach's schools |
+| `GET /api/portal/dashboard` | now also returns `user.isCoach`, which shows or hides the nav item |
+
+Each observation carries `id, createdAt, stage, teacherUserId, teacherName,
+schoolName, reportStatus, reportSentAt`. The teacher is identified from the
+visit the observation was linked to, then from the teacher it was filed under,
+then from the name typed when the report was sent. A recording the coach has
+not yet linked to a teacher shows as "Teacher not named yet", never under the
+coach's own name.
+
+This needs migration `V2.6.0__observe_coach_assistant.sql`. The teacher pages
+filter on `coaching_sessions.observation_type`, so run the migration before
+deploying this version of the dashboard.
