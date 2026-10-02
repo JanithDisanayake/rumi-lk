@@ -355,6 +355,39 @@ describe('matrix-connection', () => {
     expect(client.start).toHaveBeenCalledTimes(1);
   });
 
+  // A homeserver still starting when the bot starts (a compose or Railway
+  // deploy of the pair) must not leave Matrix down until the next restart.
+  it('a homeserver that was down at boot can be reached once it is up', async () => {
+    let calls = 0;
+    const { client } = mockMatrixSdk({
+      startImpl: async () => { calls += 1; if (calls === 1) throw new Error('connect ECONNREFUSED'); },
+    });
+    mockCryptoAvailable();
+    require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
+    const conn = require('../../bot/shared/services/messaging/matrix-connection');
+
+    await expect(conn.getClient()).rejects.toThrow('ECONNREFUSED');
+    // The homeserver is up now; the next send asks for the client again.
+    await expect(conn.getClient()).resolves.toBe(client);
+    expect(client.start).toHaveBeenCalledTimes(2);
+  });
+
+  it('connectionStatus() reports down before any attempt, connecting while one runs, connected after', async () => {
+    let finishStart;
+    mockMatrixSdk({ startImpl: () => new Promise((resolve) => { finishStart = resolve; }) });
+    mockCryptoAvailable();
+    require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
+    const conn = require('../../bot/shared/services/messaging/matrix-connection');
+
+    expect(conn.connectionStatus()).toBe('down');
+    const pending = conn.getClient();
+    expect(conn.connectionStatus()).toBe('connecting');
+    await new Promise((resolve) => setImmediate(resolve));
+    finishStart();
+    await pending;
+    expect(conn.connectionStatus()).toBe('connected');
+  });
+
   it('resolves the own user id via whoami when MATRIX_USER_ID is not set', async () => {
     mockMatrixSdk({ getUserIdImpl: async () => '@rumi:example.org' });
     mockCryptoAvailable();

@@ -384,6 +384,17 @@ describe('the real Matrix probe -- an access token is all-or-nothing, no per-sco
     expect(result).toEqual({ ok: false, detail: 'HTTP 401' });
   });
 
+  // "fetch failed" alone says nothing; the bot keeps retrying, so say where
+  // it tried, why it failed and that Matrix starts once the homeserver answers.
+  it('says why when the homeserver cannot be reached', async () => {
+    const cause = Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:8008'), { code: 'ECONNREFUSED' });
+    global.fetch = jest.fn().mockRejectedValue(Object.assign(new TypeError('fetch failed'), { cause }));
+    const result = await defaultProbes.matrix(ENV);
+    expect(result.ok).toBe(false);
+    expect(result.detail).toMatch(/could not reach the homeserver at https:\/\/matrix\.example\.org \(ECONNREFUSED\)/);
+    expect(result.detail).toMatch(/retries/);
+  });
+
   it('fails cleanly when the homeserver answers 200 with no user_id (an unexpected/malformed response)', async () => {
     global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
     const result = await defaultProbes.matrix(ENV);

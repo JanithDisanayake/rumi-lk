@@ -294,9 +294,20 @@ const defaultProbes = {
     nodeVersion = process.version,
   } = {}) {
     const base = String(env.MATRIX_HOMESERVER_URL || '').replace(/\/+$/, '');
-    const res = await fetch(`${base}/_matrix/client/v3/account/whoami`, {
-      headers: { Authorization: `Bearer ${env.MATRIX_ACCESS_TOKEN}` },
-    });
+    let res;
+    try {
+      res = await fetch(`${base}/_matrix/client/v3/account/whoami`, {
+        headers: { Authorization: `Bearer ${env.MATRIX_ACCESS_TOKEN}` },
+      });
+    } catch (err) {
+      // fetch's own message is just "fetch failed"; the reason is on .cause.
+      const reason = err.cause?.code || err.cause?.message || err.message;
+      return {
+        ok: false,
+        detail: `could not reach the homeserver at ${base} (${reason}). The bot retries the connection `
+          + 'with backoff, so Matrix starts once the homeserver answers; check MATRIX_HOMESERVER_URL if it never does.',
+      };
+    }
     if (!res.ok) return { ok: false, detail: `HTTP ${res.status}` };
 
     const body = await res.json();

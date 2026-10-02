@@ -1669,9 +1669,16 @@ app.get('/stats', (req, res) => {
  */
 app.get('/health', (req, res) => {
   const version = require('./shared/utils/version').rumiVersion();
+  // `channels` names a persistent-connection channel's state (Matrix today);
+  // `status` is 'degraded' when Matrix is the only channel and not connected
+  // (channel-health.js). Still HTTP 200: hosting platforms restart a service
+  // whose health check fails, and a restart cannot bring a homeserver up --
+  // the bot already retries the connection itself.
+  const report = require('./shared/services/messaging/channel-health').healthReport(process.env);
 
   res.json({
-    status: 'healthy',
+    status: report.status,
+    channels: report.channels,
     service: 'Rumi WhatsApp Bot',
     version: version,
     uptime: process.uptime(),
@@ -1867,6 +1874,10 @@ const PERSISTENT_CONNECTION_DRIVERS = {
     // surfaces as a sync-start failure (at connect() time, inside
     // attachInbound's own try/catch below), not a live-session event.
     onLogoutExit: null,
+    // A homeserver deployed alongside the bot is often still starting when
+    // the bot boots; one failed connect must not leave Matrix down until the
+    // next restart. See wireBaileysInboundIfSelected below.
+    retryAttach: true,
     close: () => require('./shared/services/messaging/matrix-connection').close(),
   },
 };
@@ -1878,10 +1889,19 @@ const PERSISTENT_CONNECTION_DRIVERS = {
  * POST does. No-op for any driver not in PERSISTENT_CONNECTION_DRIVERS
  * (Express's own routes already handle those). Failures here are logged,
  * never thrown — a connection problem must not crash server boot.
+ *
+ * A driver with `retryAttach` (Matrix) keeps trying in the background with
+ * capped backoff (channel-health.js#attachWithRetry) instead of giving up
+ * after one failure; the others are attempted once, as before.
  */
 async function wireBaileysInboundIfSelected() {
+  const { attachWithRetry } = require('./shared/services/messaging/channel-health');
   for (const [channel, driver] of Object.entries(PERSISTENT_CONNECTION_DRIVERS)) {
     if (!driver.isActive(process.env)) continue;
+    if (driver.retryAttach) {
+      attachWithRetry(channel, () => driver.attachInbound(handleWebhookPost)); // never rejects; not awaited, so it never holds up the other drivers
+      continue;
+    }
     try {
       await driver.attachInbound(handleWebhookPost);
     } catch (error) {

@@ -460,6 +460,13 @@ async function connect() {
     logToFile('❌ Matrix: failed to start sync -- check MATRIX_HOMESERVER_URL/MATRIX_ACCESS_TOKEN', {
       error: error.message,
     });
+    // The next getClient() builds a fresh client (see there); this one must
+    // not keep a half-started sync loop running beside it.
+    try {
+      freshClient.stop();
+    } catch (stopError) {
+      // best-effort
+    }
     throw error;
   }
 
@@ -482,17 +489,42 @@ async function connect() {
 /**
  * Lazily connects on first call; subsequent calls reuse the same connection.
  * Resolves once the first sync has actually completed -- mirrors
- * discord-connection.js's getClient() resolution semantics exactly.
+ * discord-connection.js's getClient() resolution semantics.
+ *
+ * A FAILED connect is not cached: callers waiting on that attempt all see its
+ * rejection, and the next call tries again. Caching the rejected promise (as
+ * this did before) meant one failed connect at boot -- the homeserver still
+ * starting in a compose or PaaS deploy of the pair -- left every later send
+ * failing and nothing received until the process restarted. The bot's boot
+ * also retries the inbound attach with backoff (channel-health.js).
  *
  * @returns {Promise<import('matrix-bot-sdk').MatrixClient>}
  */
 function getClient() {
-  if (!clientPromise) clientPromise = connect();
+  if (!clientPromise) {
+    const attempt = connect().catch((error) => {
+      if (clientPromise === attempt) clientPromise = null;
+      throw error;
+    });
+    clientPromise = attempt;
+  }
   return clientPromise;
 }
 
 function isConnected() {
   return connectionState.connected;
+}
+
+/**
+ * 'connected' once the first sync completed, 'connecting' while an attempt is
+ * in flight, 'down' otherwise (never attempted, failed, or closed). Read by
+ * GET /health (channel-health.js#healthReport).
+ *
+ * @returns {'connected'|'connecting'|'down'}
+ */
+function connectionStatus() {
+  if (connectionState.connected) return 'connected';
+  return clientPromise ? 'connecting' : 'down';
 }
 
 /** Whether the live connection came up with a working crypto provider (false = plaintext). */
@@ -577,6 +609,7 @@ function _resetForTests() {
 module.exports = {
   getClient,
   isConnected,
+  connectionStatus,
   isE2eeActive,
   e2eeMode,
   getCachedUserId,

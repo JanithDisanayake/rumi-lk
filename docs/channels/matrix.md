@@ -174,6 +174,7 @@ on). "Degrades" means it works with a plainer experience; "breaks" means a teach
 |---|---|
 | `The matrix channel did not start: … refusing to start without encryption` | The crypto package did not load. Reinstall `bot/` dependencies (`npm ci` in `bot/`) on Node 22+, or set `MATRIX_E2EE=off` |
 | `M_UNKNOWN_TOKEN` at start | The token was revoked or mistyped. Log the bot in again |
+| `The matrix channel did not start: … retrying in N s`, `/health` shows `channels.matrix: "down"` | The homeserver did not answer. The bot retries (5 s, doubling to 5 minutes) and Matrix starts once it answers; `rumi doctor` says why it failed. With `CHANNEL_DRIVER=none`, `/health` reports `status: "degraded"` meanwhile (still HTTP 200) |
 | `One time key … already exists`, or messages Rumi cannot decrypt | Two processes share the device, or the store was lost. Stop extra processes; if the store is gone, use a new token and device |
 | The worker's PDFs and reports never arrive | `REDIS_URL` differs between bot and worker, or the bot is not running |
 | A teacher gets no welcome | The announcements room alias does not exist; create it or set `MATRIX_WELCOME_ROOM_ALIAS` |
