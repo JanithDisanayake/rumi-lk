@@ -4220,7 +4220,8 @@ BEGIN
 END;
 $function$;
 
--- =============================================================================
+-- ======================================================================
+
 -- Teacher nudges — scheduled, proactive messages to teachers
 -- One row per (teacher, local day, kind). The sweeper books rows, claims the
 -- due ones (pending -> sending, single-flight via a conditional UPDATE) and
@@ -4263,6 +4264,84 @@ CREATE INDEX IF NOT EXISTS idx_teacher_nudges_user_recent
 -- The re-engage cohort reads users by how long ago they last wrote in.
 CREATE INDEX IF NOT EXISTS idx_users_last_message_at
     ON users (last_message_at);
+
+-- ============================================================================
+-- Observe: the coach's assistant (v2.8.0)
+-- Leader observations ride on coaching_sessions; the coach's roster is derived
+-- (leader_schools x users.school_id). Same DDL as migrations/V2.6.0__observe_coach_assistant.sql.
+-- ============================================================================
+
+-- A leader observation is a coaching_sessions row like any other, so the whole
+-- transcription + analysis pipeline is reused. user_id is the observed teacher
+-- (or the coach on a bare capture, until the teacher is named); the coach is
+-- observer_user_id. NULL observation_type = the teacher's own recording.
+ALTER TABLE coaching_sessions ADD COLUMN IF NOT EXISTS observation_type       VARCHAR(30);
+ALTER TABLE coaching_sessions ADD COLUMN IF NOT EXISTS observer_user_id       UUID;
+-- Frozen v1 of the AI analysis, written exactly once; analysis_data then holds
+-- the coach-edited v2. The v1 -> v2 diff is the record of what the coach changed.
+ALTER TABLE coaching_sessions ADD COLUMN IF NOT EXISTS autofill_analysis_data JSONB;
+-- pending | done: whether the coach's debrief step has run.
+ALTER TABLE coaching_sessions ADD COLUMN IF NOT EXISTS debrief_status         VARCHAR(20);
+
+CREATE INDEX IF NOT EXISTS idx_coaching_sessions_observer_pending
+  ON coaching_sessions (observer_user_id, created_at DESC)
+  WHERE observation_type = 'leader_observation';
+
+-- users.role (free text; the role family that may use /observe is config,
+-- OBSERVE_LEADER_ROLES), users.school_id and schools are the shared definition
+-- above (schools table + the column reconcile), used by attendance as well.
+
+CREATE TABLE IF NOT EXISTS leader_schools (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  leader_user_id  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  school_id       UUID REFERENCES schools(id) ON DELETE CASCADE,
+  school_ext_id   TEXT,
+  school_name     TEXT NOT NULL,
+  -- Where the assignment came from ('manual', 'import', ...). Free text, set by
+  -- OBSERVE_ROSTER_SOURCE; no deployment-specific enum.
+  source          TEXT NOT NULL DEFAULT 'manual',
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (leader_user_id, school_id)
+);
+CREATE INDEX IF NOT EXISTS idx_leader_schools_leader ON leader_schools (leader_user_id);
+CREATE INDEX IF NOT EXISTS idx_leader_schools_school_id ON leader_schools (school_id);
+
+CREATE TABLE IF NOT EXISTS observation_schedules (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  leader_user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  school_id          UUID REFERENCES schools(id) ON DELETE SET NULL,
+  school_ext_id      TEXT NOT NULL,
+  teacher_ext_id     TEXT NOT NULL,
+  teacher_name       TEXT,
+  school_name        TEXT,
+  scheduled_for      DATE NOT NULL,
+  scheduled_slot     TEXT,
+  status             TEXT NOT NULL DEFAULT 'upcoming' CHECK (status IN ('upcoming', 'done', 'cancelled')),
+  session_id         UUID,
+  calendar_event_id  TEXT,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_obs_sched_leader_status
+  ON observation_schedules (leader_user_id, status, scheduled_for);
+-- One upcoming visit per (coach, school, teacher): scheduling again moves it.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_obs_sched_active
+  ON observation_schedules (leader_user_id, school_ext_id, teacher_ext_id)
+  WHERE status = 'upcoming';
+
+CREATE TABLE IF NOT EXISTS coach_directory (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  leader_user_id  UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  full_name       TEXT NOT NULL,
+  work_email      TEXT NOT NULL,
+  -- exact: matched automatically; confirmed: a person checked it; manual: typed in.
+  match_method    TEXT NOT NULL DEFAULT 'exact' CHECK (match_method IN ('exact', 'confirmed', 'manual')),
+  confirmed_at    TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT coach_directory_confirmed_requires_timestamp
+    CHECK (match_method <> 'confirmed' OR confirmed_at IS NOT NULL)
+);
 
 -- Reload PostgREST's schema cache last, so the reconciled columns + functions
 -- above are immediately visible to the REST API (the earlier NOTIFY predates these DDLs).

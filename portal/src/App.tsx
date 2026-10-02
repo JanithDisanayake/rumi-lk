@@ -21,6 +21,8 @@ import PortalReadingAssessments from "./portal/pages/PortalReadingAssessments";
 import PortalReadingAssessmentDetail from "./portal/pages/PortalReadingAssessmentDetail";
 import PortalVideos from "./portal/pages/PortalVideos";
 import PortalVideoDetail from "./portal/pages/PortalVideoDetail";
+import CoachObservations from "./portal/pages/CoachObservations";
+import CoachTeacherDetail from "./portal/pages/CoachTeacherDetail";
 
 const queryClient = new QueryClient();
 
@@ -72,6 +74,8 @@ const App = () => {
             <Route path="/portal/reading-assessment/:id" element={<PortalReadingAssessmentDetail />} />
             <Route path="/portal/videos" element={<PortalVideos />} />
             <Route path="/portal/video/:id" element={<PortalVideoDetail />} />
+            <Route path="/portal/observe" element={<CoachObservations />} />
+            <Route path="/portal/observe/teacher/:id" element={<CoachTeacherDetail />} />
 
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />

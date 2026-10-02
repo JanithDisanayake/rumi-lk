@@ -94,6 +94,7 @@ async function tryCurriculumLessonPlanServe(from, topic, user, language) {
 const { evaluateHomeworkTrigger } = require('./homework-trigger');
 const { detectEditClassIntent } = require('./edit-class-trigger');
 const { routeTestPaperText } = require('./testpaper-trigger');
+const { ownCoaching } = require('../services/coaching/own-coaching');
 
 async function handleTextMessage(message, from, messageBody, user = null) {
   logToFile(`Processing TEXT message: ${messageBody}`);
@@ -445,6 +446,19 @@ async function handleTextMessage(message, from, messageBody, user = null) {
     }
 
     return; // Stop further processing
+  }
+
+  // ============================================================
+  // OBSERVE (the coach's assistant): /observe, and any reply a pending
+  // observe step is waiting for. Off unless OBSERVE_ENABLED=true; for anyone
+  // outside the coach role family only /observe itself is looked at. The
+  // original-case message is passed — a teacher's name keeps its capitals.
+  // ============================================================
+  try {
+    const { handleObserveText } = require('./observe-command.handler');
+    if (await handleObserveText(user, from, messageBody)) return;
+  } catch (error) {
+    logToFile('❌ Error in observe text handling', { userId: user?.id, error: error.message });
   }
 
   // ============================================================
@@ -1056,10 +1070,10 @@ async function handleTextMessage(message, from, messageBody, user = null) {
   // Detect stuck sessions but DON'T block user - store reminder for later
   if (user) {
     try {
-      const { data: stuckSession } = await supabase
+      const { data: stuckSession } = await ownCoaching(supabase
         .from('coaching_sessions')
         .select('id, status, updated_at, conversation_state')
-        .eq('user_id', user.id)
+        .eq('user_id', user.id)) // a coach's observation of this teacher is not their unfinished session
         .in('status', ['conducting_conversation', 'analyzing'])
         .order('updated_at', { ascending: false })
         .limit(1)
@@ -1111,10 +1125,10 @@ async function handleTextMessage(message, from, messageBody, user = null) {
         });
 
         // Fetch the stuck session
-        const { data: stuckSession } = await supabase
+        const { data: stuckSession } = await ownCoaching(supabase
           .from('coaching_sessions')
           .select('*')
-          .eq('id', stuckSessionId)
+          .eq('id', stuckSessionId)) // the reply below can fail or re-run it: never a coach's observation
           .single();
 
         if (stuckSession) {

@@ -476,6 +476,13 @@ async function handleWebhookPost(req, res) {
       const buttonId = message.interactive.button_reply.id;
       logToFile('📱 Interactive button clicked', { buttonId, from });
 
+      // Observe taps (capture ack, cancel, debrief, report …) — one dispatcher,
+      // ahead of every other branch so no other feature can claim an observe id.
+      if (buttonId.startsWith('observe_')) {
+        const { handleObserveInteractive } = require('./shared/handlers/observe-interactive.handler');
+        if (await handleObserveInteractive(user, from, buttonId)) return;
+      }
+
       // Classroom-photo question (photo_yes_/photo_no_/photo_more_/photo_done_):
       // "No"/"Done" move the coaching session on to the lesson-plan step.
       const { handleCoachingFlowButton } = require('./shared/services/coaching/coaching-flow-buttons');
@@ -962,6 +969,13 @@ async function handleWebhookPost(req, res) {
         userId: user?.id
       });
 
+      // Observe: a teacher tapped the report-invite template (observe_report_<id>).
+      // The tap may come from someone with no account yet, so it needs no user.
+      if (buttonPayload && buttonPayload.startsWith('observe_report_')) {
+        const { handleReportTap } = require('./shared/services/observe/observe-send.service');
+        if (await handleReportTap(from, buttonPayload)) return;
+      }
+
       // Handle style_* payloads from video style carousel
       if (buttonPayload && buttonPayload.startsWith('style_')) {
         if (user) {
@@ -1074,6 +1088,20 @@ async function handleWebhookPost(req, res) {
         } catch (vqFlowErr) {
           logToFile('❌ video-quiz Flow reply routing failed', { error: vqFlowErr.message });
         }
+      }
+
+      // The coach's observation form (/observe). Routed on its own
+      // observe_action tag before the detector: its "<observerId>:<sessionId>"
+      // token would otherwise read as an attendance Flow.
+      if (responseJson.observe_action !== undefined) {
+        try {
+          const ObserveDraft = require('./shared/services/observe/observe-draft.service');
+          await ObserveDraft.completeFromFlow(user, from, responseJson);
+        } catch (observeFlowErr) {
+          // The edits are already saved by the endpoint; only the ack failed.
+          logToFile('❌ observe form Flow reply failed', { from, error: observeFlowErr.message });
+        }
+        return;
       }
 
       // Use centralized flow type detection (fixes registration→attendance misrouting)
@@ -1202,6 +1230,11 @@ async function handleWebhookPost(req, res) {
       const listReply = message.interactive.list_reply;
       const listId = listReply.id;
       logToFile('📋 Interactive list item selected', { listId, from });
+
+      if (listId.startsWith('observe_')) {
+        const { handleObserveInteractive } = require('./shared/handlers/observe-interactive.handler');
+        if (await handleObserveInteractive(user, from, listId)) return;
+      }
 
       // Test papers (tp_ ids): source, chapter, size, language, my papers.
       if (await routeTestPaperSelection({ user, from, id: listId })) {
@@ -1589,6 +1622,25 @@ async function handleDocumentMessage(message, from, user) {
           durationMinutes: Math.round(audioDuration / 60),
           mimeType
         });
+
+        // OBSERVE: a coach's lesson recording usually arrives as a FILE. It is
+        // an observation (or a debrief), never the coach's own coaching — the
+        // observe router decides before the self-coaching threshold below.
+        const ObserveGate = require('./shared/services/observe/observe-gate');
+        if (user && ObserveGate.isObserveEnabled() && ObserveGate.isSchoolLeader(user)) {
+          const { routeLeaderAudio } = require('./shared/services/observe/observe-audio-router');
+          const { getOrCreateSession: observeSession } = require('./shared/database/bot-helpers');
+          const handled = await routeLeaderAudio({
+            user,
+            from,
+            audioId: documentId,
+            sessionId: await observeSession(user.id),
+            isLongAudio: audioDurationRounded >= require('./shared/config/coaching-audio').classroomAudioThresholdSeconds(),
+            durationSeconds: audioDurationRounded || null,
+            mimeType,
+          });
+          if (handled) return;
+        }
 
         // Check if audio is 15+ minutes (900 seconds) = classroom audio
         // COACHING_MIN_AUDIO_SECONDS, default 900 (15 minutes)
@@ -1989,6 +2041,9 @@ function registerChannelShutdownHandlers() {
  * Express `app` without its listener) does NOT bind to a port.
  */
 function startServer() {
+  // Does coaching_sessions have observation_type yet? Teachers' own coaching
+  // reads depend on it (see own-coaching.js); a missing migration is logged.
+  require('./shared/services/coaching/own-coaching').probe();
   wireBaileysInboundIfSelected();
   registerChannelShutdownHandlers();
   exitOnChannelLogout();

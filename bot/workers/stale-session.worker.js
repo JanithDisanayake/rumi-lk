@@ -6,6 +6,8 @@
  *
  * Currently handles:
  * - Coaching sessions stuck in 'conducting_conversation' status
+ * - Observe: teacher reports waiting on an invite tap (untapped sweep) and
+ *   finished observations whose report was never sent (undelivered sweep)
  *
  * Timeline for Coaching:
  * - 0h: User last interacted
@@ -25,6 +27,7 @@ const supabase = require('../shared/config/supabase');
 const { logToFile } = require('../shared/utils/logger');
 const WhatsAppService = require('../shared/services/whatsapp.service');
 const CoachingJobQueueService = require('../shared/services/coaching/coaching-job-queue.service');
+const { ownCoaching } = require('../shared/services/coaching/own-coaching');
 
 // Coaching thresholds (in milliseconds)
 const COACHING_REMINDER_THRESHOLD_MS = 2 * 60 * 60 * 1000;  // 2 hours
@@ -45,9 +48,21 @@ async function main() {
   console.log('============================================');
 
   try {
+    // The teacher-activity check reads coaching_sessions.observation_type when it exists (own-coaching.js).
+    await require('../shared/services/coaching/own-coaching').probe();
+
     // Process coaching sessions
     const coachingResults = await processStaleCoachingSessions();
     console.log('📊 Coaching results:', coachingResults);
+
+    // Observe delivery sweeps. Each is independent and never fails the run.
+    for (const [label, sweep] of [['untapped', runUntappedSweep], ['undelivered', runUndeliveredSweep]]) {
+      try {
+        console.log(`📊 Observe ${label} sweep:`, await sweep());
+      } catch (err) {
+        logToFile(`❌ Observe ${label} sweep failed`, { error: err.message });
+      }
+    }
 
     // Future: Process reading assessments
     // const readingResults = await processStaleReadingAssessments();
@@ -181,10 +196,10 @@ async function checkUserActivity(userId) {
   }
 
   // Check 3: Another coaching session in active state
-  const { data: activeCoaching } = await supabase
+  const { data: activeCoaching } = await ownCoaching(supabase
     .from('coaching_sessions')
     .select('id, status')
-    .eq('user_id', userId)
+    .eq('user_id', userId)) // never a coach's observation of this teacher: it is not their own session
     .in('status', ['transcribing', 'analyzing', 'awaiting_lesson_plan', 'generating_report'])
     .limit(1)
     .single();
@@ -386,6 +401,133 @@ async function autoCompleteSession(session) {
   }
 }
 
+// ── Observe delivery sweeps ─────────────────────────────────────────────
+//
+// The planners decide (observe-untapped / observe-undelivered, pure); the
+// observe-send executors act. Each sweep: a kill switch
+// (OBSERVE_*_SWEEP_OFF=true), single-flight across replicas (a Redis lock, so
+// several workers send one set of messages), a per-tick cap taking the oldest
+// first, and a log line every tick — including the ticks that found nothing.
+
+const OBSERVE_SWEEP_LOCK_TTL_SECONDS = 10 * 60;
+const OBSERVE_SWEEP_READ_LIMIT = 500;
+
+const isSweepOff = (name) => ['true', '1', 'yes'].includes(String(process.env[name] || '').trim().toLowerCase());
+const perTickCap = (name, dflt) => {
+  const n = parseInt(process.env[name], 10);
+  return Number.isFinite(n) && n > 0 ? n : dflt;
+};
+
+const REDIS_READY_WAIT_MS = 5000;
+
+async function withSweepLock(lockName, tally, fn) {
+  // Lazy: requiring this worker as a library must not touch Redis.
+  const RedisService = require('../shared/services/cache/railway-redis.service');
+  // This worker runs as a one-shot cron: the sweeps start moments after the
+  // process does, before the Redis connection is ready, and acquireLock fails
+  // closed on a not-ready client — so without this wait every run skipped.
+  const readyBy = Date.now() + REDIS_READY_WAIT_MS;
+  while (typeof RedisService.isAvailable === 'function' && !RedisService.isAvailable() && Date.now() < readyBy) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  const lockId = `${process.pid}-${Date.now()}`;
+  const gotLock = await RedisService.acquireLock(lockName, lockId, OBSERVE_SWEEP_LOCK_TTL_SECONDS);
+  if (!gotLock) {
+    // Fails closed: a message not sent this tick is sent next tick; one sent
+    // by six replicas cannot be unsent. Never silent, though.
+    logToFile(`🔔 ${lockName} skipped — lock held elsewhere or cache unreachable`, tally);
+    return { ...tally, skippedLocked: true };
+  }
+  try {
+    return await fn();
+  } finally {
+    await RedisService.releaseLock(lockName, lockId).catch(() => {});
+  }
+}
+
+async function readObserveRows(filter) {
+  let q = supabase
+    .from('coaching_sessions')
+    .select('id, status, observer_user_id, updated_at, created_at, analysis_data')
+    .eq('observation_type', 'leader_observation');
+  q = filter(q);
+  const { data, error } = await q.order('updated_at', { ascending: true }).limit(OBSERVE_SWEEP_READ_LIMIT);
+  if (error) throw new Error(`observe sweep read failed: ${error.message}`);
+  return data || [];
+}
+
+/** Reports whose invite was never tapped: one nudge, then tell the coach. */
+async function runUntappedSweep(nowMs = Date.now()) {
+  const tally = { scanned: 0, found: 0, nudged: 0, gaveUp: 0, expired: 0, skipped: 0, failed: 0, remaining: 0 };
+  if (isSweepOff('OBSERVE_UNTAPPED_SWEEP_OFF')) {
+    logToFile('🔔 observe untapped sweep off', tally);
+    return { ...tally, disabled: true };
+  }
+  return withSweepLock('observe-untapped-sweep', tally, async () => {
+    const ObserveSend = require('../shared/services/observe/observe-send.service');
+    const { classifyUntappedDelivery } = require('../shared/services/observe/observe-untapped.service');
+    const { TERMINAL_IN_FILTER } = require('../shared/services/observe/observe-terminal');
+    const rows = await readObserveRows((q) => q.not('status', 'in', TERMINAL_IN_FILTER));
+    const deliveryOf = (r) => (r.analysis_data && r.analysis_data.teacher_delivery) || {};
+    const actionable = rows.filter((r) => classifyUntappedDelivery(deliveryOf(r), nowMs).action !== 'skip');
+    tally.scanned = rows.length;
+    tally.found = actionable.length;
+    const batch = actionable.slice(0, perTickCap('OBSERVE_UNTAPPED_MAX_PER_TICK', 25));
+    tally.remaining = actionable.length - batch.length;
+    for (const row of batch) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const { action } = await ObserveSend.processUntappedDelivery(row.id, nowMs);
+        if (action === 'nudge') tally.nudged += 1;
+        else if (action === 'give_up') tally.gaveUp += 1;
+        else if (action === 'expire') tally.expired += 1;
+        else tally.skipped += 1;
+      } catch (err) {
+        tally.failed += 1;
+        logToFile('⚠️ observe untapped sweep: failed on one report', { sessionId: row.id, error: err.message });
+      }
+    }
+    logToFile('🔔 observe untapped sweep done', tally);
+    return tally;
+  });
+}
+
+/** Finished observations whose report was never sent: one reminder, then say so. */
+async function runUndeliveredSweep(nowMs = Date.now()) {
+  const tally = { scanned: 0, found: 0, reminded: 0, gaveUp: 0, expired: 0, skipped: 0, failed: 0, remaining: 0 };
+  if (isSweepOff('OBSERVE_UNDELIVERED_SWEEP_OFF')) {
+    logToFile('🔔 observe undelivered sweep off', tally);
+    return { ...tally, disabled: true };
+  }
+  return withSweepLock('observe-undelivered-sweep', tally, async () => {
+    const ObserveSend = require('../shared/services/observe/observe-send.service');
+    const {
+      classifyUndelivered, candidateFromSession, FINISHED_SESSION_STATUSES,
+    } = require('../shared/services/observe/observe-undelivered.service');
+    const rows = await readObserveRows((q) => q.in('status', [...FINISHED_SESSION_STATUSES]));
+    const actionable = rows.filter((r) => classifyUndelivered(candidateFromSession(r), nowMs).action !== 'skip');
+    tally.scanned = rows.length;
+    tally.found = actionable.length;
+    const batch = actionable.slice(0, perTickCap('OBSERVE_UNDELIVERED_MAX_PER_TICK', 25));
+    tally.remaining = actionable.length - batch.length;
+    for (const row of batch) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const { action } = await ObserveSend.processUndeliveredDelivery(row.id, nowMs);
+        if (action === 'remind') tally.reminded += 1;
+        else if (action === 'give_up') tally.gaveUp += 1;
+        else if (action === 'expire') tally.expired += 1;
+        else tally.skipped += 1;
+      } catch (err) {
+        tally.failed += 1;
+        logToFile('⚠️ observe undelivered sweep: failed on one report', { sessionId: row.id, error: err.message });
+      }
+    }
+    logToFile('🔔 observe undelivered sweep done', tally);
+    return tally;
+  });
+}
+
 // Gated — requiring this file as a library (e.g. from a test harness) does
 // NOT fire the stale-session sweep. To run the sweep manually, invoke the
 // exported `main` function.
@@ -393,4 +535,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { main, processStaleCoachingSessions };
+module.exports = { main, processStaleCoachingSessions, runUntappedSweep, runUndeliveredSweep };

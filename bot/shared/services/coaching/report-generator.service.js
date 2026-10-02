@@ -44,6 +44,7 @@ const {
   CLASSROOM_MARKS_WITH_LP
 } = require('../../constants/scoring.constants');
 const { getReportTransformer } = require('./report-transformers/report-transformer-dispatch');
+const { ownCoaching } = require('./own-coaching');
 
 class ReportGeneratorService {
   /**
@@ -424,11 +425,11 @@ class ReportGeneratorService {
     try {
       logToFile('Fetching prior coaching sessions with compression', { userId, currentSessionId });
 
-      const { data: priorSessions, error } = await supabase
+      const { data: priorSessions, error } = await ownCoaching(supabase
         .from('coaching_sessions')
         .select('id, created_at, analysis_data')
         .eq('user_id', userId)
-        .eq('status', 'completed')
+        .eq('status', 'completed')) // never a coach's observation of this teacher: it is not their own session
         .neq('id', currentSessionId)
         .order('created_at', { ascending: false });
 
@@ -503,11 +504,11 @@ class ReportGeneratorService {
     try {
       logToFile('⚠️  Using deprecated fetchPriorSession() - use fetchAndCompressPriorFeedback() instead', { userId });
 
-      const { data: priorSession, error } = await supabase
+      const { data: priorSession, error } = await ownCoaching(supabase
         .from('coaching_sessions')
         .select('id, created_at, analysis_data')
         .eq('user_id', userId)
-        .eq('status', 'completed')
+        .eq('status', 'completed')) // never a coach's observation of this teacher: it is not their own session
         .neq('id', currentSessionId)
         .order('created_at', { ascending: false })
         .limit(1)
@@ -588,11 +589,11 @@ class ReportGeneratorService {
     // Check if user has prior completed sessions (needed by OECD transformer)
     let hasPriorSessions = false;
     try {
-      const { count, error: countError } = await supabase
+      const { count, error: countError } = await ownCoaching(supabase
         .from('coaching_sessions')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', session.user_id)
-        .eq('status', 'completed')
+        .eq('status', 'completed')) // never a coach's observation of this teacher: it is not their own session
         .neq('id', session.id);
       if (!countError) hasPriorSessions = (count || 0) > 0;
     } catch (e) {
@@ -865,11 +866,11 @@ class ReportGeneratorService {
     // PRIOR FEEDBACK (separate from 5 main goals, 5 marks total)
     // Check if user has prior completed sessions
     let hasPriorSessions = false;
-    const { count, error: countError } = await supabase
+    const { count, error: countError } = await ownCoaching(supabase
       .from('coaching_sessions')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', session.user_id)
-      .eq('status', 'completed')
+      .eq('status', 'completed')) // never a coach's observation of this teacher: it is not their own session
       .neq('id', session.id);
 
     if (countError) {

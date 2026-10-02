@@ -457,6 +457,18 @@ Class attendance needs nothing. For a head teacher's **staff** attendance and re
 2. Run the worker (`node bot/workers/sqs-worker.js`) — it sweeps every `TEACHER_NUDGES_SWEEP_MINUTES` — or
    schedule `node bot/workers/teacher-nudges.worker.js` from cron. See [docs/features/teacher-nudges.md](docs/features/teacher-nudges.md).
 
+### Add Observe — the coach's assistant
+
+1. Make sure voice transcription is on (`SONIOX_API_KEY`, above) and the background worker runs (Step 11).
+2. Existing database: apply `infrastructure/supabase/migrations/V2.6.0__observe_coach_assistant.sql`
+   (fresh installs already have it from `00_complete-schema.sql`).
+3. Add to your environment: `OBSERVE_ENABLED=true` (optionally `OBSERVE_FRAMEWORK`, default `teach`).
+   Set `OBSERVE_ENABLED=true` on the dashboard service as well: the portal's coach view ("My observations") reads its own environment and stays off without it.
+4. Give your coaches their schools and teachers:
+   `node bot/scripts/observe-roster.js import roster.csv` (columns `coach_phone,school_ext_id,school_name,teacher_phone,teacher_name`),
+   or one at a time with `grant-coach`, `add-school` and `add-teacher`.
+5. Redeploy. A coach types `/observe`. Details: [docs/features/observe.md](docs/features/observe.md).
+
 ### Add regional-language speech-to-text (optional)
 
 Speech-to-text for regional Pakistani languages (Balochi, Sindhi, Pashto) uses Meta's MMS-ASR model deployed on [Modal.com](https://modal.com).

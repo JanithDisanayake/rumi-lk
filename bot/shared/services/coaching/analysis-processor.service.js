@@ -65,6 +65,10 @@ class AnalysisProcessorService {
       }
 
       const from = payload.from || session.users.phone_number;
+      // A coach's observation of a teacher (/observe), read from the ROW. The
+      // chat belongs to the coach; the analysis becomes the coach's draft to
+      // review, so the teacher-facing steps of this pipeline are skipped.
+      const isObservation = session.observation_type === 'leader_observation';
 
       // Update status
       await CoachingSessionService.updateStatus(coachingSessionId, 'analyzing', {
@@ -72,14 +76,14 @@ class AnalysisProcessorService {
       });
 
       // Send progress update
-      await this.sendProgressUpdate(from, 2);
+      if (!isObservation) await this.sendProgressUpdate(from, 2);
 
-      // Fetch and compress prior feedback
+      // Fetch and compress prior feedback — the teacher's OWN reflections. An
+      // observation is rated on what the coach saw today, not on those.
       const ReportGeneratorService = require('./report-generator.service');
-      const priorFeedbackData = await ReportGeneratorService.fetchAndCompressPriorFeedback(
-        session.user_id,
-        coachingSessionId
-      );
+      const priorFeedbackData = isObservation
+        ? { exists: false }
+        : await ReportGeneratorService.fetchAndCompressPriorFeedback(session.user_id, coachingSessionId);
 
       // Format prior feedback for prompt
       let priorFeedbackText = null;
@@ -112,13 +116,16 @@ class AnalysisProcessorService {
         lessonPlanExcerpt: session.lesson_plan_excerpt || null,
         lessonPlanStatus: session.lesson_plan_extraction_status || null,
         lessonPlanSubject: session.lesson_plan_structured?.subject || null,
-        lessonPlanTopic: session.lesson_plan_structured?.topic || null
+        lessonPlanTopic: session.lesson_plan_structured?.topic || null,
+        ...(isObservation ? { teacherName: session.users.first_name || null } : {})
       };
 
       logToFile('Analysis metadata', metadata);
 
-      // Resolve pedagogical framework for this user
-      const framework = await selectFramework(session.user_id);
+      // Resolve pedagogical framework: an observation is pinned to the observe
+      // pack (the coach's form is shaped by it); otherwise this user's framework.
+      const { pickObservationFramework } = require('../observe/observe-gate');
+      const framework = await pickObservationFramework(session, { selectFramework });
       logToFile('Framework resolved', { userId: session.user_id, framework: framework.name });
 
       // The pedagogy analysis, the v12 reflective corpus extraction and lesson-plan fidelity
@@ -133,8 +140,10 @@ class AnalysisProcessorService {
           session.lesson_plan_structured || null,
           framework,
         ),
-        GPT5MiniService.extractReflectiveCorpus(session.transcript_text, langCode),
-        isFidelityEnabled() ? computeFidelityForSession(session, { waitForPlan: true }) : Promise.resolve(null),
+        // The reflective corpus feeds the teacher's own reflective chat, and lesson-plan
+        // fidelity checks the teacher's own plan: an observation runs neither.
+        isObservation ? Promise.resolve(null) : GPT5MiniService.extractReflectiveCorpus(session.transcript_text, langCode),
+        !isObservation && isFidelityEnabled() ? computeFidelityForSession(session, { waitForPlan: true }) : Promise.resolve(null),
       ]);
       if (analysisSettled.status === 'rejected') throw analysisSettled.reason;
       const analysisResult = analysisSettled.value;
@@ -200,6 +209,15 @@ class AnalysisProcessorService {
           gpt5_cached_tokens: analysisResult.usage.cached_tokens,
         })
         .eq('id', coachingSessionId);
+
+      // An observation's result is the coach's draft: freeze it and send the
+      // pre-filled ratings to the coach (observe-draft). No reflective chat.
+      if (isObservation) {
+        const ObserveDraft = require('../observe/observe-draft.service');
+        await ObserveDraft.onAnalysisReady(coachingSessionId, from);
+        logToFile('✅ Analysis processing complete (observation draft sent)', { coachingSessionId });
+        return;
+      }
 
       // Send progress update - Step 3
       const lang3 = await _resolveSessionLanguage(coachingSessionId);
