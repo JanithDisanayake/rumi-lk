@@ -77,6 +77,31 @@ describe('lp-upload-extractor (LLM mocked)', () => {
     expect(c.calls).toHaveLength(0);
   });
 
+  test.each([
+    ['prose instead of JSON', { content: 'Here are the moves: first the teacher greets…', finish: 'stop' }],
+    ['an empty answer', { content: '', finish: 'stop' }],
+    ['an answer cut off by the token cap', { content: '{"moves": [{"text": "greet"', finish: 'length' }],
+  ])('a bad ANSWER from the model (%s) is extractor_failed — not "the plan could not be read" (review S3)', async (_n, a) => {
+    const calls = [];
+    const client = { chat: { completions: { create: async (p) => { calls.push(p); return { choices: [{ message: { content: a.content }, finish_reason: a.finish }] }; } } } };
+    const err = await extractUploadedLp(LP_TEXT, { client }).catch((e) => e);
+    expect(err.code).toBe('extractor_failed');
+    expect(calls).toHaveLength(2);
+  });
+
+  test('LP_FIDELITY_EXTRACT_MAX_TOKENS sets the extractor\'s cap (default 8000)', async () => {
+    const payload = JSON.stringify({ moves: [{ text: 'greet' }] });
+    const c1 = fakeClient(payload);
+    await extractUploadedLp(LP_TEXT, { client: c1 });
+    expect(c1.calls[0].max_completion_tokens).toBe(8000);
+    process.env.LP_FIDELITY_EXTRACT_MAX_TOKENS = '12000';
+    try {
+      const c2 = fakeClient(payload);
+      await extractUploadedLp(LP_TEXT, { client: c2 });
+      expect(c2.calls[0].max_completion_tokens).toBe(12000);
+    } finally { delete process.env.LP_FIDELITY_EXTRACT_MAX_TOKENS; }
+  });
+
   test('model returns zero usable moves → lp_unparseable after a retry', async () => {
     const c = fakeClient(JSON.stringify({ template: 'UPLOADED', moves: [] }));
     await expect(extractUploadedLp(LP_TEXT, { client: c })).rejects.toMatchObject({ code: 'lp_unparseable' });

@@ -51,6 +51,21 @@ function normalizeMoves(moves, source = 'uploaded') {
   })).filter((m) => m.text.length > 0);
 }
 
+const DEFAULT_EXTRACT_MAX_TOKENS = 8000;
+const MAX_TOKENS_CEILING = 32000;
+
+/** LP_FIDELITY_EXTRACT_MAX_TOKENS, default 8000, at most 32000. */
+function extractMaxTokens() {
+  const n = Math.floor(Number(process.env.LP_FIDELITY_EXTRACT_MAX_TOKENS));
+  return Number.isFinite(n) && n >= 1 ? Math.min(n, MAX_TOKENS_CEILING) : DEFAULT_EXTRACT_MAX_TOKENS;
+}
+
+function extractorFailed(message) {
+  const err = new Error(`extractor_failed: ${message}`);
+  err.code = 'extractor_failed';
+  return err;
+}
+
 function unparseable(message, cause) {
   const err = new Error(`lp_unparseable: ${message}`);
   err.code = 'lp_unparseable';
@@ -71,31 +86,41 @@ async function extractUploadedLp(lpText, opts = {}) {
   const client = opts.client || require('../../llm-client').getClient();
   const user = buildUploadPrompt(lpText, opts.lessonId);
 
+  // Two different failures, two different messages for the teacher: a plan with no teaching moves in it is "the plan
+  // could not be read" (lp_unparseable); a bad ANSWER from the model — prose, broken JSON, empty, cut off by the
+  // token cap — is our failure, "the check couldn't run" (extractor_failed).
   let lastErr;
   for (let attempt = 0; attempt < 2; attempt++) {
     const response = await client.chat.completions.create({
       model,
       temperature: 0,
       messages: [{ role: 'system', content: UPLOAD_EXTRACTION_BRIEF }, { role: 'user', content: user }],
-      max_completion_tokens: opts.maxTokens || 4000,
+      max_completion_tokens: opts.maxTokens || extractMaxTokens(),
       response_format: { type: 'json_object' },
     });
     const choice = response.choices && response.choices[0];
-    try {
-      const parsed = safeJsonParse((choice && choice.message && choice.message.content) || '');
-      const moves = normalizeMoves(parsed.moves, opts.source);
-      if (moves.length === 0) throw new Error('no moves extracted');
-      return {
-        template: 'UPLOADED',
-        goal: parsed.goal || null,
-        total_minutes: Number.isFinite(parsed.total_minutes) ? parsed.total_minutes : null,
-        moves,
-        usage: response.usage || {},
-        model,
-      };
-    } catch (e) { lastErr = e; }
+    const content = (choice && choice.message && choice.message.content) || '';
+    const finishReason = (choice && choice.finish_reason) || null;
+    if (!String(content).trim()) { lastErr = extractorFailed('empty answer'); continue; }
+    if (finishReason === 'length') { lastErr = extractorFailed('answer cut off by the token cap'); continue; }
+    let parsed;
+    try { parsed = safeJsonParse(content); } catch (e) { lastErr = extractorFailed(`unparseable answer: ${e.message}`); continue; }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || !Array.isArray(parsed.moves)) {
+      lastErr = extractorFailed('answer has no moves list');
+      continue;
+    }
+    const moves = normalizeMoves(parsed.moves, opts.source);
+    if (moves.length === 0) { lastErr = unparseable('the extractor found no teaching moves in the plan'); continue; }
+    return {
+      template: 'UPLOADED',
+      goal: parsed.goal || null,
+      total_minutes: Number.isFinite(parsed.total_minutes) ? parsed.total_minutes : null,
+      moves,
+      usage: response.usage || {},
+      model,
+    };
   }
-  throw unparseable('the extractor returned no usable moves', lastErr);
+  throw lastErr;
 }
 
 module.exports = { extractUploadedLp, normalizeMoves, DEFAULT_EXTRACT_MODEL, MIN_PLAN_CHARS };

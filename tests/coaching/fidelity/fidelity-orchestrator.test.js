@@ -97,6 +97,12 @@ describe('fidelity-orchestrator · computeLpFidelity', () => {
     expect(calls.grade).toHaveLength(0);
   });
 
+  test('an extractor that answered badly (extractor_failed) is "the check could not run"', async () => {
+    const { deps } = spyDeps({ extractPlanMoves: async () => { const e = new Error('extractor_failed: unparseable'); e.code = 'extractor_failed'; throw e; } });
+    const r = await computeLpFidelity({ planText: PLAN, source: 'pasted', transcript: T }, deps);
+    expect(r).toMatchObject({ status: 'fidelity_unavailable', cause: 'extractor_failed' });
+  });
+
   test('the extractor call itself failing (provider error, bad model slug) is NOT "the plan could not be read"', async () => {
     const { deps, calls } = spyDeps({
       extractPlanMoves: async () => { const e = new Error('400 invalid model'); e.status = 400; throw e; },
