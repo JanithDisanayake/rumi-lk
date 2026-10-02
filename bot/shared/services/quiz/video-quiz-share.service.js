@@ -254,6 +254,23 @@ async function handleShareButton(buttonId, phone) {
  * this would drift, and the copy the teacher sees is the copy thirty children
  * read.
  */
+/**
+ * The chat the class link went to, kept on the quiz row (`meta.teacher_to`):
+ * the next-morning report is sent by a job that only has the share code, and a
+ * teacher on Matrix, Slack or Discord has no WhatsApp number to reach them at.
+ * The lesson-quiz hand-off records the same key. Best effort.
+ */
+async function rememberTeacherChat(quizId, to) {
+  if (!quizId || !to) return;
+  try {
+    const { data: row } = await supabase.from('quizzes').select('meta').eq('id', quizId).maybeSingle();
+    if (!row || (row.meta && row.meta.teacher_to === to)) return;
+    await supabase.from('quizzes').update({ meta: { ...(row.meta || {}), teacher_to: to } }).eq('id', quizId);
+  } catch (err) {
+    logToFile('⚠️ share: could not record the teacher chat on the quiz', { quizId, error: err.message });
+  }
+}
+
 async function deliverClassLink(ctx, phone) {
   // The forwarded message is read by every child in the class, so it is in the
   // quiz's language; the lines around it follow the same language.
@@ -275,6 +292,7 @@ async function deliverClassLink(ctx, phone) {
     topic: minted.topic || ux('vqTodaysVideo', lang),
   }));
   await WhatsAppService.sendMessage(phone, reportPromise(lang));
+  await rememberTeacherChat(ctx.quizId, phone);
 
   logEvent('video_quiz.share_code_minted', {
     userId: ctx.userId, quizId: ctx.quizId, code: minted.code, join: invite.kind,

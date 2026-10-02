@@ -105,6 +105,15 @@ describe('deliverClassLink uses the channel-aware line', () => {
     expect(text).not.toContain('wa.me');
   });
 
+  test('the class report finds the teacher in the same chat: the quiz row records it', async () => {
+    process.env.MATRIX_USER_ID = '@quizbot:example.org';
+    const mem = memWithTeacher();
+    supabase.from.mockImplementation(mem.from);
+    await share.deliverClassLink({ quizId: 'q1', userId: 't1', videoId: 'v1', language: 'en' }, 'mtx:15550100001');
+    const { data: quiz } = await mem.from('quizzes').select('meta').eq('id', 'q1').maybeSingle();
+    expect(quiz.meta).toEqual(expect.objectContaining({ teacher_to: 'mtx:15550100001' }));
+  });
+
   test('a WhatsApp teacher with no bot number gets the code to forward, not a dead link', async () => {
     supabase.from.mockImplementation(memWithTeacher().from);
     await share.deliverClassLink({ quizId: 'q1', userId: 't1', videoId: null, language: 'en' }, '15550101234');
