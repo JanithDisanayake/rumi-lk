@@ -46,8 +46,8 @@ describe('renderPaper', () => {
   const html = R.renderPaper({ examJson: EXAM, grade: 2, subject: 'Math', language: 'en', chapterTitle: 'Numbers to 999' });
 
   it('prints every question, numbered, skipping removed ones', () => {
-    expect(html).toContain('<b>1.</b> Which number comes after 99?');
-    expect(html).toContain('<b>4.</b> Write 456 in words.');
+    expect(html).toContain('<b class="qn">1.</b> Which number comes after 99?');
+    expect(html).toContain('<b class="qn">4.</b> Write 456 in words.');
     expect(html).not.toContain('A removed one.');
   });
 
@@ -197,5 +197,15 @@ describe('the paper speaks its own language', () => {
     const ar = R.renderPaper({ examJson: EXAM, grade: 2, subject: 'Math', language: 'ar' });
     expect(ar).toContain('Student Name');
     expect(ar).toMatch(/table\.marks-header \{[^}]*direction: ltr/);
+  });
+});
+
+describe('question numbers in a right-to-left paper', () => {
+  // Found on a real Urdu paper: "2." followed by a question starting with the
+  // number 56 printed as "56.2". The number is its own isolated run.
+  it('every question number is an isolated run', () => {
+    const html = R.renderPaper({ examJson: EXAM, grade: 2, subject: 'Math', language: 'ur' });
+    expect(html).toContain('<b class="qn">1.</b>');
+    expect(html).toMatch(/\.qn \{ direction: ltr; unicode-bidi: isolate; \}/);
   });
 });

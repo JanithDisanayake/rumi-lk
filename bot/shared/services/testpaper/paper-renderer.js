@@ -323,7 +323,7 @@ function renderQuestion(question, number, questionType, opts) {
   const out = [];
 
   if (typeof question === 'string') {
-    return `<div class="q"><p><b>${number}.</b> ${esc(question)}</p></div>`;
+    return `<div class="q"><p><b class="qn">${number}.</b> ${esc(question)}</p></div>`;
   }
 
   const marks = marksLabel(question.marks, opts.labels);
@@ -333,14 +333,14 @@ function renderQuestion(question, number, questionType, opts) {
   out.push('<div class="q">');
 
   if (Array.isArray(question.options) && question.options.length) {
-    out.push(`<p><b>${number}.</b> ${esc(question.question)} ${marks}</p>`);
+    out.push(`<p><b class="qn">${number}.</b> ${esc(question.question)} ${marks}</p>`);
     out.push('<div class="options">');
     question.options.forEach((o) => out.push(`<div class="opt">${esc(o)}</div>`));
     out.push('</div>');
   } else if (question.column_a || question.column_b) {
     const a = question.column_a || [];
     const b = question.column_b || [];
-    out.push(`<p><b>${number}.</b> ${esc(question.question)} ${marks}</p>`);
+    out.push(`<p><b class="qn">${number}.</b> ${esc(question.question)} ${marks}</p>`);
     out.push('<table class="match"><tr><th>Column A</th><th>Column B</th></tr>');
     // Pad to the longer column — dropping a row loses a question.
     for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
@@ -348,13 +348,13 @@ function renderQuestion(question, number, questionType, opts) {
     }
     out.push('</table>');
   } else if (Array.isArray(question.words) && question.words.length) {
-    out.push(`<p><b>${number}.</b> ${esc(question.question || '')} ${marks}</p>`);
+    out.push(`<p><b class="qn">${number}.</b> ${esc(question.question || '')} ${marks}</p>`);
     out.push('<div class="words">');
     question.words.forEach((w) => out.push(
       `<div class="word">${esc(w)}${answerLines ? '<span class="rule"></span>' : ''}</div>`));
     out.push('</div>');
   } else if (question.passage && Array.isArray(question.questions)) {
-    out.push(`<p><b>${number}.</b> ${esc(question.question || 'Read the passage and answer the questions.')} ${marks}</p>`);
+    out.push(`<p><b class="qn">${number}.</b> ${esc(question.question || 'Read the passage and answer the questions.')} ${marks}</p>`);
     out.push(`<div class="passage">${escMultiline(question.passage)}</div>`);
     out.push('<div class="subs">');
     question.questions.forEach((sub, i) => {
@@ -377,10 +377,10 @@ function renderQuestion(question, number, questionType, opts) {
     out.push('</div>');
   } else if (question.passage) {
     const label = question.section ? `[${esc(question.section)}] ` : '';
-    out.push(`<p><b>${number}.</b> ${label}${esc(question.question || '')} ${marks}</p>`);
+    out.push(`<p><b class="qn">${number}.</b> ${label}${esc(question.question || '')} ${marks}</p>`);
     out.push(`<div class="passage">${escMultiline(question.passage)}</div>`);
   } else {
-    out.push(`<p><b>${number}.</b> ${esc(question.question)} ${marks}</p>`);
+    out.push(`<p><b class="qn">${number}.</b> ${esc(question.question)} ${marks}</p>`);
     if (answerLines) out.push(ruledLines(answerLinesFor(questionType, question)));
   }
 
@@ -495,6 +495,9 @@ function renderPaper({ examJson, grade, subject, language = 'en', schoolName, pa
      "[1 mark]" printed as "[mark 1]" and every instruction lost its full stop
      to the front of the line, while the Urdu around them was perfectly correct. */
   .marks, .num { direction: ltr; unicode-bidi: isolate; }
+  /* The question number is its own run: in a right-to-left paper "2." next to a
+     question that starts with "56" otherwise prints as "56.2". */
+  .qn { direction: ltr; unicode-bidi: isolate; }
   .school { text-align: center; font-weight: 700; font-size: 13pt; letter-spacing: .01em; }
   .class-line { text-align: center; font-size: 11.5pt; margin: 2px 0 10px; }
   .chapter { text-align: center; font-size: 10.5pt; color: #333; margin-bottom: 10px; }
