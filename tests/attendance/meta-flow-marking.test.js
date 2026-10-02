@@ -17,6 +17,14 @@ let mockDb;
 // every service this in-memory client.
 jest.mock('@supabase/supabase-js', () => ({ createClient: () => ({ from: (t) => mockDb.client.from(t) }) }));
 jest.mock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn() }));
+// The router also mounts unrelated Flow endpoints; their dependencies (queues, media) are bot-only
+// packages CI's root suite does not install, and nothing here reaches them.
+jest.mock('../../bot/shared/routes/homework-request-endpoint', () => ({}));
+jest.mock('../../bot/shared/routes/pic-lp-endpoint', () => ({}));
+jest.mock('../../bot/shared/routes/student-videos-endpoint', () => ({}));
+jest.mock('../../bot/shared/routes/status-flow-endpoint', () => ({}));
+jest.mock('../../bot/shared/routes/registration-endpoint', () => ({}));
+jest.mock('../../bot/shared/routes/settings-endpoint', () => ({}));
 
 const flowRouter = require('../../bot/shared/routes/flow-endpoint.routes');
 
