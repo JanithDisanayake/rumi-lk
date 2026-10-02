@@ -6,6 +6,33 @@
 > **printable test paper with a separate answer key**, in the chat, in about a minute. Every edit makes a
 > new version; "my papers" re-sends any of them.
 
+## In programme terms
+
+**A test from the book the class is using: a printable paper and answer key in about a minute.**
+
+Structured programmes align assessment to what was actually taught. Tusome, for example, used a benchmark "specific to the material covered each term" [Piper-JEC18]. This feature gives teachers a summative test aligned to the textbook. A teacher picks a chapter or a whole unit from the deployment's loaded textbooks, from their own lesson plans, or from a chapter they upload. They choose a size or a mix of question types and a language, and receive a photocopier-ready paper with a marks header and a separate answer key. If the teacher asks for changes in plain words, Rumi makes a new version and the printed one stays as it was. Earlier papers can be re-sent exactly as stored. Right-to-left languages are typeset properly. If there is no material for a subject, Rumi will not make one up. It asks for a chapter instead, because a test must come from what the class is learning.
+
+**Where it sits in a structured-pedagogy programme:** teacher guide → delivery → coaching → **assessment (summative)** → M&E. It is a classroom test tied to the programme's own textbook.
+
+
+### Honest limits
+
+- **Not a standardised instrument.**
+  - There is no item analysis or difficulty calibration.
+  - Results are not comparable across schools.
+- **Content gaps.**
+  - Papers have no pictures, so diagram questions become text tasks.
+  - Book-exercise ("seen") questions are not offered yet.
+- **What it does not accept or produce.**
+  - It produces no Word output.
+  - It does not accept a photographed page as a source.
+- **Cost.** About US$0.05 per 10-question paper at list price (internal measurement).
+- **Deployment requirement.** It needs Chromium on the server.
+
+### Sources
+
+- [Piper-JEC18] Piper, B., DeStefano, J., Kinyanjui, E. M., & Ong'ele, S., 2018, "Scaling up successfully: Lessons from Kenya's Tusome national literacy program", *Journal of Educational Change* 19(3):293–321. https://doi.org/10.1007/s10833-018-9325-4
+
 ## What it is
 
 Writing a fair paper from the textbook takes a teacher an evening. Rumi does it from the material itself:

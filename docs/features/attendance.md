@@ -4,6 +4,33 @@
 
 > A register the school can file — marked in a few taps or a voice note, kept for the whole month, with approved leave counted as leave.
 
+## In programme terms
+
+**Were the children actually in the room? A daily register that records exposure, so impact can be measured later.**
+
+A programme can only change the learning of children who are there to receive it. Attendance is a precondition for learning [Evans-Mendez23], and in fidelity terms it is coverage and dose at the level of each child [Carroll07]. Without it, an evaluation cannot tell "the programme didn't work" from "the children weren't there". This feature keeps a daily register for each child. The teacher marks it in chat by tapping, by typing the numbers of absent children, or by a voice roll call. Each child is marked present, absent or on approved leave. Past days can be added or corrected. After every mark the teacher receives the whole month's register as a fileable spreadsheet, with totals and a rate for each child. For children, leave still counts as missed exposure. For staff, whom head teachers mark the same way, approved leave is excused.
+
+**Where it sits in a structured-pedagogy programme:** teacher guide → delivery → coaching → assessment → **M&E (exposure)**. It is the dose record that impact measurement later depends on.
+
+
+### Honest limits
+
+- **What the data is.** It is teacher-reported register data. It is not checked by unannounced visits, and records can diverge from reality [Evans-Mendez23].
+- **Resolution.**
+  - One cell per day; double sessions are merged.
+  - It does not record per-lesson attendance or minutes of instruction.
+  - There is no holiday calendar.
+- **Where the data lives.**
+  - The register exists only as a spreadsheet in chat.
+  - There is no dashboard and no export to EMIS or a data warehouse.
+- **Setup.** Linking a school is an admin step.
+- **Teacher nudges.** The release also includes one check-in to a teacher who has gone quiet. It is English only.
+
+### Sources
+
+- [Carroll07] Carroll, C., Patterson, M., Wood, S., Booth, A., Rick, J., & Balain, S., 2007, "A conceptual framework for implementation fidelity", *Implementation Science* 2:40. https://doi.org/10.1186/1748-5908-2-40
+- [Evans-Mendez23] Evans, D. K., & Mendez Acosta, A., 2023, "How to measure student absenteeism in low- and middle-income countries", *Economics of Education Review* 96:102454 (CGD WP 600, 2021). https://doi.org/10.1016/j.econedurev.2023.102454
+
 ## What it is
 
 A teacher marks their class; a head teacher marks the school's staff. After every submit Rumi sends back the
