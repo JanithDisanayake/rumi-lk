@@ -367,7 +367,9 @@ describe('the real Matrix probe -- an access token is all-or-nothing, no per-sco
 
   it('passes when the token authenticates against the homeserver\'s whoami endpoint', async () => {
     global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ user_id: '@rumi:example.org' }) });
-    const result = await defaultProbes.matrix(ENV);
+    // The crypto check has its own tests below; here it always loads, so the
+    // result does not depend on whether bot/ dependencies are installed.
+    const result = await defaultProbes.matrix(ENV, { loadCrypto: () => ({}) });
     expect(result.ok).toBe(true);
     expect(result.detail).toMatch(/@rumi:example\.org/);
     expect(global.fetch).toHaveBeenCalledWith(
