@@ -481,7 +481,11 @@ async function handleWebhookPost(req, res) {
       const { handleCoachingFlowButton } = require('./shared/services/coaching/coaching-flow-buttons');
       if (await handleCoachingFlowButton(buttonId, from, user)) return;
       // Test papers (tp_ ids): Edit / New paper / My papers after a delivery.
-      if (await routeTestPaperSelection({ user, from, id: buttonId })) return;
+      // Acknowledged before returning: Meta retries a webhook it gets no 200 for.
+      if (await routeTestPaperSelection({ user, from, id: buttonId })) {
+        res.status(200).send('EVENT_RECEIVED');
+        return;
+      }
 
       // Coaching confirmation buttons
       if (buttonId.startsWith('coaching_confirm_')) {
@@ -1200,7 +1204,10 @@ async function handleWebhookPost(req, res) {
       logToFile('📋 Interactive list item selected', { listId, from });
 
       // Test papers (tp_ ids): source, chapter, size, language, my papers.
-      if (await routeTestPaperSelection({ user, from, id: listId })) return;
+      if (await routeTestPaperSelection({ user, from, id: listId })) {
+        res.status(200).send('EVENT_RECEIVED');
+        return;
+      }
 
       // Video-quiz answers arrive as list_reply whenever the question has 4
       // options or a title too long for a 20-char button. Same `vq_` ids as

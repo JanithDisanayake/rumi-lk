@@ -158,7 +158,9 @@ describe('webhook list_reply → test paper', () => {
     await O.start({ user: TEACHER, from: FROM, args: '', language: 'en' });
     WA.sendInteractiveMessage.mockClear();
 
-    await post(listReply('tp_src_lp', 'My lesson plans (2)'));
+    const res = await post(listReply('tp_src_lp', 'My lesson plans (2)'));
+    // Meta retries a webhook it gets no 200 for.
+    expect(res.statusCode).toBe(200);
 
     expect(WA.sendInteractiveMessage).toHaveBeenCalledTimes(1);
     expect(WA.sendInteractiveMessage.mock.calls[0][0]).toBe(FROM);
@@ -169,7 +171,8 @@ describe('webhook list_reply → test paper', () => {
 describe('webhook button_reply → test paper', () => {
   it('"My papers" (tp_mine) with none yet says so', async () => {
     load();
-    await post(buttonReply('tp_mine', 'My papers'));
+    const res = await post(buttonReply('tp_mine', 'My papers'));
+    expect(res.statusCode).toBe(200);
     expect(textsSent()).toEqual([expect.stringMatching(/no test papers yet/)]);
   });
 });
