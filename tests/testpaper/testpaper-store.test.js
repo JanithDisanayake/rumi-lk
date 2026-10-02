@@ -83,6 +83,13 @@ describe('versions', () => {
     await Store.markFailed(v2.id, 'MODEL_UNAVAILABLE', '503');
     expect(db.tables.test_papers[1]).toMatchObject({ status: 'failed', error_code: 'MODEL_UNAVAILABLE' });
   });
+
+  it('markReady never rewrites a ready paper (a duplicate job cannot replace what the teacher has)', async () => {
+    const req = await Store.createRequest(REQUEST);
+    const v1 = await readyPaper(req.id);
+    await Store.markReady(v1.id, { title: 'Rewritten', examJson: { unseen: {} }, questionCount: 1, totalMarks: 1, tokenData: { model: 'other' } });
+    expect(db.tables.test_papers[0]).toMatchObject({ status: 'ready', title: 'Paper v1', model: 'm' });
+  });
 });
 
 describe('getPaper', () => {
