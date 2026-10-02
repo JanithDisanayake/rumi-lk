@@ -77,7 +77,8 @@ None of the not-assessed outcomes is ever shown as 0%.
 
 ## The input contract: timestamps
 
-Every verdict quotes a `[MM:SS]` line, and only the **diarized** transcription branch writes them (one stamp per
+The grader is asked to quote a `[MM:SS]` line for every verdict (a credited verdict without a quote is flagged as
+`unquoted_credit` in the report), and only the **diarized** transcription branch writes those stamps (one stamp per
 speaker turn). A transcript with no stamps is decided **in code, before any model call**: "not assessed", no
 extraction, no grading, no spend (`unusable_guard: 'no_timestamps'`).
 
