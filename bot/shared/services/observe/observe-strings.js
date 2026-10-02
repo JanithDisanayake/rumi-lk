@@ -109,6 +109,7 @@ const EN = {
   who_ack: 'Thanks — noted {name}.',
   who_other_ack: 'No problem. You can type the name when you send the report.',
   who_stale: 'That list has expired. You can type the name when you send the report.',
+  who_already_bound: 'This observation is already recorded for a teacher, so it was left as it is.',
 
   // ── Guided debrief ───────────────────────────────────────────────────────
   debrief_record_instruction:

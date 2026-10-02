@@ -147,6 +147,27 @@ async function handleObservedTeacherPick(user, from, listId) {
   }
 
   try {
+    // Bind first, conditionally — the list lives 2 h, so a second tap can come
+    // long after the first one bound the row (and a report went out). Only the
+    // coach's own observation; only while it is still bare (owned by the
+    // coach) or already bound to this same teacher (an idempotent re-tap); and
+    // never once the report has gone. In the predicate, not just a read, so
+    // two taps racing cannot both win.
+    const owners = [user.id, teacher.user_id].filter(Boolean);
+    const { data: bound, error: bindError } = await supabase.from('coaching_sessions')
+      .update({ ...(teacher.user_id ? { user_id: teacher.user_id } : {}), updated_at: new Date().toISOString() })
+      .eq('id', parsed.sessionId)
+      .eq('observer_user_id', user.id)
+      .in('user_id', owners)
+      .is('analysis_data->teacher_delivery->>status', null)
+      .select('id');
+    if (bindError) throw new Error(bindError.message);
+    if (!bound || !bound.length) {
+      await WhatsAppService.sendMessage(from, t(lang, 'who_already_bound'));
+      logToFile('🚫 observe-who: re-tap refused — already bound or reported', { userId: user.id, sessionId: parsed.sessionId });
+      return true;
+    }
+
     const today = new Date().toISOString().slice(0, 10);
     const record = buildObservationRecord({ leaderUserId: user.id, sessionId: parsed.sessionId, teacher, today });
     // One record per session: replace rather than accumulate if the coach re-answers.
@@ -154,14 +175,6 @@ async function handleObservedTeacherPick(user, from, listId) {
       .eq('session_id', parsed.sessionId).eq('leader_user_id', user.id).eq('status', 'done');
     const { error } = await supabase.from('observation_schedules').insert(record);
     if (error) throw new Error(error.message);
-    // Re-own the row to the teacher — only the coach's own observation, and
-    // only while it is still bare or bound to this same answer.
-    if (teacher.user_id) {
-      await supabase.from('coaching_sessions')
-        .update({ user_id: teacher.user_id, updated_at: new Date().toISOString() })
-        .eq('id', parsed.sessionId)
-        .eq('observer_user_id', user.id);
-    }
     await WhatsAppService.sendMessage(from, t(lang, 'who_ack', { name: record.teacher_name || '' }));
     logToFile('🔭 observe-who: observed teacher recorded', { userId: user.id, sessionId: parsed.sessionId });
   } catch (err) {

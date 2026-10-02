@@ -65,9 +65,31 @@ describe('observe-who', () => {
     });
     expect(mockDb.tables.coaching_sessions[0].user_id).toBe('t-1');
     expect(WhatsAppService.sendMessage.mock.calls.pop()[1]).toBe('Thanks — noted Sam Taylor.');
-    // Re-answering replaces the record rather than piling up a second one.
-    await Who.handleObservedTeacherPick(COACH, '15550100001', 'observe_who_obs-1_0');
+    // Re-tapping the same teacher replaces the record rather than piling up a second one.
+    await Who.handleObservedTeacherPick(COACH, '15550100001', 'observe_who_obs-1_1');
     expect(mockDb.tables.observation_schedules).toHaveLength(1);
+    expect(mockDb.tables.coaching_sessions[0].user_id).toBe('t-1');
+    expect(WhatsAppService.sendMessage.mock.calls.pop()[1]).toBe('Thanks — noted Sam Taylor.');
+  });
+
+  test('a re-tap never moves an observation already bound to another teacher', async () => {
+    // Bound to Sam Taylor (t-1) by the tap above; the list is still live for 2 h.
+    const schedulesBefore = JSON.stringify(mockDb.tables.observation_schedules);
+    expect(await Who.handleObservedTeacherPick(COACH, '15550100001', 'observe_who_obs-1_0')).toBe(true);
+    expect(mockDb.tables.coaching_sessions[0].user_id).toBe('t-1');
+    expect(JSON.stringify(mockDb.tables.observation_schedules)).toBe(schedulesBefore);   // the visit record too
+    expect(WhatsAppService.sendMessage.mock.calls.pop()[1]).toBe('This observation is already recorded for a teacher, so it was left as it is.');
+  });
+
+  test('once the report went to the teacher, even the same teacher\'s re-tap changes nothing', async () => {
+    const s = mockDb.tables.coaching_sessions[0];
+    s.analysis_data = { teacher_delivery: { status: 'sent', teacher_user_id: 't-1' } };
+    const before = JSON.stringify(s);
+    const schedulesBefore = JSON.stringify(mockDb.tables.observation_schedules);
+    await Who.handleObservedTeacherPick(COACH, '15550100001', 'observe_who_obs-1_1');
+    expect(JSON.stringify(mockDb.tables.coaching_sessions[0])).toBe(before);
+    expect(JSON.stringify(mockDb.tables.observation_schedules)).toBe(schedulesBefore);
+    expect(WhatsAppService.sendMessage.mock.calls.pop()[1]).toMatch(/already recorded/);
   });
 
   test('a stale list says so instead of guessing', async () => {
