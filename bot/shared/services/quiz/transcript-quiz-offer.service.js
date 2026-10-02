@@ -109,6 +109,15 @@ function isStaleGenerating(quiz, now = Date.now()) {
   return last > 0 && now - last >= staleMs();
 }
 
+/**
+ * The operator's console switch alone (RUMI_FEATURE_LESSON_QUIZ=off). A job
+ * queued before the switch — a quiz being made, a nudge — exits quietly when
+ * it is paused (the generate step, the nudge).
+ */
+function paused() {
+  return !require('../../config/feature-overrides').isEnabled('lesson_quiz');
+}
+
 function offerMode() {
   return (process.env.TRANSCRIPT_QUIZ_OFFER_MODE || 'once').trim().toLowerCase() === 'every' ? 'every' : 'once';
 }
@@ -446,7 +455,11 @@ async function handleOfferButton(buttonId, phone) {
     const { data: flipped } = await supabase.from('quizzes')
       .update({ status: 'declined', meta: { ...(quiz.meta || {}), step: 'declined', declined_at: new Date().toISOString() } })
       .eq('id', quizId).eq('status', 'offered').select('id');
-    logEvent('transcript_quiz.declined', { quizId, userId: quiz.teacher_id, flipped: Boolean(flipped && flipped.length) });
+    const declined = Boolean(flipped && flipped.length);
+    logEvent('transcript_quiz.declined', { quizId, userId: quiz.teacher_id, flipped: declined });
+    // "No" after "Yes": the quiz is being made (or sent) and still coming, so
+    // say that — never "declined". A second "No" on a declined offer repeats it.
+    if (!declined && quiz.status !== 'declined') return api.tellAlready(phone, quiz, lang);
     await WhatsAppService.sendMessage(phone, resolveUx('tqDeclined', { language: lang }));
     return true;
   }
@@ -783,7 +796,7 @@ async function handleLanguageButton(buttonId, phone, user) {
 }
 
 module.exports = {
-  enabled, offerMode, subjectAllowed, alreadyOffered, staleMs, isStaleGenerating, STALE_MINUTES,
+  enabled, paused, offerMode, subjectAllowed, alreadyOffered, staleMs, isStaleGenerating, STALE_MINUTES,
   scheduleOffer, triggerEarly, processOffer, runReportFollowUps, handleOfferButton, handleLanguageButton, claimRow, reclaimStaleOffer, languageByPhone,
   sendLanguageAsk, handleTypedLanguageChoice, startGenerating, tellAlready, queueLpQuiz, remakeLpQuiz,
   OFFER_YES, OFFER_NO, MIN_TRANSCRIPT_CHARS, OFFER_DELAY_SECONDS, OFFER_LEASE_MS, MIN_CONFIDENCE, MIN_SLOS, FEATURE_KEY, SESSION_SELECT,

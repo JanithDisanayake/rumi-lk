@@ -147,12 +147,14 @@ const FEATURES = [
   },
   // The lesson quiz needs no key of its own (it writes with OPENROUTER_API_KEY,
   // which is core); its one gate is the TRANSCRIPT_QUIZ_ENABLED flag, so the
-  // flag is what `keys` presence-checks. The offer service still requires the
-  // value `true`, and the console switch below can turn it off.
+  // flag is what `keys` presence-checks — and, as `flag`, its value must be
+  // `true`, the value the offer service requires (TRANSCRIPT_QUIZ_ENABLED=false
+  // is not "available"). The console switch below can turn it off.
   {
     id: 'lesson_quiz',
     name: 'Lesson quiz (from a coaching recording or a lesson plan)',
     keys: ['TRANSCRIPT_QUIZ_ENABLED'],
+    flag: 'TRANSCRIPT_QUIZ_ENABLED',
     notes: 'Set TRANSCRIPT_QUIZ_ENABLED=true; writes with OPENROUTER_API_KEY. See docs/features/lesson-quiz.md.',
   },
   { id: 'observability_axiom', name: 'Observability (Axiom)', keys: ['AXIOM_DATASET', 'AXIOM_TOKEN'] },

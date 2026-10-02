@@ -33,7 +33,7 @@ const { duplicateQuestionErrors, confirmsSameFact, solverDuplicateComplaint } = 
 const {
   teacherLanguageFor, quizLanguageFor, formatLessonDate, topicFor, lessonLabel, canonicalSubject,
 } = require('./transcript-quiz-language');
-const { SESSION_SELECT, MIN_TRANSCRIPT_CHARS, staleMs } = require('./transcript-quiz-offer.service');
+const { SESSION_SELECT, MIN_TRANSCRIPT_CHARS, staleMs, paused } = require('./transcript-quiz-offer.service');
 const {
   TRANSCRIPT, TOPIC, isPlanQuiz, lessonSessionFor, failureCopyKey, digestFailureReason,
 } = require('./quiz-sources');
@@ -1572,6 +1572,12 @@ async function releaseRun(quizId, ms) {
 
 /** The generate step (the `quiz_generate` job). */
 async function process(quizId, payload = {}) {
+  // Switched off in the console after the job was queued: exit quietly. The
+  // row stays as it is; /quiz can make it again once the switch is back on.
+  if (paused()) {
+    logEvent('transcript_quiz.generate_skipped', { quizId, reason: 'paused' });
+    return { skipped: 'paused' };
+  }
   const run = { ms: null };
   try {
     return await processQuiz(quizId, payload || {}, run);

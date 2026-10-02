@@ -28,6 +28,7 @@ const { deferOutOfQuiet, localDate, atLocalTime } = require('../../config/school
 const { teacherLanguageFor, isolate } = require('./transcript-quiz-language');
 const { excludeSelfTests } = require('./teacher-self-test');
 const { oneAttemptPerChild } = require('./one-attempt-per-child');
+const { paused } = require('./transcript-quiz-offer.service');
 
 /** The defaults behind TRANSCRIPT_QUIZ_NUDGE_BELOW and TRANSCRIPT_QUIZ_NUDGE_AFTER_MINUTES. */
 const NUDGE_BELOW = 5;
@@ -140,6 +141,8 @@ function nudgeKeyFor(started) {
 }
 
 async function process(quizId) {
+  // Switched off in the console after the nudge was queued: no nudge.
+  if (paused()) return { skipped: 'paused' };
   const { data: quiz } = await supabase.from('quizzes')
     .select('id, teacher_id, topic, status, language, meta').eq('id', quizId).maybeSingle();
   if (!quiz) return { skipped: 'quiz_not_found' };
@@ -217,12 +220,17 @@ async function process(quizId) {
           .join(resolveUx('vqLetterSep', { language: lang })),
       },
     });
-  const ok = await WhatsAppService.sendMessage(to, body);
-
+  // THE CLAIM, before the send: stamp this quiz nudged only if nobody else has
+  // (compare-and-set on `nudged_at`). A Standard queue can deliver the job
+  // twice; the run that loses the stamp sends nothing.
   const at = new Date().toISOString();
-  await supabase.from('quizzes')
+  const { data: claimed } = await supabase.from('quizzes')
     .update({ meta: { ...(quiz.meta || {}), nudged_at: at, nudge_started: started } })
-    .eq('id', quiz.id);
+    .eq('id', quiz.id).is('meta->>nudged_at', null)
+    .select('id');
+  if (!claimed || !claimed.length) return { skipped: 'already_nudged' };
+
+  const ok = await WhatsAppService.sendMessage(to, body);
   for (const q of quiet.slice(1)) {
     await supabase.from('quizzes')
       .update({ meta: { ...(q.meta || {}), nudged_at: at, nudge_started: q.started, nudged_with: quiz.id } })

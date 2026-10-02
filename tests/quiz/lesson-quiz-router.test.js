@@ -143,6 +143,7 @@ function mockBoundary() {
     },
     text: { handleTextMessage: jest.fn().mockResolvedValue(undefined) },
     list: {
+      MENU_CLASSIC: 'tq_pick_menu_classic',
       isQuizCommand: jest.fn(() => false),
       handleActionButton: jest.fn().mockResolvedValue(false),
       handleListPick: jest.fn().mockResolvedValue(true),
@@ -271,5 +272,31 @@ describe('webhook → the language ask as a list, or as numbered text (review F-
     await postWebhook(app, textBody('hello again'));
     await until(() => mocks.text.handleTextMessage.mock.calls.length);
     expect(mocks.text.handleTextMessage).toHaveBeenCalledWith(expect.anything(), PHONE, 'hello again', expect.anything());
+  });
+});
+
+describe('webhook → small teacher-side routes (review F-N8)', () => {
+  test('the classic-quiz row carries the chat session, never a null session key', async () => {
+    await postWebhook(app, listBody('tq_pick_menu_classic'));
+    await until(() => mocks.list.handleListPick.mock.calls.length);
+    expect(mocks.list.handleListPick).toHaveBeenCalledWith('tq_pick_menu_classic', PHONE, expect.objectContaining({ id: 'u-1' }), { sessionId: 'sess-1' });
+  });
+
+  test('switched off (RUMI_FEATURE_LESSON_QUIZ=off): tq_ buttons and rows reach no lesson-quiz handler', async () => {
+    mocks.offer.enabled.mockReturnValue(false);
+    try {
+      await postWebhook(app, buttonBody(`tq_yes_${QID}`));
+      await postWebhook(app, buttonBody(`tq_lang_en_${QID}`));
+      await postWebhook(app, buttonBody(`tq_link_${QID}`));
+      await postWebhook(app, listBody(`tq_pick_${QID}`));
+      await postWebhook(app, listBody(`tq_lang_ar_${QID}`));
+      await new Promise((r) => setTimeout(r, 100));
+      expect(mocks.offer.handleOfferButton).not.toHaveBeenCalled();
+      expect(mocks.offer.handleLanguageButton).not.toHaveBeenCalled();
+      expect(mocks.list.handleActionButton).not.toHaveBeenCalled();
+      expect(mocks.list.handleListPick).not.toHaveBeenCalled();
+    } finally {
+      mocks.offer.enabled.mockReturnValue(true);
+    }
   });
 });

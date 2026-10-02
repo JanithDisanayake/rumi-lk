@@ -154,3 +154,19 @@ describe('a run that died (F-S3)', () => {
     expect(WhatsAppService.sendDocument).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('RUMI_FEATURE_LESSON_QUIZ=off (review F-N8)', () => {
+  const { overrides } = require('../../bot/shared/config/feature-availability');
+  afterEach(() => { delete process.env.RUMI_FEATURE_LESSON_QUIZ; overrides.load(process.env); });
+
+  test('a quiz_generate job already queued exits quietly: no claim, no model call, no send', async () => {
+    const db = seed();
+    process.env.RUMI_FEATURE_LESSON_QUIZ = 'off';
+    overrides.load(process.env);
+    const r = await Gen.process(QID, {});
+    expect(r).toEqual({ skipped: 'paused' });
+    expect(Author.author).not.toHaveBeenCalled();
+    expect(WhatsAppService.sendMessage).not.toHaveBeenCalled();
+    expect(db.tables.quizzes[0].meta.run_ms).toBeUndefined();
+  });
+});

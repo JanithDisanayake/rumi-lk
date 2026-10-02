@@ -934,9 +934,14 @@ async function handleWebhookPost(req, res) {
       // Lesson quiz: which language the quiz should be written in
       // (tq_lang_<code>_<quizId>, any configured quiz language). Matched
       // BEFORE the generic `tq_` branch, which would otherwise take it.
+      // With the lesson quiz switched off (TRANSCRIPT_QUIZ_ENABLED, or
+      // RUMI_FEATURE_LESSON_QUIZ=off in the console) an old tq_ button does
+      // nothing, like every other door into it.
       else if (buttonId.startsWith('tq_lang_')) {
         const TranscriptQuizOffer = require('./shared/services/quiz/transcript-quiz-offer.service');
-        if (!(await TranscriptQuizOffer.handleLanguageButton(buttonId, from, user))) {
+        if (!TranscriptQuizOffer.enabled()) {
+          logToFile('⚠️ lesson quiz is off: tq_ tap ignored', { buttonId });
+        } else if (!(await TranscriptQuizOffer.handleLanguageButton(buttonId, from, user))) {
           logToFile('⚠️ unrouted tq_lang_ button', { buttonId, from });
         }
       }
@@ -946,10 +951,14 @@ async function handleWebhookPost(req, res) {
       else if (buttonId.startsWith('tq_')) {
         const TranscriptQuizOffer = require('./shared/services/quiz/transcript-quiz-offer.service');
         const TranscriptQuizList = require('./shared/services/quiz/transcript-quiz-list.service');
-        const handled = await TranscriptQuizOffer.handleOfferButton(buttonId, from)
-          || await TranscriptQuizList.handleActionButton(buttonId, from);
-        if (!handled) {
-          logToFile('⚠️ unrouted tq_ button', { buttonId, from });
+        if (!TranscriptQuizOffer.enabled()) {
+          logToFile('⚠️ lesson quiz is off: tq_ tap ignored', { buttonId });
+        } else {
+          const handled = await TranscriptQuizOffer.handleOfferButton(buttonId, from)
+            || await TranscriptQuizList.handleActionButton(buttonId, from);
+          if (!handled) {
+            logToFile('⚠️ unrouted tq_ button', { buttonId, from });
+          }
         }
       }
       // Edit-class multi-class picker: open the edit-class flow for the chosen class.
@@ -1283,7 +1292,9 @@ async function handleWebhookPost(req, res) {
       // languages) — the same ids as its buttons.
       if (listId.startsWith('tq_lang_')) {
         const TranscriptQuizOffer = require('./shared/services/quiz/transcript-quiz-offer.service');
-        if (!(await TranscriptQuizOffer.handleLanguageButton(listId, from, user))) {
+        if (!TranscriptQuizOffer.enabled()) {
+          logToFile('⚠️ lesson quiz is off: tq_ row ignored', { listId });
+        } else if (!(await TranscriptQuizOffer.handleLanguageButton(listId, from, user))) {
           logToFile('⚠️ unrouted tq_lang_ list row', { listId });
         }
         ack();
@@ -1293,8 +1304,20 @@ async function handleWebhookPost(req, res) {
       // Lesson quiz: a row tapped in the /quiz list (a lesson, a plan, an
       // existing quiz, the topic / classic / video rows) or its "older" page.
       if (listId.startsWith('tq_pick_') || listId.startsWith('tq_page_')) {
+        const TranscriptQuizOffer = require('./shared/services/quiz/transcript-quiz-offer.service');
         const TranscriptQuizList = require('./shared/services/quiz/transcript-quiz-list.service');
-        await TranscriptQuizList.handleListPick(listId, from, user);
+        if (!TranscriptQuizOffer.enabled()) {
+          logToFile('⚠️ lesson quiz is off: tq_ row ignored', { listId });
+        } else if (listId === TranscriptQuizList.MENU_CLASSIC && user?.id) {
+          // The classic quiz keeps its Redis state per chat session, as /quiz
+          // started it before the lesson quiz: without the session the state
+          // key was `quiz:awaiting_lp_selection:null`.
+          const { getOrCreateSession } = require('./shared/database/bot-helpers');
+          const sessionId = await getOrCreateSession(user.id);
+          await TranscriptQuizList.handleListPick(listId, from, user, { sessionId });
+        } else {
+          await TranscriptQuizList.handleListPick(listId, from, user);
+        }
         ack();
         return;
       }
