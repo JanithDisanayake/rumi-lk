@@ -406,7 +406,36 @@ function stampDisplayOrder(row) {
 }
 
 /**
- * Draw, screenshot and upload every figure in the quiz, in order.
+ * Where a card or figure PNG is kept. With object storage, `upload()` (R2).
+ * Without it (R2 is optional) the PNG stays on local disk and the row carries a
+ * file:// URL, the way main keeps a reading report or a voice note: the Baileys,
+ * Slack, Discord and Matrix drivers read such a URL off disk when they send it.
+ * Meta's Cloud API cannot fetch a local file, so a deployment on the Meta driver
+ * needs object storage for quiz pictures (warned here). The child is sent the
+ * picture later, by the bot process, so the file must outlive this job: the
+ * worker and the bot have to share the disk (one host, as on a local setup).
+ *
+ * @returns {Promise<string>} the URL to store in the row's media
+ */
+async function storeQuizPng({ png, teacherId, quizId, name, upload }) {
+  if (require('../../storage/r2').isR2Configured()) return upload();
+  const { TEMP_DIR } = require('../../utils/constants');
+  // Ids come from rows; keep them to one plain path segment each.
+  const segment = (s) => String(s == null ? '' : s).replace(/[^A-Za-z0-9_-]/g, '_') || '_';
+  const dir = path.join(TEMP_DIR, 'transcript_quizzes', segment(teacherId), segment(quizId));
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${segment(name)}.png`);
+  fs.writeFileSync(file, png);
+  if (String(globalThis.process.env.CHANNEL_DRIVER || '').toLowerCase() === 'meta') {
+    logToFile('⚠️ transcript quiz: no object storage — a quiz picture is kept on local disk, which the Meta driver cannot send (set R2_*)', {
+      quizId, name,
+    }, 'warn');
+  }
+  return `file://${file}`;
+}
+
+/**
+ * Draw, screenshot and store every figure in the quiz, in order.
  *
  * Sequential on purpose: Playwright pages are the expensive resource and a
  * quiz carries at most four figures. Any failure throws — an attempt that
@@ -431,7 +460,9 @@ async function renderFigures({ questions, language, teacherId, quizId }) {
       // The frame paints "Question n of N" like a question card does; the
       // number is the row's position, which is the order the session asks in.
       const png = await Figure.renderFigurePng(svg, language, { questionNumber: i + 1, total: questions.length });
-      urls[i] = await Figure.uploadFigure({ teacherId, quizId, index: i, png });
+      urls[i] = await storeQuizPng({
+        png, teacherId, quizId, name: `q${i}`, upload: () => Figure.uploadFigure({ teacherId, quizId, index: i, png }),
+      });
       logEvent('transcript_quiz.figure_ready', {
         quizId, index: i, figureType: q.figure.type, bytes: png.length, latencyMs: Date.now() - startedAt,
       });
@@ -489,7 +520,9 @@ async function renderCards({ rows, questions, language, teacherId, quizId }) {
         // the child answers with checkboxes in a Flow.
         answerMode: (row.media && row.media.answer_mode) || 'single',
       });
-      urls[i] = await Card.uploadCard({ teacherId, quizId, index: i, png });
+      urls[i] = await storeQuizPng({
+        png, teacherId, quizId, name: `card${i + 1}`, upload: () => Card.uploadCard({ teacherId, quizId, index: i, png }),
+      });
       logEvent('transcript_quiz.card_ready', { quizId, index: i, bytes: png.length, latencyMs: Date.now() - startedAt });
     } catch (err) {
       logToFile('⚠️ transcript quiz: question card could not be made', { quizId, index: i, error: err.message });
