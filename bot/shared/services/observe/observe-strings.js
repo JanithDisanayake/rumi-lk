@@ -1,0 +1,265 @@
+/**
+ * /observe user-facing strings.
+ *
+ * One function returns the full string set for a language (the
+ * coaching-messages.js pattern), so every observe surface — acks, the edit
+ * form, the debrief guide chrome, the teacher report — reads its copy from
+ * here and a deployment can ship a translation without hunting through the
+ * pipeline. English is the base pack; a language pack registered with
+ * registerLanguagePack() overrides it key by key, so a missing translation
+ * degrades to English and never crashes a flow.
+ *
+ * Copy is channel-neutral on purpose: it says "record the lesson on your
+ * phone", never the name of one messenger, because the same words go out on
+ * WhatsApp, Matrix, Slack and Discord. Placeholders: {name}, {fw} (the
+ * observation framework's display name), {phone}, {date}, {fo} (the coach).
+ */
+
+const EN = {
+  no_account: "Sorry, I couldn't find your account. Please send me any message first, then try /observe again.",
+  capture_failed: "Sorry — something went wrong on my side while saving that observation. Your recording isn't lost. Please type /observe and send it again; if it keeps happening, tell your programme team.",
+  // The coach re-sent a recording that was already analysed. A new recording is
+  // asked for instead of re-sending the earlier report.
+  capture_duplicate_recording: 'This classroom recording has already been analysed. Please send a new recording.',
+  role_denied:
+    '/observe is for the people who visit classrooms to coach teachers. 💛\n\n'
+    + "If you're a teacher, I'm here for you — type \"menu\" to see what I can do.",
+  onboard:
+    'Welcome to coaching, my friend. 🌱\n\n'
+    + "One thing before we begin: your job is not inspection — it's nurture. "
+    + 'The teacher you visit is not someone to be supervised, but someone to help grow. '
+    + 'You are someone they can trust: you listen, you show them what they did well — and then you help them see ONE small next step.\n\n'
+    + 'Here is how /observe works:\n'
+    + '1️⃣ Record the lesson on your phone and send me the audio\n'
+    + '2️⃣ I send you the {fw} ratings, pre-filled — you check them and change anything you disagree with\n'
+    + '3️⃣ I prepare a short guide for your conversation with the teacher; record that conversation and I will coach YOU on it\n'
+    + '4️⃣ The teacher receives a warm report — never a score, never your private notes',
+  capture_prompt:
+    '🎙 Ready! In the classroom, record the lesson on your phone (all of it, or 10 to 40 minutes of it).\n\n'
+    + "When you're done, send me the recording here. I'll listen and send you the {fw} ratings pre-filled for every indicator — you review them and change anything you disagree with.",
+  audio_received:
+    "🎧 Got the recording — thank you! I'm listening now and filling in the {fw} ratings. They will arrive here in 2–5 minutes.",
+  capture_next_hint: "Record your next class whenever you like — when it arrives I'll ask which teacher it's for.",
+  // Meta-only: the editable WhatsApp Flow's chrome (OBSERVE_FORM_FLOW_ID).
+  flow_header: '{fw} — draft',
+  flow_body: "I've pre-filled the {fw} form from your recording — every indicator has a rating, evidence and an improvement note. Open it, review, change anything you disagree with, then submit.",
+  flow_button: 'Open the form',
+  submitted_ack: '✅ Thank you! Your {fw} observation is saved, with your edits.',
+  flow_terminal_refused: 'This observation was cancelled, so the form can no longer be submitted.',
+
+  // ── Debrief entry points ──────────────────────────────────────────────────
+  debrief_choice_body:
+    'Next step: the debrief — a growth conversation with the teacher. 🌱\n\n'
+    + "I'll prepare a short conversation guide for you — genuine praise, one reflective question, and ONE thing to improve. Are you ready to talk with the teacher now, or later?",
+  btn_debrief_now: 'Debrief now',
+  btn_debrief_later: 'Later',
+  debrief_later_ack:
+    "No rush at all. 💛 When you're ready to talk with the teacher, type /observe and pick that observation from the list.",
+  list_body: 'You have observations waiting. Pick one to carry on where you left off, or start a new observation.',
+  list_button: 'Choose',
+  list_section_title: 'Pending debriefs',
+  list_new_observation: '🎙 New observation',
+  list_new_observation_desc: 'Start a new classroom observation',
+  list_row_default_desc: 'Tap to start the debrief',
+  list_send_desc_prefix: 'Send report to',
+  list_send_default_desc: 'Send the report to the teacher',
+  section_stage_a: '1️⃣ Complete the form',
+  section_stage_b: '2️⃣ Do the debrief',
+  section_stage_c: '3️⃣ Send the report',
+  list_section_new: 'New',
+  resume_desc_form: 'Ratings still to check — tap to open',
+  resume_desc_retry: '⚠ It stopped — tap to run it again',
+  resume_desc_wait: 'Analysis in progress — the ratings are coming soon',
+  resume_retry_ack: "🔄 Restarted — I'll send the ratings as soon as they're ready.",
+  resume_retry_exhausted: "I've run this one as many times as I can and it won't go through. Your recording is saved. If you still have the audio, send it again and I'll start a fresh observation.",
+  resume_wait_ack: 'Still working on this one — the ratings will arrive soon.',
+
+  // ── Who was observed (asked only when the capture was unbound) ────────────
+  who_body: 'Which teacher did you observe? This keeps the report with the right teacher.',
+  who_button: 'Pick teacher',
+  who_section: 'Your teachers',
+  who_other: 'Someone else',
+  who_other_desc: 'Not in this list',
+  who_ack: 'Thanks — noted {name}.',
+  who_other_ack: 'No problem. You can type the name when you send the report.',
+  who_stale: 'That list has expired. You can type the name when you send the report.',
+
+  // ── Guided debrief ───────────────────────────────────────────────────────
+  debrief_record_instruction:
+    "When you're with the teacher: record your whole conversation on your phone 🎙 and send it to me — the guide stays right above while you record.\n\n"
+    + "The recording is for YOU alone: I'll listen and give you feedback to grow as a coach. The teacher never sees it.",
+  debrief_not_yours: "Sorry — that observation isn't yours, so I can't open its debrief.",
+  debrief_already_done: '✅ That debrief is already done. Type /observe to start a new observation.',
+  debrief_load_error: "Sorry, I couldn't load that observation right now. Please try again in a few minutes.",
+  debrief_audio_received:
+    "🎧 Got your debrief recording — thank you for trusting me with it! I'm listening now; feedback to help you grow as a coach arrives in a few minutes. This stays between us. 💛",
+  debrief_too_short:
+    "Sorry — I couldn't hear enough of the conversation in that recording. If the debrief is still going, record a longer stretch and send it over — the guide is still right above.",
+  debrief_duplicate_recording: 'This debrief recording has already been analysed.',
+  debrief_feedback_failed:
+    "I received your recording but couldn't analyse it just now. Type /observe, pick that observation from the list, and record again — I'll listen fresh.",
+  // Transcription failed (a provider outage, say). Told ONCE: the worker sweep
+  // retries by itself, so the coach must NOT re-record.
+  debrief_processing_failed:
+    "I couldn't process this debrief recording yet. I'll keep retrying automatically — you don't need to re-record. If nothing arrives within an hour, open /observe and pick that debrief again.",
+  debrief_media_gone:
+    'This debrief recording is no longer available — the messaging service only keeps a recording for a limited time. Please record the debrief again and send it to me.',
+
+  // ── Binding: whose recording is this? (multi-flight) ─────────────────────
+  redirect_pick_teacher:
+    "Let's start from the school so this reaches the right teacher. Pick the school, then the teacher — then send me the recording again.",
+  bind_prompt_body: 'Got your recording. Whose observation is this? Pick below — your scheduled teachers are at the top.',
+  bind_button: '📋 Pick the teacher',
+  bind_section_title: 'Whose recording is this?',
+  bind_row_visit_fallback: 'Scheduled observation',
+  bind_row_other: 'Another teacher',
+  bind_row_other_desc: 'Pick the school and teacher yourself',
+  bind_row_debrief: '🎙 This is a debrief',
+  bind_row_debrief_desc: 'Attach it to a waiting observation',
+  bind_row_self_dc: 'My own lesson',
+  bind_row_self_dc_desc: 'Get feedback on my own teaching',
+  bind_row_not_obs: 'Not an observation',
+  bind_row_not_obs_desc: 'Continue as a normal message',
+  bind_ack: "✅ Attached to {name}'s observation — analysis has started.",
+  bind_expired: 'That recording is no longer held. Please send it again.',
+  bind_not_obs_ack: 'Okay — carry on as normal.',
+  bind_dupe_ack: "I already have this recording ({name}) — it's in progress, no need to send it again.",
+  bind_dupe_fallback_name: 'the same observation',
+  bind_park_full: 'Answer the question above first — then send the next recording, so nothing gets lost.',
+
+  // ── Capture ack buttons + cancel ─────────────────────────────────────────
+  btn_cancel_obs: 'Cancel observation',
+  btn_cancel_yes: 'Yes, cancel it',
+  btn_back: 'Back',
+  btn_open_form: 'Open the ratings',
+  btn_retry_now: 'Run it again',
+  btn_ok_wait: 'Okay',
+  cancel_confirm_body: 'Cancel this observation? It will leave your list — the recording stays safe.',
+  cancel_ack: '✅ Observation cancelled.',
+  cancel_too_late: 'The report has already reached the teacher, so this observation can no longer be cancelled.',
+  watchdog_stalled_coach: "⚠️ The observation you recorded stopped partway and I couldn't restart it. Nothing is lost — your recording is saved. Send the audio again when you can and I'll start a fresh one.",
+
+  // ── Coach-the-coach card ─────────────────────────────────────────────────
+  coach_card_title: 'Strengths · growth · action plan',
+  coach_card_eyebrow: 'Coaching Feedback',
+  coach_card_value_eyebrow: 'The value you lived today',
+  coach_card_subtitle: 'From your conversation with the teacher — between you and me only.',
+  coach_card_wins_label: 'Strengths',
+  coach_card_action_label: 'Action plan',
+  coach_card_reflect_label: 'Ask yourself before next time',
+  coach_card_try_label: 'Areas for growth',
+  coach_card_closing: 'The choice is yours — you are the coach. 🌱',
+  guide_reflect_label: 'Ask this last',
+  // The harm gate: the coach belittled the teacher. Honest, not congratulatory.
+  coach_concern_opener:
+    "I listened to your conversation. There's one thing I have to be honest with you about — because I'm on your side, and because this teacher depends on you. 💛",
+  coach_concern_title: 'Something worth naming',
+  coach_concern_closing:
+    "I'm not writing this to judge you. Every coach gets this wrong sometimes, and the best ones are the ones who can hear it and change. We start again tomorrow. 🌱",
+
+  // ── Teacher picker + report delivery ─────────────────────────────────────
+  pick_teacher_body: 'Who should receive the report? Pick a teacher from your list, or add a new one.',
+  pick_teacher_button: 'Pick a teacher',
+  pick_teacher_section: 'Your teachers',
+  pick_teacher_new: '➕ New teacher',
+  pick_teacher_more: 'More teachers…',
+  pick_teacher_new_desc: 'Type the name and phone number',
+  send_choice_body:
+    "Last step: sending the teacher their report — the {fw} report plus notes from your conversation. You'll see it first before anything is sent. Shall we?",
+  btn_send_report: 'Send report',
+  btn_send_later: 'Later',
+  send_later_ack: "No problem. 💛 When you're ready, type /observe and pick that observation — you'll see the send-report option (📨).",
+  send_ask_details: "Tell me the teacher's name and phone number — one message.\n\nExample: *Sam Taylor, +1 555 010 0123*",
+  send_details_reask:
+    "Sorry, I didn't catch that. Please send the name AND the phone number together, with the country code.\n\nExample: *Sam Taylor, +1 555 010 0123*",
+  send_preview_coming: "Got it — {name} ({phone}). I'm preparing the report now; you'll see it FIRST before anything is sent. 1–2 minutes. ⏳",
+  send_confirm_body: 'Above is the exact report the teacher will receive — the {fw} report plus your debrief notes. Send it now?',
+  btn_send_now: 'Send now',
+  btn_send_cancel: 'Cancel',
+  btn_send_other: 'Someone else',
+  send_delivering: "📨 Sending the report to the teacher now. I'll confirm once it lands.",
+  send_cancel_ack: 'Okay — nothing was sent. If you change your mind, type /observe and pick that observation.',
+  send_already_sent: "✅ That observation's report has already been sent to the teacher.",
+  send_waiting_tap_info: '📨 The report is ready — the invitation went to {name} ({date}). No tap yet; the report is delivered automatically the moment the invitation is tapped.',
+  send_done_fo: '✅ The report reached the teacher. Beautiful coaching work! 🌱',
+  // Delivery failed on the worker — surfaced to the coach, never silent.
+  send_failed_fo: "⚠️ Sorry — the report couldn't be sent to the teacher just now. Type /observe, pick that observation, and try sending again (📨).",
+  send_template_queued_fo:
+    "📨 The teacher hasn't messaged me recently, so I sent them an invitation — one tap and the report arrives. I'll let you know.",
+  send_operator_review_fo: '🔎 The report went to your programme team for a final check. Once approved, it reaches the teacher.',
+  send_tapped_fo: '✅ {name} has opened the report.',
+  send_nudged_fo: '🔔 {name} has not opened the report yet — I have sent one reminder.',
+  send_gave_up_fo: '{name} has not opened the report. I will not send more reminders — have a word, then send it again from /observe.',
+  // The report was never SENT — distinct from the line above, where it was sent
+  // and not opened. Different state, different next step.
+  send_undelivered_reminder_fo:
+    "📨 {name}'s report is ready but has not been sent yet. Open /observe, pick that observation, and tap Send — it is one tap.",
+  send_undelivered_gave_up_fo:
+    "{name}'s report still has not been sent, so I will stop reminding you about it. You can still send it any time from /observe.",
+  report_caption_teacher: "Your lesson report 🌱 Prepared from {fo}'s visit — with notes from your conversation together.",
+  companion_from_label: 'From',
+  companion_commitment_label: 'Your commitment',
+  companion_closing: 'We are proud of your work. We are with you. 💛',
+  leader_registered_welcome:
+    "You are registered as a coach. 🌱 When you are ready to visit a teacher's classroom, type /observe — I will help you observe the lesson, prepare the coaching conversation, and send the teacher their report.",
+};
+
+const PACKS = { en: EN };
+const merged = new Map();
+
+/**
+ * Add (or replace) a language pack. Keys missing from the pack fall back to
+ * English, so a partial translation is safe to ship.
+ * @param {string} lang  ISO code, e.g. 'sw'
+ * @param {object} strings  key → copy, same keys as the English pack
+ */
+function registerLanguagePack(lang, strings) {
+  PACKS[lang] = strings || {};
+  merged.delete(lang);
+}
+
+/** Every language with a registered pack (English always included). */
+function availableLanguages() {
+  return Object.keys(PACKS);
+}
+
+/**
+ * @param {string} lang
+ * @returns {object} the string set for lang, English key by key where missing
+ */
+function observeStrings(lang) {
+  if (!lang || lang === 'en' || !PACKS[lang]) return EN;
+  if (!merged.has(lang)) merged.set(lang, { ...EN, ...PACKS[lang] });
+  return merged.get(lang);
+}
+
+/**
+ * The language a user's observe surfaces render in: their preferred language
+ * when a pack exists for it, else English.
+ */
+function observeLang(user) {
+  const l = user && user.preferred_language;
+  return l && PACKS[l] ? l : 'en';
+}
+
+/** Fill {placeholders}; unknown ones are left as-is so a gap is visible, never "undefined". */
+function fill(template, vars = {}) {
+  return String(template || '').replace(/\{(\w+)\}/g, (m, k) => (vars[k] !== undefined && vars[k] !== null ? String(vars[k]) : m));
+}
+
+/** Display name of the active observation framework, for the {fw} placeholder. */
+function frameworkLabel() {
+  // eslint-disable-next-line global-require -- lazy: strings stay cheap to load
+  const { getObservePack } = require('./observe-framework');
+  const key = getObservePack().key;
+  return { teach: 'TEACH', hots: 'HOTS', mewaka: 'MEWAKA' }[key] || key.toUpperCase();
+}
+
+/** observeStrings(lang)[key] with {fw} and any vars filled. */
+function t(lang, key, vars = {}) {
+  return fill(observeStrings(lang)[key], { fw: frameworkLabel(), ...vars });
+}
+
+module.exports = {
+  observeStrings, observeLang, registerLanguagePack, availableLanguages, fill, t, frameworkLabel,
+};

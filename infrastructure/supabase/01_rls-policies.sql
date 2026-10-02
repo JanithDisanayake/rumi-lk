@@ -248,3 +248,14 @@ CREATE POLICY "service_role_test_papers" ON test_papers FOR ALL USING (auth.role
 ALTER TABLE teacher_nudges ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "service_role_teacher_nudges" ON teacher_nudges;
 CREATE POLICY "service_role_teacher_nudges" ON teacher_nudges FOR ALL USING (auth.role() = 'service_role');
+
+-- Observe: coach roster and visit schedules — service role only (schools: above).
+ALTER TABLE leader_schools ENABLE ROW LEVEL SECURITY;
+ALTER TABLE observation_schedules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE coach_directory ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "service_role_leader_schools" ON leader_schools;
+CREATE POLICY "service_role_leader_schools" ON leader_schools FOR ALL USING (auth.role() = 'service_role');
+DROP POLICY IF EXISTS "service_role_observation_schedules" ON observation_schedules;
+CREATE POLICY "service_role_observation_schedules" ON observation_schedules FOR ALL USING (auth.role() = 'service_role');
+DROP POLICY IF EXISTS "service_role_coach_directory" ON coach_directory;
+CREATE POLICY "service_role_coach_directory" ON coach_directory FOR ALL USING (auth.role() = 'service_role');

@@ -99,6 +99,13 @@ const FEATURES = [
       + 'or schedule bot/workers/teacher-nudges.worker.js from cron. On the Meta driver, sends only inside '
       + 'the 24-hour window.',
   },
+  {
+    id: 'observe',
+    name: 'Observe — the coach\'s assistant (/observe)',
+    keys: ['OBSERVE_ENABLED'],
+    notes: 'Set OBSERVE_ENABLED=true. Coaches are users with a role in OBSERVE_LEADER_ROLES — assign them '
+      + 'with `node bot/scripts/observe-roster.js`. Needs a speech-to-text key for the recordings.',
+  },
   { id: 'tts_elevenlabs', name: 'Spoken replies (text-to-speech, ElevenLabs)', keys: ['ELEVENLABS_API_KEY'] },
   { id: 'tts_uplift', name: 'Urdu / regional voices (Uplift)', keys: ['UPLIFT_API_KEY'] },
   { id: 'lesson_plans_gamma', name: 'Lesson-plan generation (Gamma)', keys: ['GAMMA_API_KEY'] },
