@@ -4268,7 +4268,7 @@ CREATE INDEX IF NOT EXISTS idx_users_last_message_at
 -- ============================================================================
 -- Observe: the coach's assistant (v2.8.0)
 -- Leader observations ride on coaching_sessions; the coach's roster is derived
--- (leader_schools x users.school_id). Same DDL as migrations/V2.8.0__observe_coach_assistant.sql.
+-- (leader_schools x users.school_id). Same DDL as migrations/V2.6.0__observe_coach_assistant.sql.
 -- ============================================================================
 
 -- A leader observation is a coaching_sessions row like any other, so the whole

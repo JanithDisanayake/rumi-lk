@@ -19,7 +19,7 @@
 
 const { logToFile } = require('../../utils/logger');
 
-const MIGRATION = 'infrastructure/supabase/migrations/V2.8.0__observe_coach_assistant.sql';
+const MIGRATION = 'infrastructure/supabase/migrations/V2.6.0__observe_coach_assistant.sql';
 
 let hasColumn = true;
 let probing = null;

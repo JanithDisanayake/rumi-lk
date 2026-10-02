@@ -4,6 +4,34 @@
 > conversation, then listens to that conversation and coaches the coach — while the teacher only ever receives
 > something kind and useful. And it keeps the coach organised: who is due, what is overdue, what is unfinished.
 
+## In programme terms
+
+**The coach's assistant: observe, debrief, follow up, and keep support separate from scoring.**
+
+Most school systems already employ people whose job is to coach teachers: mentors, head teachers, cluster coordinators and education officers. Their visits are often irregular and leave no record. This feature gives any of them the coaching cycle the evidence describes: observe, debrief, agree one commitment, follow up [WB-7steps; WB-1to1].
+1. **Observe.** The coach records the lesson, and Rumi drafts ratings on the World Bank's public Teach framework, each tied to a moment in the lesson. The coach edits the ratings, and the coach's version is the one used.
+2. **Debrief.** A six-step debrief guide covers praise with evidence, one question, one improvement and the teacher's own commitment. Rumi then listens to the recorded debrief and coaches the coach.
+3. **Report.** The teacher receives a warm report with no score, so support stays separate from evaluation.
+4. **Follow up.** Waiting work, planned visits and overdue follow-ups are all tracked.
+
+**Where it sits in a structured-pedagogy programme:** teacher guide → delivery → **coaching** → assessment → **M&E** (visit records, coach-reviewed ratings).
+
+
+
+### Honest limits
+
+- **What has been checked.** Only the safety rules are tested: no score reaches the teacher, and harmful debriefs are caught. The quality of the AI's suggestions is not validated. In one run, an "area for growth" misread praise as blame.
+- **Observer reliability.** Coaches still need training and reliability checks. The AI draft does not replace them.
+- **Language.** English only.
+- **Integration with fidelity.** The fidelity section is not yet in the observe report.
+- **Portal sign-in.** Coaches who use only the owned messenger cannot sign in to the portal yet.
+- **Open should-fix.** A re-sent invite keeps its old reminder counters.
+
+### Sources
+
+- [WB-1to1] Wilichowski, T., & Popova, A., 2021, *Structuring Effective 1-1 Support: Technical Guidance Note* (Coach series), World Bank. https://openknowledge.worldbank.org/entities/publication/e8872cc5-2712-5aa9-ac2e-5f40f8984e4c/full ; blog summary: https://blogs.worldbank.org/en/education/8-tips-structure-effective-one-one-support-systems-teachers
+- [WB-7steps] Wilichowski, T., & Arenge, G., 2021, "7 steps to facilitate effective one-to-one support for teachers", World Bank blog. https://blogs.worldbank.org/education/7-steps-facilitate-effective-one-one-support-teachers
+
 ## What it is
 
 Most school systems already employ people whose job is to coach teachers — mentors, head teachers, cluster
@@ -52,7 +80,7 @@ is a conversation everywhere, and an editable WhatsApp Flow on Meta when you pub
 Recordings need speech-to-text (`SONIOX_API_KEY`), as for classroom coaching. Object storage (R2) is optional:
 without it the audio is not archived, and the reports are kept on local disk.
 
-**Existing deployments:** apply `infrastructure/supabase/migrations/V2.8.0__observe_coach_assistant.sql`
+**Existing deployments:** apply `infrastructure/supabase/migrations/V2.6.0__observe_coach_assistant.sql`
 (additive: four columns on `coaching_sessions`, `users.role` and `users.school_id`, and the `schools`,
 `leader_schools`, `observation_schedules` and `coach_directory` tables). Fresh installs get it from
 `00_complete-schema.sql`. Apply it before deploying the dashboard, even with Observe off: the teacher
@@ -486,7 +514,7 @@ then from the name typed when the report was sent. A recording the coach has
 not yet linked to a teacher shows as "Teacher not named yet", never under the
 coach's own name.
 
-This needs migration `V2.8.0__observe_coach_assistant.sql`. The teacher pages
+This needs migration `V2.6.0__observe_coach_assistant.sql`. The teacher pages
 filter on `coaching_sessions.observation_type`, so run the migration before
 deploying this version of the dashboard.
 
