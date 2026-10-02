@@ -13,6 +13,10 @@ const { lazyClient } = require('../utils/lazy-client');
 // every R2 helper below calls getR2Client() at the moment the actual S3-API
 // command is sent. If R2 isn't configured, the upload throws a structured
 // "missing env" error that the caller can catch (or surface to the user).
+// R2_FORCE_PATH_STYLE=true addresses objects as <endpoint>/<bucket>/<key>,
+// which other S3-compatible stores (a local MinIO, most self-hosted ones)
+// require. Off by default: an R2 deployment sends what it always sent. (Read
+// from process.env: buildArgs only sees the required vars.)
 const getR2Client = lazyClient(S3Client, ['R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY'], (env) => ({
   region: 'auto',
   endpoint: env.R2_ENDPOINT,
@@ -20,6 +24,7 @@ const getR2Client = lazyClient(S3Client, ['R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2
     accessKeyId: env.R2_ACCESS_KEY_ID,
     secretAccessKey: env.R2_SECRET_ACCESS_KEY,
   },
+  ...(String(process.env.R2_FORCE_PATH_STYLE || '').toLowerCase() === 'true' ? { forcePathStyle: true } : {}),
 }));
 
 const BUCKET_NAME = process.env.R2_BUCKET_NAME;
