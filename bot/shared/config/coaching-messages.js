@@ -83,6 +83,9 @@ const COACHING_MESSAGES = {
   // ${} JS interpolation so this string can be translated 1:1).
   priorActionReminder: en('💡 *Quick reminder:* Last time, you committed to:\n\n_"{{action}}"_\n\nLet\'s see how it went in this session!'),
 
+  // Classroom-photo question: the teacher tapped "Yes" or "Add another"
+  photo_sendNow: en("📸 Send your classroom photo now."),
+
   // ── Lesson-plan fidelity (LP_FIDELITY_ENABLED) ──────────────────────
   // The lesson-plan step after a recording, when fidelity is on: a plan can
   // also be pasted as text.

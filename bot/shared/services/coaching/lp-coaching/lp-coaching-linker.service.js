@@ -44,9 +44,10 @@ function parseSelectionId(buttonId) {
  *
  * @param {string} coachingSessionId - Session UUID
  * @param {string} selectionId - Button/list row ID
+ * @param {{ownerUserId?: string}} [opts] - when given, only a plan belonging to this user can be linked
  * @returns {Promise<{linked_lesson_plan_id: string|null, lesson_plan_link_method: string, lesson_plan_content: object|null, awaiting_upload: boolean}>}
  */
-async function handleLPSelection(coachingSessionId, selectionId) {
+async function handleLPSelection(coachingSessionId, selectionId, opts = {}) {
   const { action, lpId } = parseSelectionId(selectionId);
 
   if (action === 'none') {
@@ -93,11 +94,13 @@ async function handleLPSelection(coachingSessionId, selectionId) {
 
   // action === 'select' — fetch the LP and link it
   try {
-    const { data: lp, error } = await supabase
+    let query = supabase
       .from('lesson_plans')
       .select('id, topic, grade, subject, content')
-      .eq('id', lpId)
-      .single();
+      .eq('id', lpId);
+    // A row id arrives from a chat reply; never link another teacher's plan.
+    if (opts.ownerUserId) query = query.eq('user_id', opts.ownerUserId);
+    const { data: lp, error } = await query.single();
 
     if (error || !lp) {
       logToFile('LP not found for linking', { lpId, error: error?.message });

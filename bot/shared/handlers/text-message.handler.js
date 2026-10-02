@@ -179,6 +179,19 @@ async function handleTextMessage(message, from, messageBody, user = null) {
   // NOTE: Funnel tracking (chat start) is handled centrally in whatsapp-bot.js
   // before routing to this handler
 
+  // ============================================================
+  // LESSON PLAN PASTED AS TEXT — while a coaching session waits for its plan
+  // (lesson-plan fidelity on), a long message is the plan, not chat.
+  // ============================================================
+  if (user && messageBody) {
+    try {
+      const { handlePastedLessonPlan } = require('../services/coaching/lp-coaching/lp-text-paste.service');
+      if (await handlePastedLessonPlan(user, from, messageBody)) return;
+    } catch (error) {
+      logToFile('⚠️ Pasted lesson plan check failed (non-fatal)', { error: error.message });
+    }
+  }
+
   // Get or create session for this user
   let sessionId = null;
   if (user) {

@@ -475,6 +475,11 @@ async function handleWebhookPost(req, res) {
       const buttonId = message.interactive.button_reply.id;
       logToFile('📱 Interactive button clicked', { buttonId, from });
 
+      // Classroom-photo question (photo_yes_/photo_no_/photo_more_/photo_done_):
+      // "No"/"Done" move the coaching session on to the lesson-plan step.
+      const { handleCoachingFlowButton } = require('./shared/services/coaching/coaching-flow-buttons');
+      if (await handleCoachingFlowButton(buttonId, from, user)) return;
+
       // Coaching confirmation buttons
       if (buttonId.startsWith('coaching_confirm_')) {
         const sessionId = buttonId.replace('coaching_confirm_', '');
@@ -1198,6 +1203,12 @@ async function handleWebhookPost(req, res) {
       if (listId.startsWith('vq_')) {
         const VideoQuizService = require('./shared/services/quiz/video-quiz.service');
         if (await VideoQuizService.handleAnswer(from, listId)) return;
+      }
+
+      // The lesson-plan picker of the coaching flow (lp_select_/lp_upload_/lp_none_).
+      if (/^lp_(select|upload|none)_/.test(listId)) {
+        const { handleLpListSelection } = require('./shared/services/coaching/lp-coaching/lp-list-selection.handler');
+        if (await handleLpListSelection(listId, from)) return;
       }
 
       // /quiz's class picker. QuizOrchestrator.initiateQuizRequest builds these

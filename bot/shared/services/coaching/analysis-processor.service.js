@@ -134,7 +134,7 @@ class AnalysisProcessorService {
           framework,
         ),
         GPT5MiniService.extractReflectiveCorpus(session.transcript_text, langCode),
-        isFidelityEnabled() ? computeFidelityForSession(session) : Promise.resolve(null),
+        isFidelityEnabled() ? computeFidelityForSession(session, { waitForPlan: true }) : Promise.resolve(null),
       ]);
       if (analysisSettled.status === 'rejected') throw analysisSettled.reason;
       const analysisResult = analysisSettled.value;
