@@ -392,6 +392,100 @@ describe('attach', () => {
   });
 });
 
+// A teacher who writes while the bot is restarting (a deploy, a crash) used to
+// get no answer: attach() dropped every event older than its own start time.
+// Now the adapter persists a marker of the last event it processed, in the
+// client's own storage (bot.json in MATRIX_STORAGE_DIR, next to the sync
+// token), and answers the backlog after it -- once.
+describe('messages sent while the bot was down', () => {
+  function sharedStorage() {
+    const values = new Map();
+    return {
+      values,
+      provider: {
+        readValue: jest.fn(async (key) => (values.has(key) ? values.get(key) : null)),
+        storeValue: jest.fn(async (key, value) => { values.set(key, value); }),
+      },
+    };
+  }
+
+  // One "process": a fresh adapter module attached to a client that shares
+  // `storage` with every other process in the test, like a restart would.
+  async function startBot(storage) {
+    jest.resetModules();
+    jest.doMock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn() }));
+    jest.doMock('../../bot/shared/services/messaging/pending-options', () => pendingOptionsMock());
+    jest.doMock('../../bot/shared/services/messaging/matrix-channel.service', () => ({ _cacheIncomingMedia: jest.fn() }));
+    const handlers = {};
+    const client = {
+      on: jest.fn((event, handler) => { handlers[event] = handler; }),
+      getUserId: jest.fn(async () => OWN_USER_ID),
+      storageProvider: storage.provider,
+    };
+    jest.doMock('../../bot/shared/services/messaging/matrix-connection', () => ({
+      getClient: jest.fn().mockResolvedValue(client),
+      getCachedUserId: jest.fn(() => OWN_USER_ID),
+    }));
+    jest.doMock('../../bot/shared/services/messaging/matrix-outbound-relay', () => ({ startOwner: jest.fn(() => true) }));
+    const dispatch = jest.fn().mockResolvedValue(undefined);
+    const fresh = require('../../bot/shared/services/messaging/inbound/matrix-events.adapter');
+    await fresh.attach(dispatch);
+    return { handlers, dispatch, adapter: fresh };
+  }
+
+  const text = (id, ts, body = 'hi') => ({
+    sender: '@+15550100001:example.org', event_id: id, origin_server_ts: ts, content: { msgtype: 'm.text', body },
+  });
+
+  it('answers a message that arrived while the bot was down, after the last one it processed', async () => {
+    const storage = sharedStorage();
+    const first = await startBot(storage);
+    await first.handlers['room.message']('!dm:x', text('$before', Date.now() - 60_000));
+    // That one predates this first-ever start, so it is history, not backlog.
+    expect(first.dispatch).not.toHaveBeenCalled();
+    await first.handlers['room.message']('!dm:x', text('$live', Date.now() + 10));
+    expect(first.dispatch).toHaveBeenCalledTimes(1);
+
+    const sentWhileDown = Date.now() + 20;
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    const second = await startBot(storage); // restart: started AFTER the teacher wrote
+    await second.handlers['room.message']('!dm:x', text('$while-down', sentWhileDown, 'are you there?'));
+    expect(second.dispatch).toHaveBeenCalledTimes(1);
+    expect(second.dispatch.mock.calls[0][0].body.entry[0].changes[0].value.messages[0])
+      .toEqual(expect.objectContaining({ id: '$while-down', text: { body: 'are you there?' } }));
+  });
+
+  it('never answers twice: an event processed before the restart and replayed after it is skipped', async () => {
+    const storage = sharedStorage();
+    const first = await startBot(storage);
+    const live = text('$answered', Date.now() + 10);
+    await first.handlers['room.message']('!dm:x', live);
+    expect(first.dispatch).toHaveBeenCalledTimes(1);
+
+    const second = await startBot(storage);
+    await second.handlers['room.message']('!dm:x', live); // the sync token lagged; the event comes again
+    expect(second.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('on a first-ever start (no marker yet), history from before the start is not answered', async () => {
+    const storage = sharedStorage();
+    const bot = await startBot(storage);
+    await bot.handlers['room.message']('!dm:x', text('$old', Date.now() - 3_600_000));
+    expect(bot.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('persists the marker in the client storage, and ignores its own echoes for it', async () => {
+    const storage = sharedStorage();
+    const bot = await startBot(storage);
+    const ts = Date.now() + 10;
+    await bot.handlers['room.message']('!dm:x', text('$m1', ts));
+    await bot.handlers['room.message']('!dm:x', { ...text('$echo', ts + 5), sender: OWN_USER_ID });
+    const marker = JSON.parse(storage.values.get(bot.adapter.INBOUND_MARKER_KEY));
+    expect(marker.lastTs).toBe(ts);
+    expect(marker.recentIds).toEqual(['$m1']);
+  });
+});
+
 describe('defaultWelcomeRoomAlias', () => {
   it('derives "#rumi-announcements:<server>" from the bot\'s own user id', () => {
     expect(adapter.defaultWelcomeRoomAlias('@rumi:example.org')).toBe('#rumi-announcements:example.org');

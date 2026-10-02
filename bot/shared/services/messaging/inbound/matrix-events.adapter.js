@@ -292,21 +292,20 @@ async function advanceActiveTextFlow(from, text) {
  * Maps a matrix-bot-sdk `room.message` event into Meta's message shape, or
  * null to skip. Skips the bot's own messages (echoes -- matrix-bot-sdk's own
  * sync includes every event in a room the bot is in, including ones it just
- * sent) and anything older than the adapter's own attach() time (a
- * SimpleFsStorageProvider-persisted sync token can replay a backlog on
- * restart; those events already got their chance to be handled by whichever
- * process was running when they first arrived).
+ * sent) and anything older than `cutoffTs`: the last event processed before
+ * a restart (see "Messages sent while the bot was down" below), or attach()
+ * time on a first-ever start.
  *
  * @param {string} roomId
  * @param {object} event the raw m.room.message event
  * @param {string} ownUserId the bot's own Matrix user id (unprefixed)
- * @param {number} startedAt Date.now() at attach() time, in ms
+ * @param {number} cutoffTs events older than this (ms) are skipped
  * @returns {Promise<object|null>}
  */
-async function mapMessageToMetaShape(roomId, event, ownUserId, startedAt) {
+async function mapMessageToMetaShape(roomId, event, ownUserId, cutoffTs) {
   if (!event || !event.sender || !event.content) return null;
   if (ownUserId && event.sender === ownUserId) return null;
-  if (typeof event.origin_server_ts === 'number' && event.origin_server_ts < startedAt) return null;
+  if (typeof event.origin_server_ts === 'number' && event.origin_server_ts < cutoffTs) return null;
 
   // Ground truth for "which room does a reply to this user go to" -- see
   // this file's "Reply-to-the-room-you-were-messaged-in" section header for
@@ -373,6 +372,48 @@ function isDuplicateDelivery(id) {
 /** Test-only: clears the seen-id dedup cache between test runs. */
 function _resetSeenIdsForTests() {
   seenIds.clear();
+}
+
+// ── Messages sent while the bot was down ─────────────────────────────────────
+// matrix-bot-sdk resumes /sync from its persisted token, so a restart DOES
+// deliver what teachers wrote while the bot was down. This adapter used to
+// drop all of it (anything older than attach() time), so a teacher who wrote
+// during a deploy never got an answer; on WhatsApp, Meta redelivers.
+//
+// Now a marker of the last processed event lives in the client's own storage
+// (bot.json in MATRIX_STORAGE_DIR, next to the sync token): its timestamp is
+// the cutoff after a restart, and its recent event ids make sure an event
+// that is replayed (the sync token is saved after a batch, so a crash can
+// replay one) is never answered twice. An event is recorded BEFORE it is
+// dispatched, so a crash mid-reply loses that one reply rather than sending
+// it twice. With no marker yet (a first start, or storage from before this
+// existed) history is not answered. Anything past 24 hours is still dropped
+// by handleWebhookPost's own message-age check.
+const INBOUND_MARKER_KEY = 'org.rumi.inbound.marker';
+const MARKER_RECENT_IDS = 200;
+
+async function readInboundMarker(storage) {
+  if (!storage || typeof storage.readValue !== 'function') return null;
+  try {
+    const raw = await storage.readValue(INBOUND_MARKER_KEY);
+    const marker = raw ? JSON.parse(raw) : null;
+    if (!marker || typeof marker.lastTs !== 'number') return null;
+    return { lastTs: marker.lastTs, recentIds: Array.isArray(marker.recentIds) ? marker.recentIds : [] };
+  } catch (error) {
+    logToFile('⚠️ Matrix inbound: could not read the last-processed marker -- answering only new messages', { error: error.message });
+    return null;
+  }
+}
+
+async function recordProcessed(storage, marker, event) {
+  marker.lastTs = Math.max(marker.lastTs || 0, event.origin_server_ts || 0);
+  marker.recentIds = [...marker.recentIds.filter((id) => id !== event.event_id), event.event_id].slice(-MARKER_RECENT_IDS);
+  if (!storage || typeof storage.storeValue !== 'function') return;
+  try {
+    await storage.storeValue(INBOUND_MARKER_KEY, JSON.stringify(marker));
+  } catch (error) {
+    logToFile('⚠️ Matrix inbound: could not save the last-processed marker', { error: error.message });
+  }
 }
 
 // ── Reply-to-the-room-you-were-messaged-in ───────────────────────────────────
@@ -929,6 +970,15 @@ async function attach(dispatch) {
   const client = await connection.getClient();
 
   const startedAt = Date.now();
+  const storage = client.storageProvider;
+  const saved = await readInboundMarker(storage);
+  const marker = saved || { lastTs: 0, recentIds: [] };
+  const cutoffTs = saved ? saved.lastTs : startedAt;
+  if (saved && saved.lastTs < startedAt) {
+    logToFile('Matrix inbound: answering messages sent since the last one processed', {
+      channel: 'matrix', since: new Date(saved.lastTs).toISOString(),
+    });
+  }
   let ownUserId = connection.getCachedUserId();
   if (!ownUserId) {
     try {
@@ -954,7 +1004,12 @@ async function attach(dispatch) {
         logToFile('⚠️ Matrix inbound: duplicate event delivery skipped', { eventId: event?.event_id });
         return;
       }
-      if (typeof event?.origin_server_ts === 'number' && event.origin_server_ts < startedAt) return;
+      if (typeof event?.origin_server_ts === 'number' && event.origin_server_ts < cutoffTs) return;
+      if (event?.event_id && marker.recentIds.includes(event.event_id)) {
+        logToFile('Matrix inbound: event already processed before a restart -- skipped', { eventId: event.event_id });
+        return;
+      }
+      if (event?.event_id && event.sender !== ownUserId) await recordProcessed(storage, marker, event);
 
       const gate = await gateGroupMessage(client, roomId, event, ownUserId, names);
       if (!gate.process) {
@@ -969,7 +1024,7 @@ async function attach(dispatch) {
           channel: 'matrix', roomId, eventId: event?.event_id, reason: gate.reason,
         });
       }
-      const metaMessage = await mapMessageToMetaShape(roomId, gate.event, ownUserId, startedAt);
+      const metaMessage = await mapMessageToMetaShape(roomId, gate.event, ownUserId, cutoffTs);
       if (!metaMessage) return;
 
       await dispatch(buildSyntheticRequest(metaMessage), buildSyntheticResponse());
@@ -1043,6 +1098,7 @@ module.exports = {
   toPrefixedIdentity,
   toPrefixedMediaId,
   isDuplicateDelivery,
+  INBOUND_MARKER_KEY,
   handleWelcomeRoomJoin,
   handleDmRoomJoin,
   defaultWelcomeRoomAlias,
