@@ -54,6 +54,22 @@ describe('observe roster CLI', () => {
     expect(o.lines.join('\n')).toMatch(/not a coach role/);
   });
 
+  test('the confirmation names the identity given — a Matrix/Slack person has no phone number to print', async () => {
+    const o = out();
+    expect(await Cli.main(['grant-coach', 'mtx:15550100004'], o)).toBe(0);
+    expect(await Cli.main(['grant-coach', 'slack:U0COACH', 'principal'], o)).toBe(0);
+    expect(await Cli.main(['add-school', 'mtx:15550100004', 'SCH-1', 'Hill School'], o)).toBe(0);
+    expect(await Cli.main(['add-teacher', 'discord:4242', 'SCH-1'], o)).toBe(0);
+    expect(await Cli.main(['list', 'slack:U0COACH'], o)).toBe(0);
+    expect(o.lines).toEqual(expect.arrayContaining([
+      '✓ mtx:15550100004 is a coach',
+      '✓ slack:U0COACH is a head_teacher',
+      '✓ discord:4242 is at Hill School (SCH-1)',
+      'slack:U0COACH (head_teacher)',
+    ]));
+    expect(o.lines.join('\n')).not.toMatch(/null/);
+  });
+
   test('someone who already messaged the bot on Matrix (user_channels only) is found, not duplicated', async () => {
     mockDb.tables.users.push({ id: 'mx-1', phone_number: null, role: null });
     mockDb.tables.user_channels.push({ user_id: 'mx-1', channel: 'matrix', channel_user_id: '1555400011' });

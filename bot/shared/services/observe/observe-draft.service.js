@@ -212,6 +212,14 @@ async function completeFromFlow(user, from, responseJson = {}) {
     logToFile('🚫 observe: form Flow reply ignored — edits not applied', { sessionId, status: session.status });
     return true;
   }
+  // A reply for a form whose loop already closed — the debrief happened or the
+  // report went — is a late redelivery (past the 24 h guard below): never
+  // acknowledge it again or re-offer a debrief that is done.
+  const delivery = (session.analysis_data || {}).teacher_delivery;
+  if ((session.debrief_status && session.debrief_status !== 'pending') || (delivery && delivery.status)) {
+    logToFile('🔁 observe: form Flow reply ignored — the debrief or report already followed', { sessionId });
+    return true;
+  }
   const claimed = await redisService.setNX(flowDoneKey(sessionId), '1', FLOW_DONE_TTL_S);
   if (!claimed) {
     logToFile('🔁 observe: form Flow reply already handled', { sessionId });

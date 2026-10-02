@@ -134,7 +134,7 @@ async function finish(user, to, lang, state) {
   const applied = await ObserveEdits.applyObserverEdits(state.sessionId, state.edits || {});
   await ObserveState.clearState(user.id);
   if (applied && applied.refused) {
-    await WhatsAppService.sendMessage(to, t(lang, 'flow_terminal_refused'));
+    await WhatsAppService.sendMessage(to, t(lang, applied.refused === 'terminal' ? 'flow_terminal_refused' : 'form_already_saved'));
     return true;
   }
   const changed = applied.indicators_rescored || 0;

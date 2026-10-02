@@ -114,6 +114,11 @@ async function tellCoachRefused(userId, sessionId, message) {
   }
 }
 
+/** The coach-facing reason a closed form will not open or submit. */
+function refusalMessage(lang, refusal) {
+  return t(lang, refusal === 'terminal' ? 'flow_terminal_refused' : 'flow_already_finished');
+}
+
 async function loadSessionFromToken(flowToken, action) {
   const [userId, sessionId] = String(flowToken || '').split(':');
   if (!userId || !sessionId) return { error: 'Invalid flow token' };
@@ -132,12 +137,17 @@ async function loadSessionFromToken(flowToken, action) {
   // A cancelled observation is not editable. The Flow is still sitting in the
   // coach's chat after a cancel; without this a stale form would submit,
   // promote the row, and start the report chain the coach cancelled.
-  if (isTerminalStatus(session.status)) {
-    const message = t(await coachLanguage(session), 'flow_terminal_refused');
+  // Nor is one whose ratings are already saved: the same stale form would
+  // re-score ratings the teacher may already hold and flip a completed
+  // observation back to observer_review_complete.
+  const refusal = isTerminalStatus(session.status) ? 'terminal'
+    : (session.status !== ObserveEdits.IN_REVIEW_STATUS ? 'not_in_review' : null);
+  if (refusal) {
+    const message = refusalMessage(await coachLanguage(session), refusal);
     const notified = await tellCoachRefused(userId, sessionId, message);
     // Logged on EVERY refusal (the notice is send-once, the count is not).
-    logToFile('🚫 observe-form: endpoint refused — the observation is over', {
-      sessionId, status: session.status, action, notified,
+    logToFile('🚫 observe-form: endpoint refused — the form is closed', {
+      sessionId, status: session.status, refusal, action, notified,
     });
     return { error: message };
   }
@@ -187,9 +197,10 @@ async function handleObserveFormRequest(decrypted) {
 
       const applied = await ObserveEdits.applyObserverEdits(sessionId, merged);
       if (applied && applied.refused) {
-        // Went terminal between the load above and the write. Never reach
-        // SUCCESS: its completion is what starts the debrief and report chain.
-        return errorResponse(t(await coachLanguage(session), 'flow_terminal_refused'));
+        // Cancelled, or saved by the other surface, between the load above and
+        // the write. Never reach SUCCESS: its completion is what starts the
+        // debrief and report chain.
+        return errorResponse(refusalMessage(await coachLanguage(session), applied.refused));
       }
       await redisService.delete(editsKey(sessionId));
       return {

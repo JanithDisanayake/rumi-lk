@@ -198,6 +198,32 @@ describe('processDebriefRecording — the happy path', () => {
   });
 });
 
+describe('processDebriefRecording — a deliver-only retry', () => {
+  test('the card send fails once: the retry sends the card, never the opening a second time', async () => {
+    seed();
+    WhatsAppService.sendImage.mockResolvedValueOnce(false);                       // card image fails…
+    WhatsAppService.sendMessage.mockResolvedValueOnce(true).mockResolvedValueOnce(false);   // …and so does the text card
+    await expect(ObserveDebrief.processDebriefRecording('obs-1', { from: '15550100001' })).rejects.toThrow(/send failed/);
+    expect(row().debrief_status).toBe('pending');
+    expect(row().analysis_data.observer_debrief.opening_sent_at).toBeTruthy();
+
+    await ObserveDebrief.processDebriefRecording('obs-1', { from: '15550100001' });   // the queue's retry
+    expect(sent().filter((m) => m === healthy().praise_line)).toHaveLength(1);
+    expect(WhatsAppService.sendImage).toHaveBeenCalledTimes(2);
+    expect(row().debrief_status).toBe('done');
+  });
+
+  test('a failed opening is not marked sent, so the retry sends it', async () => {
+    seed();
+    WhatsAppService.sendMessage.mockResolvedValueOnce(false);
+    await expect(ObserveDebrief.processDebriefRecording('obs-1', { from: '15550100001' })).rejects.toThrow(/send failed/);
+    expect(row().analysis_data.observer_debrief.opening_sent_at).toBeFalsy();
+    await ObserveDebrief.processDebriefRecording('obs-1', { from: '15550100001' });
+    expect(sent().filter((m) => m === healthy().praise_line)).toHaveLength(2);
+    expect(row().debrief_status).toBe('done');
+  });
+});
+
 describe('processDebriefRecording — validation and repair', () => {
   test('one guided repair: the validator error is fed back, the corrected answer is used', async () => {
     seed();

@@ -113,6 +113,18 @@ describe('completeFromFlow (the nfm_reply for a submitted form)', () => {
     expect(mockDebrief.offerDebriefChoice).not.toHaveBeenCalled();
   });
 
+  test('a reply for a form whose debrief already happened is not re-acknowledged or re-offered', async () => {
+    // The 24 h redelivery guard has expired; the row is still in
+    // observer_review_complete because the report has not gone yet.
+    seed({ debrief_status: 'done' });
+    expect(await ObserveDraft.completeFromFlow(COACH, FROM, reply())).toBe(true);
+    mockDb.tables.coaching_sessions.length = 0;
+    seed({ analysis_data: { domains: {}, teacher_delivery: { status: 'sent' } } });
+    expect(await ObserveDraft.completeFromFlow(COACH, FROM, reply())).toBe(true);
+    expect(WhatsAppService.sendMessage).not.toHaveBeenCalled();
+    expect(mockDebrief.offerDebriefChoice).not.toHaveBeenCalled();
+  });
+
   test('a token for another user is refused even when session_id matches', async () => {
     seed();
     await ObserveDraft.completeFromFlow(COACH, FROM, reply({ flow_token: 'coach-2:obs-1' }));

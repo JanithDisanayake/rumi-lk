@@ -223,7 +223,8 @@ async function main(argv = process.argv.slice(2), out = console) {
       case 'grant-coach': {
         if (!args[0]) break;
         const u = await grantCoach(args[0], args[1]);
-        out.log(`✓ ${u.phone_number} is a ${u.role}`);
+        // The identity as given: a Matrix/Slack/Discord person has no phone_number.
+        out.log(`✓ ${args[0]} is a ${u.role}`);
         return 0;
       }
       case 'add-school': {
@@ -235,7 +236,7 @@ async function main(argv = process.argv.slice(2), out = console) {
       case 'add-teacher': {
         if (args.length < 2) break;
         const { teacher, school } = await addTeacher(args[0], args[1], args.slice(2).join(' ') || null);
-        out.log(`✓ ${teacher.name || teacher.phone_number} is at ${school.name} (${school.ext_id})`);
+        out.log(`✓ ${teacher.name || args[0]} is at ${school.name} (${school.ext_id})`);
         return 0;
       }
       case 'import': {
@@ -248,7 +249,7 @@ async function main(argv = process.argv.slice(2), out = console) {
       case 'list': {
         if (!args[0]) break;
         const { coach, schools, teachers } = await listRoster(args[0]);
-        out.log(`${coach.name || coach.phone_number} (${coach.role || 'no role'})`);
+        out.log(`${coach.name || args[0]} (${coach.role || 'no role'})`);
         for (const s of schools) {
           out.log(`  ${s.name} [${s.ext_id || s.id}]`);
           for (const tc of teachers.filter((x) => x.school_id === s.id)) out.log(`    - ${tc.name} ${tc.phone || ''}`.trimEnd());

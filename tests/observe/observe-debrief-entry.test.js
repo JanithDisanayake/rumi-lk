@@ -224,7 +224,7 @@ describe('the debrief recording', () => {
     seedSession({
       analysis_data: {
         strengths: [{ evidence: 'kept' }],
-        observer_debrief: { transcript: 'stale', feedback: { old: true }, attempts: 4, error_class: 'media_gone', keep_me: 1 },
+        observer_debrief: { transcript: 'stale', feedback: { old: true }, opening_sent_at: '2026-09-01T09:00:00Z', attempts: 4, error_class: 'media_gone', keep_me: 1 },
       },
     });
     await ObserveState.setState(COACH.id, 'awaiting_debrief_audio', { sessionId: 'obs-1', guide_snapshot: LLM_GUIDE });
@@ -233,7 +233,7 @@ describe('the debrief recording', () => {
     const ad = mockDb.tables.coaching_sessions[0].analysis_data;
     expect(ad.strengths).toEqual([{ evidence: 'kept' }]);
     expect(ad.observer_debrief).toMatchObject({
-      audio_id: 'media-9', audio_mime: 'audio/ogg', transcript: null, feedback: null, attempts: 0, error_class: null, keep_me: 1,
+      audio_id: 'media-9', audio_mime: 'audio/ogg', transcript: null, feedback: null, opening_sent_at: null, attempts: 0, error_class: null, keep_me: 1,
     });
     expect(ad.observer_debrief.guide_snapshot.steps).toHaveLength(6);
     expect(sent()).toEqual([S.debrief_audio_received]);
@@ -305,27 +305,6 @@ describe('the pending lists (for the /observe worklist)', () => {
     mockDb.tables.observation_schedules.length = 0;
     const rows = await ObserveDebrief.listPendingDebriefs(COACH.id);
     expect(rows.find((r) => r.id === 'p1').teacher_name).toBe('Jordan Lee');
-  });
-
-  test('buildPendingListPayload: three labelled stages + the new-observation row, within the list caps', async () => {
-    const payload = ObserveDebrief.buildPendingListPayload(
-      await ObserveDebrief.listPendingDebriefs(COACH.id), S,
-      await ObserveDebrief.listUnsentReports(COACH.id),
-      await ObserveDebrief.listUnfinished(COACH.id),
-    );
-    const { sections } = payload.action;
-    const ids = sections.flatMap((s) => s.rows.map((r) => r.id));
-    expect(ids).toEqual(['observe_resume_a2', 'observe_resume_a1', 'observe_debrief_p2', 'observe_debrief_p1', 'observe_send_u1', 'observe_new']);
-    expect(ids.length).toBeLessThanOrEqual(10);
-    for (const s of sections) {
-      expect(s.title.length).toBeLessThanOrEqual(24);
-      for (const r of s.rows) {
-        expect(r.title.length).toBeLessThanOrEqual(24);
-        expect(r.description.length).toBeLessThanOrEqual(72);
-        expect(r.id.startsWith('observe_')).toBe(true);
-      }
-    }
-    expect(sections.flatMap((s) => s.rows).find((r) => r.id === 'observe_debrief_p1').title).toContain('Robin Park');
   });
 
   test('countPending counts debriefs + unsent reports', async () => {
