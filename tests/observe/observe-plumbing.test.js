@@ -58,3 +58,21 @@ describe('observe job types on the coaching job queue', () => {
     expect(mockQueue.queueCoachingJob).toHaveBeenCalledWith('s1', 'observe_teacher_report', { phase: 'deliver' });
   });
 });
+
+describe('analyzePedagogy with an observe pack', () => {
+  test('an observe framework asks the model for JSON mode (a malformed reply fails the whole observation)', async () => {
+    mockCreate.mockReset();
+    mockCreate.mockResolvedValue({ choices: [{ message: { content: '{"domains":{}}' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1 } });
+    const { getObservePack } = require('../../bot/shared/services/observe/observe-framework');
+    await GPT5MiniService.analyzePedagogy('T: Hello.', {}, null, getObservePack().module);
+    expect(mockCreate.mock.calls[0][0].response_format).toEqual({ type: 'json_object' });
+  });
+
+  test('a framework that does not opt in is sent exactly as before', async () => {
+    mockCreate.mockReset();
+    mockCreate.mockResolvedValue({ choices: [{ message: { content: '{"areas":{}}' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1 } });
+    const teach = require('../../bot/shared/services/coaching/frameworks/teach-framework');
+    await GPT5MiniService.analyzePedagogy('T: Hello.', {}, null, teach);
+    expect(mockCreate.mock.calls[0][0].response_format).toBeUndefined();
+  });
+});

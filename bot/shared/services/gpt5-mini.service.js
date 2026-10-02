@@ -360,7 +360,10 @@ CONVERSATIONAL FRAMEWORK: S.T.I.C.K.S. PRINCIPLES
         model: 'gpt-5-mini-2025-08-07',
         messages,
         // Note: GPT-5 mini only supports default temperature (1), custom values not allowed
-        max_completion_tokens: 16000
+        max_completion_tokens: 16000,
+        // A framework module may opt in to JSON mode (the observe packs do: one
+        // malformed reply would otherwise fail a coach's whole observation).
+        ...(useFrameworkModule && framework.jsonMode ? { response_format: { type: 'json_object' } } : {})
       });
 
       const duration = Date.now() - startTime;
