@@ -67,11 +67,15 @@ const PICK_PREFIX = 'observe_pickt_';
 const PREVIEW_ID_SEP = '.';
 const PREVIEW_ID_RE = /^[0-9a-f]{6,32}$/;
 const newPreviewId = () => crypto.randomBytes(6).toString('hex');
-// What a preview writes. Cleared whenever the recipient changes, so a package
-// rendered for one teacher can never be sent to another.
+// What a preview writes, and what the sweeps record about an earlier send.
+// Cleared whenever a new preview starts: a package rendered for one teacher
+// can never be sent to another, and a re-sent report (say, after an invite the
+// teacher never opened) is chased afresh rather than born given-up.
 const PACKAGE_RESET = Object.freeze({
   report_kind: null, report_key: null, report_path: null, report_text: null, caption: null,
   companion_text: null, notes: null, previewed_at: null, last_error: null, failed_at: null,
+  template_sent_at: null, nudged_at: null, nudge_count: 0, gave_up_at: null, gave_up_reason: null,
+  reminded_at: null, reminder_count: 0,
 });
 // The states a "Send now" may act on: the preview is showing, or the last
 // send failed and the coach is retrying it.

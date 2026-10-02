@@ -43,6 +43,7 @@ mockBotDependency('jsonrepair', () => ({ jsonrepair: (s) => s }));
 const WA = require('../../bot/shared/services/whatsapp.service');
 const Send = require('../../bot/shared/services/observe/observe-send.service');
 const Debrief = require('../../bot/shared/services/observe/observe-debrief.service');
+const { classifyUntappedDelivery } = require('../../bot/shared/services/observe/observe-untapped.service');
 
 const INVITE = {
   status: 'awaiting_teacher_tap', teacher_name: 'Sam Taylor', teacher_phone: '15554000002', teacher_user_id: 't-1',
@@ -81,4 +82,22 @@ test('an invite still waiting for the teacher is neither listed nor re-sent', as
   await Send.startSendFlow('obs-1', '15550100001', { id: 'coach-1', preferred_language: 'en' });
   expect(said()).toMatch(/No tap yet/);
   expect(mockQueued).toHaveLength(0);
+});
+
+test('the re-sent invite is a fresh invite: chased by the sweeps, not born given-up', async () => {
+  seed({ ...INVITE, nudged_at: '2026-09-22T10:00:00Z', nudge_count: 1, gave_up_at: '2026-09-25T10:00:00Z',
+    gave_up_reason: 'nudged_no_tap', reminded_at: '2026-09-21T10:00:00Z', reminder_count: 2 });
+  await Send.startSendFlow('obs-1', '15550100001', { id: 'coach-1', preferred_language: 'en' });
+  const fresh = mockDb.tables.coaching_sessions[0].analysis_data.teacher_delivery;
+  expect(fresh).toMatchObject({ nudged_at: null, nudge_count: 0, gave_up_at: null, gave_up_reason: null, reminded_at: null, reminder_count: 0 });
+
+  // the new invite goes out (what the deliver step writes when the window is closed)
+  const now = Date.now();
+  await Send.mergeTeacherDelivery('obs-1', { status: 'awaiting_teacher_tap', template_sent_at: new Date(now).toISOString() });
+  const d = mockDb.tables.coaching_sessions[0].analysis_data.teacher_delivery;
+  expect(classifyUntappedDelivery(d, now + 30 * 3600 * 1000).reason).not.toBe('already_gave_up');
+  expect(await Debrief.listUnsentReports('coach-1')).toEqual([]);
+  WA.sendMessage.mockClear();
+  await Send.startSendFlow('obs-1', '15550100001', { id: 'coach-1', preferred_language: 'en' });
+  expect(said()).toMatch(/No tap yet/);
 });
