@@ -14,6 +14,9 @@
  *   node bot/scripts/matrix-smoke.js
  *
  * Exit code 0 on a confirmed roundtrip, 1 on timeout/failure.
+ *
+ * It opens its own sync connection on the bot's token, so stop the bot first:
+ * two processes syncing on one device fight over its encryption keys.
  */
 
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
@@ -31,6 +34,8 @@ async function main() {
     process.exit(1);
   }
 
+  // This script is the connection owner for its run (the bot is stopped).
+  require('../shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess();
   const connection = require('../shared/services/messaging/matrix-connection');
   const matrixChannel = require('../shared/services/messaging/matrix-channel.service');
   const matrixEventsAdapter = require('../shared/services/messaging/inbound/matrix-events.adapter');

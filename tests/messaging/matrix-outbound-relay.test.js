@@ -179,13 +179,56 @@ describe('matrix-outbound-relay -- failures are reported the way the driver repo
 });
 
 describe('matrix-outbound-relay -- process roles', () => {
-  it('relay mode is off by default, on after useRelayForThisProcess(), and off again in the owner', () => {
+  // Relay is the default: only the bot owns the sync connection. A process
+  // that forgot to opt in (the stale-session cron, the brief worker, a
+  // script) used to open a second sync on the bot's device, and Synapse
+  // refused its key upload while its send still "resolved".
+  it('relay mode is ON by default, in any process that has not claimed the connection', () => {
     loadRelay();
+    expect(relay.isRelayMode()).toBe(true);
+  });
+
+  it('the bot claims the connection with ownConnectionInThisProcess(), which turns relay mode off', () => {
+    loadRelay();
+    relay.ownConnectionInThisProcess();
     expect(relay.isRelayMode()).toBe(false);
+  });
+
+  it('useRelayForThisProcess() still forces relay mode (the worker calls it explicitly), and the owner loop is never relayed', () => {
+    loadRelay();
+    relay.ownConnectionInThisProcess();
     relay.useRelayForThisProcess();
     expect(relay.isRelayMode()).toBe(true);
     relay.startOwner({});
     expect(relay.isRelayMode()).toBe(false);
+  });
+
+  it('a process that never opted in sends a Matrix message over the relay, without opening a client', async () => {
+    loadRelay();
+    const getClient = jest.fn();
+    jest.doMock('../../bot/shared/services/messaging/matrix-connection', () => ({ getClient, isE2eeActive: () => true }));
+    jest.doMock('../../bot/shared/storage/r2', () => ({ downloadFromR2: jest.fn(), extractKeyFromUrl: jest.fn() }));
+    // eslint-disable-next-line global-require
+    const driver = require('../../bot/shared/services/messaging/matrix-channel.service');
+    relay._setTimeoutForTests(50);
+    try {
+      await driver.sendMessage(TO, 'Your session is about to expire');
+      const queued = server.lists.get(relay.REQUEST_LIST) || [];
+      expect(queued.map((r) => JSON.parse(r).method)).toContain('sendMessage');
+      expect(getClient).not.toHaveBeenCalled();
+    } finally {
+      jest.dontMock('../../bot/shared/services/messaging/matrix-connection');
+      jest.dontMock('../../bot/shared/storage/r2');
+    }
+  });
+
+  it('the bot and the smoke script claim the connection before they connect', () => {
+    const read = (rel) => fs.readFileSync(path.join(__dirname, '../..', rel), 'utf8');
+    const bot = read('bot/whatsapp-bot.js');
+    const matrixEntry = bot.slice(bot.indexOf('  matrix: {'), bot.indexOf('close:', bot.indexOf('  matrix: {')));
+    expect(matrixEntry.indexOf('ownConnectionInThisProcess()')).toBeGreaterThan(-1);
+    expect(matrixEntry.indexOf('ownConnectionInThisProcess()')).toBeLessThan(matrixEntry.indexOf('.attach(dispatch)'));
+    expect(read('bot/scripts/matrix-smoke.js')).toMatch(/ownConnectionInThisProcess\(\)/);
   });
 
   it('matrix-connection refuses to open a sync connection in a relay-mode process', async () => {

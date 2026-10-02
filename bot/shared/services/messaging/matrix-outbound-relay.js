@@ -13,8 +13,10 @@
  * MATRIX_E2EE=on it can simply fail to start -- either way the teacher never
  * got the lesson plan the worker produced.
  *
- * So the worker never connects. It calls useRelayForThisProcess() at startup,
- * and from then on every Matrix driver method is shipped over Redis (the
+ * So only the bot connects. Relay mode is the DEFAULT: the bot claims the
+ * connection with ownConnectionInThisProcess() before it attaches its inbound
+ * listener, and every other process -- the worker, the stale-session cron, the
+ * brief worker, a one-off script -- ships every Matrix driver method over Redis (the
  * REDIS_URL the BullMQ queue driver already requires) to the ONE process that
  * owns the sync connection -- the bot, which calls startOwner() once its
  * inbound listener is attached. The owner runs the real driver method and
@@ -31,6 +33,11 @@
  * the call. A timeout or an unreachable Redis is reported the way the driver
  * itself reports a failed send (false / null, or a throw for the media
  * lookups whose contract is to throw), and logged -- never a silent hang.
+ *
+ * Why the default is relay rather than opt-in: a process that forgot to opt in
+ * used to open a second sync on the bot's device. Synapse then refused its
+ * one-time-key upload ("already exists") while its send still "resolved", and
+ * the two processes could corrupt each other's Olm/Megolm state.
  */
 
 const fs = require('fs');
@@ -54,6 +61,7 @@ function failureValue(method) {
 }
 
 let relayMode = false;
+let connectionOwner = false;
 let ownerStarted = false;
 let callerRedis = null;
 let stopOwner = null;
@@ -71,14 +79,23 @@ function newRedis() {
   return new IORedis(process.env.REDIS_URL, { maxRetriesPerRequest: null });
 }
 
-/** Called once by a process that must never open its own Matrix sync connection (the worker). */
+/** Called once by the one process that owns the Matrix sync connection (the bot), before it connects. */
+function ownConnectionInThisProcess() {
+  connectionOwner = true;
+}
+
+/**
+ * Forces relay mode even after a claim. Not needed any more (relay is the
+ * default), kept so the worker can say so explicitly at startup.
+ */
 function useRelayForThisProcess() {
   relayMode = true;
 }
 
 /** Whether driver calls in this process go over the relay instead of a local connection. */
 function isRelayMode() {
-  return relayMode && !ownerStarted;
+  if (ownerStarted) return false;
+  return relayMode || !connectionOwner;
 }
 
 // ── (De)serialisation ─────────────────────────────────────────────────────────
@@ -247,6 +264,7 @@ function close() {
 function _resetForTests() {
   close();
   relayMode = false;
+  connectionOwner = false;
   replyTimeoutMs = DEFAULT_TIMEOUT_MS;
 }
 
@@ -255,6 +273,7 @@ function _setTimeoutForTests(ms) {
 }
 
 module.exports = {
+  ownConnectionInThisProcess,
   useRelayForThisProcess,
   isRelayMode,
   call,

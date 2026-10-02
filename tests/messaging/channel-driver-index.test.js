@@ -118,6 +118,7 @@ describe('messaging channel driver selector', () => {
       isE2eeActive: jest.fn(() => false),
     }));
     try {
+      require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
       const idx = require('../../bot/shared/services/messaging');
       // sendMessage rejects (no real connection) rather than throwing
       // "is not a function" or silently hitting the Baileys driver instead,

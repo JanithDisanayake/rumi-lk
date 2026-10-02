@@ -92,6 +92,7 @@ describe('matrix-connection', () => {
   it('connects lazily: requiring the module does not call MatrixClient or start()', () => {
     const { MatrixClient, client } = mockMatrixSdk();
     mockCryptoAvailable();
+    require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
     require('../../bot/shared/services/messaging/matrix-connection');
     expect(MatrixClient).not.toHaveBeenCalled();
     expect(client.start).not.toHaveBeenCalled();
@@ -100,6 +101,7 @@ describe('matrix-connection', () => {
   it('getClient() resolves once start() resolves, with a working crypto provider when available', async () => {
     const { MatrixClient, client, RustSdkCryptoStorageProvider } = mockMatrixSdk();
     mockCryptoAvailable();
+    require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
     const conn = require('../../bot/shared/services/messaging/matrix-connection');
 
     const result = await conn.getClient();
@@ -118,6 +120,7 @@ describe('matrix-connection', () => {
     const { MatrixClient } = mockMatrixSdk();
     mockCryptoModuleAbsent();
     const logger = require('../../bot/shared/utils/logger');
+    require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
     const conn = require('../../bot/shared/services/messaging/matrix-connection');
 
     await conn.getClient();
@@ -133,6 +136,7 @@ describe('matrix-connection', () => {
     const { MatrixClient } = mockMatrixSdk();
     mockCryptoModuleBroken();
     const logger = require('../../bot/shared/utils/logger');
+    require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
     const conn = require('../../bot/shared/services/messaging/matrix-connection');
 
     await conn.getClient();
@@ -157,6 +161,7 @@ describe('matrix-connection', () => {
     mockMatrixSdk();
     mockCryptoModuleAbsent();
     process.env.MATRIX_E2EE = 'on';
+    require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
     const conn = require('../../bot/shared/services/messaging/matrix-connection');
 
     await expect(conn.getClient()).rejects.toThrow(/MATRIX_E2EE=on was explicitly set/);
@@ -167,6 +172,7 @@ describe('matrix-connection', () => {
     mockMatrixSdk();
     mockCryptoModuleBroken();
     process.env.MATRIX_E2EE = 'on';
+    require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
     const conn = require('../../bot/shared/services/messaging/matrix-connection');
 
     await expect(conn.getClient()).rejects.toThrow(/MATRIX_E2EE=on was explicitly set/);
@@ -178,6 +184,7 @@ describe('matrix-connection', () => {
     // No @matrix-org/matrix-sdk-crypto-nodejs mock at all -- if the code tried
     // to require it, this would blow up with a real MODULE_NOT_FOUND rather
     // than politely no-op, so an unhandled failure here IS the assertion.
+    require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
     const conn = require('../../bot/shared/services/messaging/matrix-connection');
 
     await conn.getClient();
@@ -188,6 +195,7 @@ describe('matrix-connection', () => {
   it('getClient() is memoized -- a second call reuses the same connection without reconnecting', async () => {
     const { MatrixClient } = mockMatrixSdk();
     mockCryptoAvailable();
+    require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
     const conn = require('../../bot/shared/services/messaging/matrix-connection');
 
     const first = await conn.getClient();
@@ -199,6 +207,7 @@ describe('matrix-connection', () => {
   it('auto-accepts a room invite by joining it', async () => {
     const { client } = mockMatrixSdk();
     mockCryptoAvailable();
+    require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
     const conn = require('../../bot/shared/services/messaging/matrix-connection');
 
     await conn.getClient();
@@ -219,6 +228,7 @@ describe('matrix-connection', () => {
     const { client } = mockMatrixSdk({ joinRoomImpl: async () => { throw joinError; } });
     mockCryptoAvailable();
     const logger = require('../../bot/shared/utils/logger');
+    require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
     const conn = require('../../bot/shared/services/messaging/matrix-connection');
 
     await conn.getClient();
@@ -242,6 +252,7 @@ describe('matrix-connection', () => {
     mockMatrixSdk();
     mockCryptoAvailable();
     delete process.env.MATRIX_HOMESERVER_URL;
+    require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
     const conn = require('../../bot/shared/services/messaging/matrix-connection');
 
     await expect(conn.getClient()).rejects.toThrow(/MATRIX_HOMESERVER_URL/);
@@ -251,6 +262,7 @@ describe('matrix-connection', () => {
     mockMatrixSdk();
     mockCryptoAvailable();
     delete process.env.MATRIX_ACCESS_TOKEN;
+    require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
     const conn = require('../../bot/shared/services/messaging/matrix-connection');
 
     await expect(conn.getClient()).rejects.toThrow(/MATRIX_ACCESS_TOKEN/);
@@ -259,6 +271,7 @@ describe('matrix-connection', () => {
   it('propagates a start() rejection (bad/revoked token) rather than hanging', async () => {
     const { client } = mockMatrixSdk({ startImpl: async () => { throw new Error('M_UNKNOWN_TOKEN'); } });
     mockCryptoAvailable();
+    require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
     const conn = require('../../bot/shared/services/messaging/matrix-connection');
 
     await expect(conn.getClient()).rejects.toThrow(/M_UNKNOWN_TOKEN/);
@@ -268,6 +281,7 @@ describe('matrix-connection', () => {
   it('resolves the own user id via whoami when MATRIX_USER_ID is not set', async () => {
     mockMatrixSdk({ getUserIdImpl: async () => '@rumi:example.org' });
     mockCryptoAvailable();
+    require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
     const conn = require('../../bot/shared/services/messaging/matrix-connection');
 
     await conn.getClient();
@@ -278,6 +292,7 @@ describe('matrix-connection', () => {
     const { client } = mockMatrixSdk();
     mockCryptoAvailable();
     process.env.MATRIX_USER_ID = '@configured:example.org';
+    require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
     const conn = require('../../bot/shared/services/messaging/matrix-connection');
 
     await conn.getClient();
@@ -288,6 +303,7 @@ describe('matrix-connection', () => {
   it('marks isConnected() true once started, false after close()', async () => {
     mockMatrixSdk();
     mockCryptoAvailable();
+    require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
     const conn = require('../../bot/shared/services/messaging/matrix-connection');
 
     expect(conn.isConnected()).toBe(false);
@@ -301,6 +317,7 @@ describe('matrix-connection', () => {
   it('close() calls client.stop() and lets a fresh getClient() reconnect afterward', async () => {
     const { MatrixClient, client } = mockMatrixSdk();
     mockCryptoAvailable();
+    require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
     const conn = require('../../bot/shared/services/messaging/matrix-connection');
 
     await conn.getClient();
@@ -314,6 +331,7 @@ describe('matrix-connection', () => {
   it('close() is safe when no connection was ever opened', async () => {
     mockMatrixSdk();
     mockCryptoAvailable();
+    require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
     const conn = require('../../bot/shared/services/messaging/matrix-connection');
     await expect(conn.close()).resolves.toBeUndefined();
   });
@@ -321,6 +339,7 @@ describe('matrix-connection', () => {
   it('events emitter fires "open" on connect and "close" on close()', async () => {
     mockMatrixSdk();
     mockCryptoAvailable();
+    require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
     const conn = require('../../bot/shared/services/messaging/matrix-connection');
 
     const opens = jest.fn();

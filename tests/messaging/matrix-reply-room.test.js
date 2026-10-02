@@ -48,10 +48,13 @@ function loadModules({ isJoinedToRoomImpl, dmRoomId = '!fallback-dm:example.org'
   }));
 
   // eslint-disable-next-line global-require
+  require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
   const service = require('../../bot/shared/services/messaging/matrix-channel.service');
   // eslint-disable-next-line global-require
+  require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
   const adapter = require('../../bot/shared/services/messaging/inbound/matrix-events.adapter');
   // eslint-disable-next-line global-require
+  require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
   const connection = require('../../bot/shared/services/messaging/matrix-connection');
 
   return { service, adapter, connection, client };
@@ -106,10 +109,12 @@ describe('reply-to-the-room-you-were-messaged-in', () => {
       _resolveDmRoomId: jest.fn().mockResolvedValue('!welcome-dm:example.org'),
     }));
     // eslint-disable-next-line global-require
+    require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
     const adapter = require('../../bot/shared/services/messaging/inbound/matrix-events.adapter');
     // eslint-disable-next-line global-require
     const { handleWelcomeRoomJoin } = adapter;
     // eslint-disable-next-line global-require
+    require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
     const matrixChannel = require('../../bot/shared/services/messaging/matrix-channel.service');
 
     const welcomeClient = {

@@ -1866,6 +1866,9 @@ const PERSISTENT_CONNECTION_DRIVERS = {
   matrix: {
     isActive: (env) => require('./shared/config/feature-availability').resolveActiveChannels(env).includes('matrix'),
     attachInbound: async (dispatch) => {
+      // This process owns the one sync connection; every other process sends
+      // through it over the relay (matrix-outbound-relay.js), by default.
+      require('./shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess();
       const matrixEventsAdapter = require('./shared/services/messaging/inbound/matrix-events.adapter');
       await matrixEventsAdapter.attach(dispatch);
     },

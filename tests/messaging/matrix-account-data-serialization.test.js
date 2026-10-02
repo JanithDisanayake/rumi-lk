@@ -29,7 +29,9 @@ jest.mock('../../bot/shared/services/messaging/matrix-channel.service', () => ({
 }));
 
 const { logToFile } = require('../../bot/shared/utils/logger');
+require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
 const connection = require('../../bot/shared/services/messaging/matrix-connection');
+require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
 const adapter = require('../../bot/shared/services/messaging/inbound/matrix-events.adapter');
 
 const wrapSetAccountDataSerialized = connection._wrapSetAccountDataSerialized;

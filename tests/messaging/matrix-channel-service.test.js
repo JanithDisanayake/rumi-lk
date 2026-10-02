@@ -50,6 +50,8 @@ function loadService({ sendMessageImpl, fetchImpl, dmRoomId = '!room:example.org
 
   if (fetchImpl) global.fetch = fetchImpl;
 
+  require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
+
   const service = require('../../bot/shared/services/messaging/matrix-channel.service');
   const logger = require('../../bot/shared/utils/logger');
   const pendingOptions = require('../../bot/shared/services/messaging/pending-options');
