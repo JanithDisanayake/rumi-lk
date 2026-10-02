@@ -13,15 +13,6 @@
  * picture renderer, the stores and the WhatsApp facade are the stand-ins.
  */
 
-// The lesson-quiz language helpers (transcript-quiz-language, adapted by the
-// authoring slice) still read the retired config/languages registry in this
-// tree. Until they move to config/quiz-languages, stand that registry in with
-// the same shape; once they have moved this virtual module is simply unused.
-jest.mock('../../bot/shared/config/languages', () => ({
-  LANGUAGE_OFFER: ['en', 'ur'],
-  getLanguage: (c) => jest.requireActual('../../bot/shared/config/quiz-languages').getLanguage(c),
-}), { virtual: true });
-
 const mockUpdates = [];
 jest.mock('../../bot/shared/config/supabase', () => ({
   from: jest.fn((table) => ({

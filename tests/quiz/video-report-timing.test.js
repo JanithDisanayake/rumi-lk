@@ -17,15 +17,6 @@
  * never answered, so the child-facing scaffolding is stripped.
  */
 
-// The lesson-quiz language helpers (transcript-quiz-language, adapted by the
-// authoring slice) still read the retired config/languages registry in this
-// tree. Until they move to config/quiz-languages, stand that registry in with
-// the same shape; once they have moved this virtual module is simply unused.
-jest.mock('../../bot/shared/config/languages', () => ({
-  LANGUAGE_OFFER: ['en', 'ur'],
-  getLanguage: (c) => jest.requireActual('../../bot/shared/config/quiz-languages').getLanguage(c),
-}), { virtual: true });
-
 jest.mock('../../bot/shared/config/supabase', () => ({ from: jest.fn() }));
 jest.mock('../../bot/shared/services/whatsapp.service', () => ({
   sendMessage: jest.fn().mockResolvedValue(true),

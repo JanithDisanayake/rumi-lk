@@ -819,11 +819,13 @@ async function sendClassCards({ shareCode, quizRow, done, reason, language, clas
   const already = new Set(((meta.class_cards || {})[shareCode.id]) || []);
   // The card goes to children, so it keeps the invite service's rule for what
   // crosses between children: a first name and a score, never a family name
-  // (video-quiz-invite.service.js header). 'top' mode below names only the top
-  // rows; the rest are a count, except the card's own child.
-  const { firstName } = require('./video-quiz-invite.service');
+  // (video-quiz-invite.service.js header, firstName). 'top' mode below names
+  // only the top rows; the rest are a count, except the card's own child. The
+  // one line is repeated here, not required: the invite service already
+  // requires this file through the share service.
+  const firstName = (full) => String(full || '').trim().split(/\s+/)[0] || '';
   const rows = finished.map((s) => ({
-    sessionId: s.id, studentId: s.student_id || null, name: firstName(s.student_name, ''),
+    sessionId: s.id, studentId: s.student_id || null, name: firstName(s.student_name),
     correct: s.correct_answers || 0, total: s.total_questions_answered || 0,
     pct: s.mastery_percentage || 0, completedAt: s.completed_at || null, phone: s.parent_phone || null,
   }));
