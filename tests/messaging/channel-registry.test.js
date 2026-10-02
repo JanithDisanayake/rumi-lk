@@ -79,4 +79,29 @@ describe('channel-registry', () => {
     expect(registry.driverForIdentifier('slack:mtx-not-a-real-user')).toBe('slack');
     expect(registry.driverForIdentifier('discord:mtx12345')).toBe('discord');
   });
+
+  describe('resolveChannelIdentity', () => {
+    it('is null for a bare WhatsApp phone number', () => {
+      expect(registry.resolveChannelIdentity('15550100001')).toBeNull();
+    });
+
+    it('strips exactly the canonical prefix, keeping a Matrix id\'s own colon', () => {
+      expect(registry.resolveChannelIdentity('slack:U0123ABC')).toEqual({ channel: 'slack', channelUserId: 'U0123ABC' });
+      expect(registry.resolveChannelIdentity('matrix:@teacher:example.org'))
+        .toEqual({ channel: 'matrix', channelUserId: '@teacher:example.org' });
+    });
+
+    it('strips an alias prefix (mtx:) by its own length, not the driver name\'s', () => {
+      // "mtx:" is 4 characters, "matrix:" is 7: slicing by the driver name
+      // would drop the first 3 digits of the phone number.
+      expect(registry.resolveChannelIdentity('mtx:15550100001'))
+        .toEqual({ channel: 'matrix', channelUserId: '15550100001' });
+    });
+
+    it('keeps two numbers that differ only in their first digits as two identities', () => {
+      const a = registry.resolveChannelIdentity('mtx:15550107777');
+      const b = registry.resolveChannelIdentity('mtx:25550107777');
+      expect(a.channelUserId).not.toBe(b.channelUserId);
+    });
+  });
 });

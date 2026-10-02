@@ -95,6 +95,30 @@ function driverForIdentifier(id) {
   return ALIAS_PREFIXES[prefix] || null;
 }
 
+// The map from additive-driver name -> the `channel` value
+// user_channels/getOrCreateUserByChannel expects (registry driver names are
+// per-implementation — meta/baileys both mean 'whatsapp' as an identity
+// family; slack/discord/matrix map 1:1).
+const CHANNEL_FAMILY = { slack: 'slack', discord: 'discord', matrix: 'matrix' };
+
+/**
+ * Resolves the (channel, channelUserId) pair for a `from` identifier, or null
+ * for a bare WhatsApp phone number — the one place identity resolution needs
+ * to know about additive channels at all; every other line of the inbound
+ * path already operates on the resolved `user`/`message`/`messageType`, never
+ * re-deriving identity from `from` itself.
+ */
+function resolveChannelIdentity(from) {
+  const driverName = driverForIdentifier(from);
+  if (!driverName) return null;
+  // Slice at the first colon, the same split driverForIdentifier made: the
+  // prefix on the wire can be an alias ("mtx:") shorter than the driver name,
+  // and slicing by the driver name's length would drop the first digits of a
+  // phone number, merging two teachers whose numbers differ only there.
+  const id = String(from);
+  return { channel: CHANNEL_FAMILY[driverName] || driverName, channelUserId: id.slice(id.indexOf(':') + 1) };
+}
+
 module.exports = {
   DRIVERS,
   DEFAULT_DRIVER,
@@ -104,4 +128,5 @@ module.exports = {
   isProductionTier,
   prefixFor,
   driverForIdentifier,
+  resolveChannelIdentity,
 };

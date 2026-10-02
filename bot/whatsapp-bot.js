@@ -35,26 +35,11 @@ const supabase = require('./shared/config/supabase');
 // Import Routes (Flow encryption endpoints)
 const flowEndpointRoutes = require('./shared/routes/flow-endpoint.routes');
 
-// The channel-registry map from additive-driver name -> the `channel` value
-// user_channels/getOrCreateUserByChannel expects (registry driver names are
-// per-implementation — meta/baileys both mean 'whatsapp' as an identity
-// family; slack/discord/matrix map 1:1). See driverForIdentity() below.
-const { driverForIdentifier } = require('./shared/services/messaging/channel-registry');
-const CHANNEL_FAMILY = { slack: 'slack', discord: 'discord', matrix: 'matrix' };
-
-/**
- * Resolves the (channel, channelUserId) pair for a `from` identifier, or null
- * for a bare WhatsApp phone number — the one place identity resolution needs
- * to know about additive channels at all; every other line below already
- * operates on the resolved `user`/`message`/`messageType`, never re-deriving
- * identity from `from` itself.
- */
-function resolveChannelIdentity(from) {
-  const driverName = driverForIdentifier(from);
-  if (!driverName) return null;
-  const prefix = `${driverName}:`; // CHANNEL_PREFIXES value happens to equal the driver name today
-  return { channel: CHANNEL_FAMILY[driverName] || driverName, channelUserId: String(from).slice(prefix.length) };
-}
+// Maps an additive-channel identifier ("slack:U…", "mtx:1555…") to the
+// (channel, channelUserId) pair user_channels expects, or null for a bare
+// WhatsApp phone number. Lives in channel-registry so it can be unit-tested
+// without booting this file.
+const { resolveChannelIdentity } = require('./shared/services/messaging/channel-registry');
 
 // Create Express app
 const app = express();
