@@ -37,6 +37,7 @@ const WHEN_OFF = {
   morning_brief: 'The daily programme-health message stops being sent.',
   channel_slack: 'Teachers can no longer reach Rumi in Slack. WhatsApp is unaffected.',
   channel_discord: 'Teachers can no longer reach Rumi in Discord. WhatsApp is unaffected.',
+  channel_matrix: 'Teachers can no longer reach Rumi on your Matrix messenger. WhatsApp is unaffected.',
 };
 
 /** Human titles, borrowed from the wizard where it has one. */

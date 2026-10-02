@@ -102,6 +102,7 @@ const EXTRA_GROUP = {
   KIE_API_KEY: 'documents',
   SLACK_BOT_TOKEN: 'channels',
   DISCORD_BOT_TOKEN: 'channels',
+  MATRIX_HOMESERVER_URL: 'channels',
   AXIOM_TOKEN: 'advanced',
 };
 
@@ -130,6 +131,20 @@ const EXTRA_ABILITIES = [
     where: 'axiom.co → Datasets, then Settings → API tokens',
   },
 ];
+
+/**
+ * How each additive channel's card reads. A channel missing here still gets a
+ * card, titled with its registry name, so adding a driver never needs this
+ * file to change for it to show up.
+ */
+const CHANNEL_CARDS = {
+  slack: { title: 'Slack', where: 'api.slack.com/apps' },
+  discord: { title: 'Discord', where: 'discord.com/developers/applications' },
+  matrix: {
+    title: 'Matrix',
+    where: 'your own homeserver (see docs/channels/matrix.md, or the rumi-messenger repo to run one)',
+  },
+};
 
 /**
  * Which feature (if any) a key switches on, so a row can say what turning it on
@@ -229,10 +244,11 @@ function buildCatalog(env = process.env) {
       seen.add(key);
       return buildRow(key, env, { feature: byKey.get(key) ? byKey.get(key).name : null });
     });
+    const card = CHANNEL_CARDS[name] || { title: name, where: null };
     groups.get('channels').abilities.push({
-      title: name === 'slack' ? 'Slack' : 'Discord',
-      why: `Teachers can talk to Rumi in ${name === 'slack' ? 'Slack' : 'Discord'} as well as WhatsApp.`,
-      where: name === 'slack' ? 'api.slack.com/apps' : 'discord.com/developers/applications',
+      title: card.title,
+      why: `Teachers can talk to Rumi in ${card.title} as well as WhatsApp.`,
+      where: card.where,
       keys,
       rows,
       on: rows.every((r) => r.set),
