@@ -43,7 +43,8 @@ refuse_foreign_state_dir
 
 find_pg_bin || die "Postgres binaries (initdb, pg_ctl, psql) were not found.
   macOS:  brew install postgresql@17
-  Debian/Ubuntu: sudo apt install postgresql-17   (binaries land in /usr/lib/postgresql/17/bin)
+  Debian/Ubuntu: sudo apt install postgresql-17   (binaries land in /usr/lib/postgresql/17/bin;
+                 needs Debian 13 / Ubuntu 25.04+, or the apt.postgresql.org repository on older releases)
   Or set PG_BIN=/path/to/postgres/bin"
 PG_MAJOR="$("$PG_BIN_DIR/pg_ctl" --version | sed 's/[^0-9]*\([0-9][0-9]*\).*/\1/')"
 say "    Postgres: $PG_BIN_DIR (major version $PG_MAJOR)"

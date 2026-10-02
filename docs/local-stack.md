@@ -24,6 +24,11 @@ database trusts every local connection, and only part of Supabase is emulated (s
 | Redis | `brew install redis` | `sudo apt install redis-server` |
 | pgvector (optional) | `brew install pgvector` | `sudo apt install postgresql-17-pgvector` |
 
+On Debian / Ubuntu, `postgresql-17` is in the standard repositories from Debian 13 and Ubuntu 25.04.
+On older releases, add the PostgreSQL project's own apt repository first
+([apt.postgresql.org](https://wiki.postgresql.org/wiki/Apt)), or the install fails with "unable to
+locate package".
+
 **PostgREST** is one static file. If your package manager does not have it, download the archive for
 your system from [the PostgREST releases page](https://github.com/PostgREST/postgrest/releases)
 (for example `postgrest-v12.2.3-linux-static-x86-64.tar.xz`), unpack it, and either put `postgrest` on
@@ -68,7 +73,7 @@ yet), replacing any existing lines with the same names. Then add the rest of wha
 `rumi setup` wizard can fill those in too; when it asks about the database, keep the values above.
 
 Running `up.sh` again is safe. Whatever is already running is left alone, the schema is applied only
-once, and you get the same four lines again. The key is printed fresh each time, but every key it has
+once, and you get the same block of `.env` lines again. The key is printed fresh each time, but every key it has
 printed keeps working until you wipe the stack.
 
 ### Check it
@@ -171,6 +176,12 @@ Supabase CLI's API and database (54321, 54322). If you change a port after the s
   this is enough for the bot and the worker today.
 - **Not for production.** Postgres accepts any connection on its socket without a password, nothing
   is backed up, and Redis keeps nothing across restarts.
+- **The service key is as powerful as your user account.** `exec_sql` runs as the `postgres` role,
+  which is a real superuser in the local database, so whoever holds `SUPABASE_SERVICE_ROLE_KEY` can
+  run any command on your machine as you (for example through `COPY ... TO PROGRAM`). Everything
+  listens on 127.0.0.1 only, so this is fine on your own laptop, but do not share the key or expose
+  the ports. `up.sh` prints the key on every run, so it also ends up in your terminal scrollback and
+  in the log of any CI job that runs `up.sh`.
 - **pgvector is optional.** If it is installed, `up.sh` uses it. If not, the one `vector` column is
   created with a stand-in type (an array of numbers) and `up.sh` comments out the
   `CREATE EXTENSION "vector"` line of the schema for you. Everything works except similarity search
