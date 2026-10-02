@@ -8,6 +8,7 @@
  * if they had never been observed.
  */
 const { createFakeSupabase } = require('../observe/_helpers/fake-supabase');
+const { mockBotDependency } = require('../_helpers/mock-bot-dependency');
 
 const OBSERVATION = {
   id: 'obs-1', user_id: 't-1', observer_user_id: 'coach-1', observation_type: 'leader_observation',
@@ -30,6 +31,9 @@ const mockRendered = [];
 jest.mock('../../bot/shared/services/pdf-report.service', () => ({
   generateClassroomObservationReport: jest.fn(async (reportData) => { mockRendered.push(reportData); return Buffer.from('pdf'); }),
 }));
+
+// bot-only packages: the root CI job runs before bot/node_modules installs
+mockBotDependency('jsonrepair', () => ({ jsonrepair: (s) => s }));
 
 const ReportGenerator = require('../../bot/shared/services/coaching/report-generator.service');
 const GPT5MiniService = require('../../bot/shared/services/gpt5-mini.service');

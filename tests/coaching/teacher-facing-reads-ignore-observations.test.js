@@ -8,6 +8,7 @@
  * "is the teacher busy". Each read runs for real against the fake database.
  */
 const { createFakeSupabase } = require('../observe/_helpers/fake-supabase');
+const { mockBotDependency } = require('../_helpers/mock-bot-dependency');
 
 const recent = (minsAgo) => new Date(Date.now() - minsAgo * 60 * 1000).toISOString();
 const observation = (over = {}) => ({
@@ -33,6 +34,9 @@ jest.mock('../../bot/shared/services/whatsapp.service', () => ({
   sendMessage: jest.fn(async () => true), sendInteractiveButtons: jest.fn(async () => true),
 }));
 jest.mock('../../bot/shared/services/coaching/coaching-job-queue.service', () => ({ queueReport: jest.fn(async () => 'm') }));
+
+// bot-only packages: the root CI job runs before bot/node_modules installs
+mockBotDependency('uuid', () => ({ v4: () => '00000000-0000-4000-8000-000000000000' }));
 
 const WhatsAppService = require('../../bot/shared/services/whatsapp.service');
 const ContextService = require('../../bot/shared/services/context.service');
