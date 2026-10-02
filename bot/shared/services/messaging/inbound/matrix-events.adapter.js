@@ -378,8 +378,8 @@ function _resetSeenIdsForTests() {
 // replay one) is never answered twice. An event is recorded BEFORE it is
 // dispatched, so a crash mid-reply loses that one reply rather than sending
 // it twice. With no marker yet (a first start, or storage from before this
-// existed) history is not answered. Anything past 24 hours is still dropped
-// by handleWebhookPost's own message-age check.
+// existed) history is not answered. Anything older than 23 hours is still
+// dropped by handleWebhookPost's own message-age check (MESSAGE_MAX_AGE).
 const INBOUND_MARKER_KEY = 'org.rumi.inbound.marker';
 const MARKER_RECENT_IDS = 200;
 
