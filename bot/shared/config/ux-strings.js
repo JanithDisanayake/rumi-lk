@@ -1145,8 +1145,8 @@ const UX_STRINGS = {
     ur: '‏ایک سے زیادہ جواب درست ہیں۔ ہر درست جواب کا حرف لکھ کر بھیجیں، مثلاً: A C',
   },
   vqMultiTypeReask: {
-    en: 'Please reply with every right letter from {letters}, for example: A C',
-    ur: '‏براہِ کرم {letters} میں سے ہر درست جواب کا حرف لکھ کر بھیجیں، مثلاً: A C',
+    en: 'Please reply with every right letter from {letters}, for example: A C. To end the quiz, reply STOP.',
+    ur: '‏براہِ کرم {letters} میں سے ہر درست جواب کا حرف لکھ کر بھیجیں، مثلاً: A C۔ quiz ختم کرنے کے لیے STOP لکھیں۔',
   },
   vqMultiWrong: {
     en: 'Not quite — the full answer is {right}.',
@@ -1277,8 +1277,8 @@ const UX_STRINGS = {
     ur: '‏جواب میں {letters} لکھ کر بھیجیں۔',
   },
   vqTypedReask: {
-    en: 'Please reply with just one letter: {letters}.',
-    ur: '‏براہِ کرم صرف ایک حرف لکھ کر بھیجیں: {letters}۔',
+    en: 'Please reply with just one letter: {letters}. To end the quiz, reply STOP.',
+    ur: '‏براہِ کرم صرف ایک حرف لکھ کر بھیجیں: {letters}۔ quiz ختم کرنے کے لیے STOP لکھیں۔',
   },
   vqWelcomeBack: {
     en: 'Good to see you again, {name} — let’s begin!',

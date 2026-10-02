@@ -1421,11 +1421,22 @@ async function stopTyped(phone, text) {
  * exact set equality in handleMultiAnswer (a partial set is wrong, and the
  * verdict says what was missed).
  *
- * Anything else typed while a question waits — a letter the question does not
- * offer, a set on a one-answer question, "banana" — is a reply to the question
- * that cannot be graded: the child is asked again and nothing is counted. Not
- * ours (false, the message goes on): no question waiting on this phone, STOP
- * (stopTyped), a slash command, a share code.
+ * A reply that IS a letter / number list but cannot be graded — a letter the
+ * question does not offer, a set on a one-answer question — is asked again
+ * (the re-ask names STOP) and nothing is counted.
+ *
+ * Not ours (false, the message goes on to the handler exactly as before this
+ * step existed):
+ *   - the lesson quiz is off (TRANSCRIPT_QUIZ_ENABLED, RUMI_FEATURE_LESSON_QUIZ);
+ *   - the waiting question is not a LESSON quiz's (transcript, lesson plan,
+ *     topic). A v1.2.0 video quiz is answered by taps; on main free text during
+ *     one went on to chat, and a bare "1" meant for another menu must not be
+ *     graded as A;
+ *   - anything that is not a strict letter / number / letter set ("yes",
+ *     "banana", a sentence) — it is chat, not an answer;
+ *   - a join step pending on this phone (a sibling answering "who is taking
+ *     it?" with "2" — consumeJoinReply owns that reply);
+ *   - no question waiting, STOP (stopTyped), a slash command, a share code.
  *
  * @returns {Promise<boolean>} true when the reply was taken (graded or re-asked)
  */
@@ -1469,11 +1480,52 @@ async function reaskTyped(phone, state, count, { multi }) {
   return true;
 }
 
+// The join's pending step (name / class / which sibling) — the same key as
+// video-quiz-share.service JOIN_KEY. Read here, not required from there: the
+// share service requires this file.
+const JOIN_PENDING_KEY = (phone) => `videoquiz:${stripPlus(phone)}:join`;
+
+/** Is the lesson quiz on? Asked of the offer service, which owns the flag. */
+function lessonQuizOn() {
+  try {
+    return require('./transcript-quiz-offer.service').enabled() === true;
+  } catch (err) {
+    logToFile('❌ video-quiz: the lesson-quiz flag could not be read — typed answers stay off', { error: err.message }, 'error');
+    return false;
+  }
+}
+
+/**
+ * Does this running quiz belong to a lesson quiz? startSession carries the
+ * stream on the state (quizSource); a state written without it (v1.2.0's
+ * shape, or a failed read at start) is classified by its quiz row.
+ */
+async function isLessonQuizState(state) {
+  const { isLessonQuiz } = require('./quiz-sources');
+  if (state.quizSource) return isLessonQuiz(state.quizSource);
+  if (!state.quizId) return false;
+  try {
+    const { data, error } = await supabase.from('quizzes').select('quiz_source').eq('id', state.quizId).maybeSingle();
+    if (error) throw new Error(error.message);
+    return isLessonQuiz(data && data.quiz_source);
+  } catch (err) {
+    logToFile('⚠️ video-quiz: typed letter — quiz stream unreadable, not taken', { quizId: state.quizId, error: err.message });
+    return false;
+  }
+}
+
 async function answerTypedLetter(phone, text) {
   const raw = String(text || '').trim();
   if (!raw || raw.startsWith('/') || STOP_RX.test(raw) || SHARE_CODE_RX.test(raw)) return false;
+  if (!lessonQuizOn()) return false;
+  // Only a strict letter / number / letter set is ever an answer; anything
+  // else is chat and goes on.
+  const positions = typedPositions(raw);
+  if (!positions || !positions.length) return false;
   const state = await redisService.get(STATE_KEY(phone));
   if (!state || !state.currentQuestionId) return false;
+  if (await redisService.get(JOIN_PENDING_KEY(phone))) return false;
+  if (!(await isLessonQuizState(state))) return false;
 
   const { data: q, error } = await supabase
     .from('quiz_questions')
@@ -1492,9 +1544,7 @@ async function answerTypedLetter(phone, text) {
   if (!picker || !Array.isArray(picker.options)) return false;
   const shown = picker.options.length;
   const multi = picker.kind === 'multiflow';
-  const positions = typedPositions(raw);
-  const valid = positions && positions.length > 0
-    && positions.every((p) => p >= 0 && p < shown)
+  const valid = positions.every((p) => p >= 0 && p < shown)
     && (multi || positions.length === 1);
   if (!valid) return reaskTyped(phone, state, shown, { multi });
 

@@ -10,8 +10,10 @@
  *     question waiting on this phone, as the option the child saw under it;
  *   - a SET answers a select-all question, scored by exact set equality — a
  *     partial set is wrong and the reply says what was missed;
- *   - an invalid reply (a letter the question does not offer, "banana", a set
- *     on a single-answer question) re-asks and counts nothing;
+ *   - a letter / set that cannot be graded (a letter the question does not
+ *     offer, a set on a single-answer question) re-asks and counts nothing;
+ *   - anything that is not a letter / number / set ("banana") is not an answer:
+ *     false, and the message goes on to chat;
  *   - on a typing channel each question is sent as lettered text, never as
  *     buttons, and a select-all question is "reply with every right letter"
  *     on every channel (no Meta Flow).
@@ -92,16 +94,21 @@ function reset({ current, questionIds = ['q-single', 'q-multi', 'q-spare'], phon
 
 let vq;
 let savedDriver;
+let savedFlag;
 beforeEach(() => {
   jest.resetModules();
   jest.useFakeTimers();
   savedDriver = process.env.CHANNEL_DRIVER;
+  savedFlag = process.env.TRANSCRIPT_QUIZ_ENABLED;
   process.env.CHANNEL_DRIVER = 'baileys';
+  // Typed answers are a lesson-quiz feature: they are read only with it on.
+  process.env.TRANSCRIPT_QUIZ_ENABLED = 'true';
   vq = require('../../bot/shared/services/quiz/video-quiz.service');
 });
 afterEach(() => {
   jest.useRealTimers();
   if (savedDriver === undefined) delete process.env.CHANNEL_DRIVER; else process.env.CHANNEL_DRIVER = savedDriver;
+  if (savedFlag === undefined) delete process.env.TRANSCRIPT_QUIZ_ENABLED; else process.env.TRANSCRIPT_QUIZ_ENABLED = savedFlag;
 });
 
 /** Run a service call to completion through its sleeps (answer pause, send gaps). */
@@ -141,12 +148,12 @@ describe('a single-answer question answered by a typed letter', () => {
     expect(texts().join('\n')).toMatch(/A, B or C/);
   });
 
-  test('"banana" re-asks and counts nothing', async () => {
+  test('"banana" is not an answer: false (on to chat), nothing sent, nothing counted', async () => {
     reset({ current: 'q-single' });
     const took = await settle(vq.answerTypedLetter(PHONE, 'banana'));
-    expect(took).toBe(true);
+    expect(took).toBe(false);
     expect(answers()).toEqual([]);
-    expect(texts().join('\n')).toMatch(/A, B or C/);
+    expect(texts()).toEqual([]);
   });
 
   test('a set on a single-answer question re-asks', async () => {
