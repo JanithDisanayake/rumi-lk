@@ -58,19 +58,23 @@ async function identitiesForUsers(userIds) {
   const out = new Map();
   if (!ids.length) return out;
   try {
-    const { data: users } = await supabase.from('users').select('id, phone_number').in('id', ids);
-    for (const u of users || []) if (u.phone_number) out.set(u.id, u.phone_number);
+    // Where they last talked wins: someone on two channels is reached on the
+    // one they use, not on a phone number merely because one is on file.
+    const { data: links } = await supabase
+      .from('user_channels')
+      .select('user_id, channel, channel_user_id, last_message_at')
+      .in('user_id', ids);
+    for (const link of (links || []).slice().sort(newestFirst)) {
+      if (out.has(link.user_id)) continue;
+      const wire = wireIdentity(link.channel, link.channel_user_id);
+      if (wire) out.set(link.user_id, wire);
+    }
+    // A WhatsApp-only row written before user_channels existed has no link: its
+    // phone number is the address.
     const rest = ids.filter((id) => !out.has(id));
     if (rest.length) {
-      const { data: links } = await supabase
-        .from('user_channels')
-        .select('user_id, channel, channel_user_id, last_message_at')
-        .in('user_id', rest);
-      for (const link of (links || []).slice().sort(newestFirst)) {
-        if (out.has(link.user_id)) continue;
-        const wire = wireIdentity(link.channel, link.channel_user_id);
-        if (wire) out.set(link.user_id, wire);
-      }
+      const { data: users } = await supabase.from('users').select('id, phone_number').in('id', rest);
+      for (const u of users || []) if (u.phone_number) out.set(u.id, u.phone_number);
     }
   } catch (err) {
     logToFile('⚠️ observe-identity: lookup failed', { count: ids.length, error: err.message });

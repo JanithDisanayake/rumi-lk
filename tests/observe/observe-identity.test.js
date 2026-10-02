@@ -15,12 +15,15 @@ const mockDb = createFakeSupabase({
     { id: 'mx-2', phone_number: null },
     { id: 'sl-1', phone_number: null },
     { id: 'none', phone_number: null },
+    { id: 'both', phone_number: '15550100077' },
   ],
   user_channels: [
     { user_id: 'mx-1', channel: 'matrix', channel_user_id: '1555400001', last_message_at: '2026-10-02T10:00:00Z' },
     { user_id: 'mx-2', channel: 'matrix', channel_user_id: '@robin:example.org', last_message_at: '2026-10-02T10:00:00Z' },
     { user_id: 'sl-1', channel: 'matrix', channel_user_id: '1555400099', last_message_at: '2026-09-01T10:00:00Z' },
     { user_id: 'sl-1', channel: 'slack', channel_user_id: 'U0123', last_message_at: '2026-10-01T10:00:00Z' },
+    { user_id: 'both', channel: 'whatsapp', channel_user_id: '15550100077', last_message_at: '2026-09-01T10:00:00Z' },
+    { user_id: 'both', channel: 'matrix', channel_user_id: '1555400077', last_message_at: '2026-10-02T09:00:00Z' },
   ],
 });
 jest.mock('../../bot/shared/config/supabase', () => mockDb.client);
@@ -37,12 +40,15 @@ describe('observe-identity', () => {
     expect(Identity.wireIdentity('discord', '9182')).toBe('discord:9182');
   });
 
-  test('identityForUser: the phone number when there is one, else the most recent channel', async () => {
+  test('identityForUser: the channel they last used, else the phone number on file', async () => {
     expect(await Identity.identityForUser('wa-1')).toBe('15550100009');
     expect(await Identity.identityForUser('mx-1')).toBe('mtx:1555400001');
     expect(await Identity.identityForUser('mx-2')).toBe('matrix:@robin:example.org');
     expect(await Identity.identityForUser('sl-1')).toBe('slack:U0123');
     expect(await Identity.identityForUser('none')).toBeNull();
+    // Someone on two channels is reached where they last talked, not on the
+    // phone number just because one is on file.
+    expect(await Identity.identityForUser('both')).toBe('mtx:1555400077');
     expect(await Identity.identityForUser(null)).toBeNull();
   });
 
