@@ -70,7 +70,8 @@ describe('local development is unchanged', () => {
 describe('no page hardcodes the dev API host', () => {
   // Every portal request must go through getApiBaseUrl(); a page that builds
   // its own `http://localhost:4000` reaches a machine the teacher doesn't have
-  // as soon as it runs inside the app.
+  // as soon as it runs inside the app. src/lib/ is exempt: it is the one place
+  // that decides (app-target.cjs).
   const fs = require('fs');
   const path = require('path');
   const SRC = path.join(__dirname, '../../portal/src');
@@ -78,7 +79,7 @@ describe('no page hardcodes the dev API host', () => {
   (function walk(dir) {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
       const p = path.join(dir, e.name);
-      if (e.isDirectory()) walk(p);
+      if (e.isDirectory()) { if (p !== path.join(SRC, 'lib')) walk(p); }
       else if (/\.(ts|tsx)$/.test(e.name) && !/\.test\.tsx?$/.test(e.name)) files.push(p);
     }
   })(SRC);

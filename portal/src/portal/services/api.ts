@@ -1,13 +1,14 @@
 import axios from 'axios';
+import { getApiBaseUrl } from '@/lib/runtime';
 import type { User, DashboardStats, LessonPlan, CoachingSession, SessionDetail, CoachingAnalytics, Pagination, VideoRequest, VideoDetail } from '../types/portal';
 import type { ReadingAssessment, ReadingAssessmentDetail, ReadingStats } from '../types/readingAssessment';
 
-// Use relative URL since frontend and backend are on same domain
-// This fixes mobile cookie blocking issues - no more CORS, no more third-party cookies!
-// GitHub Actions auto-deploy workflow active - edits in Lovable deploy automatically!
-const API_BASE_URL = import.meta.env.PROD
-  ? '/api/portal' // Relative URL for production (same domain)
-  : 'http://localhost:4000/api/portal'; // Absolute URL for local development
+// On the web, frontend and backend share a domain, so a relative URL avoids
+// CORS and third-party cookies entirely. In the Capacitor app there is no
+// such origin — the WebView serves from localhost — so an absolute URL
+// (VITE_API_BASE_URL) is required. getApiBaseUrl() picks the right one and
+// fails loudly if a native build is missing its config.
+const API_BASE_URL = getApiBaseUrl();
 
 const api = axios.create({
   baseURL: API_BASE_URL,
