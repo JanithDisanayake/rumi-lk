@@ -342,6 +342,21 @@ describe('baileys-channel.service — interactive/list methods render as numbere
       ]);
     });
 
+    it('sendInteractiveMessage also records a reply-button interactive as button_reply', async () => {
+      const { service, pending } = loadWithStore();
+      await service.sendInteractiveMessage('15550100001', {
+        type: 'button',
+        body: { text: 'You have 2 images.' },
+        action: { buttons: [
+          { type: 'reply', reply: { id: 'ech_add_more', title: 'Add more' } },
+          { type: 'reply', reply: { id: 'ech_process_now', title: 'Process now' } },
+        ] },
+      });
+      const [, menu] = pending.remember.mock.calls[0];
+      expect(menu.replyType).toBe('button_reply');
+      expect(menu.options.map((o) => o.id)).toEqual(['ech_add_more', 'ech_process_now']);
+    });
+
     it('sendInteractiveMessage records list rows across all sections, flattened in order', async () => {
       const { service, pending } = loadWithStore();
       await service.sendInteractiveMessage('923001234567', {

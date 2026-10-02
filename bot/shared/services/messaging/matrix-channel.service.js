@@ -881,15 +881,21 @@ async function sendImageWithButtons(to, imageUrl, bodyText, buttons) {
 async function sendInteractiveMessage(to, listData) {
   try {
     const { header, body, footer, action } = listData;
-    const { sections } = action || {};
-    const options = (sections || []).flatMap((s) => s.rows || []);
+    const { sections, buttons } = action || {};
+    // A Meta interactive is either a list (sections of rows) or reply buttons
+    // ({type:'reply', reply:{id,title}}); both arrive here, and a reply to
+    // buttons must come back as button_reply, as it would from Meta.
+    const isButtons = !sections && Array.isArray(buttons);
+    const options = isButtons
+      ? buttons.map((b) => (b.reply ? { id: b.reply.id, title: b.reply.title } : b))
+      : (sections || []).flatMap((s) => s.rows || []);
     const text = renderOptionsAsText({
       header: header?.text || header,
       body: body?.text || body,
       footer: footer?.text || footer,
       options,
     });
-    await rememberMenu(to, 'list_reply', options);
+    await rememberMenu(to, isButtons ? 'button_reply' : 'list_reply', options);
     return await sendMessage(to, text);
   } catch (error) {
     logToFile('❌ Matrix: error sending interactive list (text fallback)', { ...matrixErrorDetail(error) });

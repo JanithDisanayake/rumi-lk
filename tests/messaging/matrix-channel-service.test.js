@@ -482,6 +482,27 @@ describe('matrix-channel.service -- interactive surfaces (text-flow degradation,
     expect(pendingOptions.remember).toHaveBeenCalledWith(TO, expect.objectContaining({ replyType: 'list_reply' }));
   });
 
+  // A Meta "button" interactive passed through sendInteractiveMessage (the
+  // exam checker's "Add more / Process now") used to render with no options at
+  // all, so the teacher had nothing to answer and the session stalled.
+  it('sendInteractiveMessage also renders a reply-button interactive, mapped back as button_reply', async () => {
+    const { service, sentMessages, pendingOptions } = loadService();
+    await service.sendInteractiveMessage(TO, {
+      type: 'button',
+      body: { text: 'You have 2 images.' },
+      action: { buttons: [
+        { type: 'reply', reply: { id: 'ech_add_more', title: '📷 Add more' } },
+        { type: 'reply', reply: { id: 'ech_process_now', title: '✅ Process now' } },
+      ] },
+    });
+    expect(sentMessages[0].content.body).toContain('1. 📷 Add more');
+    expect(sentMessages[0].content.body).toContain('2. ✅ Process now');
+    expect(pendingOptions.remember).toHaveBeenCalledWith(TO, expect.objectContaining({
+      replyType: 'button_reply',
+      options: [{ id: 'ech_add_more', title: '📷 Add more' }, { id: 'ech_process_now', title: '✅ Process now' }],
+    }));
+  });
+
   it('sendInteractiveMessage has no 25-option cap the way Discord does -- Matrix renders plain text', async () => {
     const { service, sentMessages } = loadService();
     const rows = Array.from({ length: 40 }, (_, i) => ({ id: `opt_${i}`, title: `Option ${i}` }));
