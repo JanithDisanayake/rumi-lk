@@ -1,0 +1,548 @@
+'use strict';
+/**
+ * The /testpaper conversation: from "make a test" to a queued paper, plus
+ * "my papers" and edits.
+ *
+ *   /testpaper [subject]
+ *     → what should it cover?   a loaded textbook · my lesson plans · send a chapter · my papers
+ *     → which chapter(s)?       one, several ("1,3"), a range ("1-4") or all (a unit test)
+ *     → how big?                quick 10 · standard 20 · full 30 · or a typed mix
+ *     → which language?
+ *     → queued: the worker writes, stores and sends the paper + answer key
+ *
+ * Every pick is an interactive list or reply buttons through the messaging
+ * facade — native on WhatsApp, a numbered menu on every other channel, whose
+ * numeric replies come back as the same ids (see messaging/pending-options.js).
+ * Multi-picks and typed mixes are plain text, read here while a pick is
+ * pending. Nothing depends on a WhatsApp Flow, so the conversation is the same
+ * on Meta, Baileys, Matrix, Slack and Discord.
+ *
+ * The source text is read HERE, before anything is queued, so a source with
+ * nothing in it is told to the teacher straight away — never queued, never
+ * turned into an invented paper.
+ */
+
+const WhatsAppService = require('../whatsapp.service');
+const { logToFile } = require('../../utils/logger');
+const { FEATURES, isFeatureAvailable } = require('../../config/feature-availability');
+const { LANGUAGES, SUPPORTED_LANGUAGES, getLabel } = require('../../config/supported-languages');
+const Sources = require('./testpaper-sources.service');
+const Store = require('./testpaper-store.service');
+const Session = require('./testpaper-session.service');
+const QuestionTypes = require('./question-types');
+const { subjectName } = require('./paper-renderer');
+const { t } = require('./testpaper-strings');
+
+const ID_PREFIX = 'tp_';
+/** Meta list limits: 10 rows, 24-character titles, 72-character descriptions. */
+const MAX_ROWS = 10;
+const TITLE_MAX = 24;
+const DESC_MAX = 72;
+/** The most books the first menu shows; a named subject narrows the rest. */
+const MAX_BOOK_ROWS = 6;
+/** Pasted text shorter than this is a message, not a chapter. */
+const MIN_PASTE_CHARS = 300;
+/** Languages offered after the teacher's own, in this order. */
+const LANGUAGE_CHOICES = ['en', 'ur', 'ar', 'hi', 'bn', 'es', 'fr', 'ta-IN'];
+
+const FEATURE = FEATURES.find((f) => f.id === 'test_paper');
+
+function isTestPaperId(id) {
+  return typeof id === 'string' && id.startsWith(ID_PREFIX);
+}
+
+function fit(text, max = TITLE_MAX) {
+  const s = String(text || '').replace(/\s+/g, ' ').trim();
+  return s.length <= max ? s : `${s.slice(0, max - 1).trimEnd()}…`;
+}
+
+function _lang(language) {
+  return language || 'en';
+}
+
+async function _list(from, { header, body, button, rows }) {
+  return WhatsAppService.sendInteractiveMessage(from, {
+    header: fit(header, 60),
+    body,
+    action: { button: fit(button || 'Choose', 20), sections: [{ title: fit(header, 24), rows: rows.slice(0, MAX_ROWS) }] },
+  });
+}
+
+/** Parse "2", "1,3", "1-4", "1, 3 and 5", "all" against N offered items → 1-based indexes. */
+function parsePicks(text, count) {
+  const s = String(text || '').trim().toLowerCase();
+  if (!s) return null;
+  if (/^(all|everything|all of them|whole( unit| book)?|سب)$/.test(s)) {
+    return Array.from({ length: count }, (_, i) => i + 1);
+  }
+  if (!/^[\d\s,\-–and&]+$/.test(s)) return null;
+  const out = new Set();
+  for (const part of s.split(/\s*(?:,|and|&|\s)\s*/).filter(Boolean)) {
+    const range = part.match(/^(\d+)\s*[-–]\s*(\d+)$/);
+    if (range) {
+      const [a, b] = [Number(range[1]), Number(range[2])].sort((x, y) => x - y);
+      for (let n = a; n <= b; n += 1) out.add(n);
+    } else if (/^\d+$/.test(part)) {
+      out.add(Number(part));
+    } else {
+      return null;
+    }
+  }
+  const picks = [...out].sort((a, b) => a - b);
+  if (!picks.length || picks.some((n) => n < 1 || n > count)) return null;
+  return picks;
+}
+
+function _bookLabel(book) {
+  return `${book.grade ? `Grade ${book.grade} · ` : ''}${subjectName(book.subject)}`;
+}
+
+// ── Entry ───────────────────────────────────────────────────────────────────
+
+/**
+ * `/testpaper`, `/paper` — optionally with a subject ("/testpaper science") or
+ * "my papers".
+ */
+async function start({ user, from, args = '', language }) {
+  const lang = _lang(language);
+  if (!FEATURE || !isFeatureAvailable(FEATURE)) {
+    await WhatsAppService.sendMessage(from, t('notReady', lang));
+    return;
+  }
+  if (!user?.id) {
+    await WhatsAppService.sendMessage(from, t('noAccount', lang));
+    return;
+  }
+
+  const arg = String(args || '').trim();
+  if (/^(my\s*)?papers?$|^mine$/i.test(arg)) {
+    await showMyPapers({ user, from, language: lang });
+    return;
+  }
+
+  const subject = arg || null;
+  const sources = await Sources.listSources(user.id, { subject });
+
+  if (Sources.isEmpty(sources)) {
+    // Nothing to build from. Say so, and accept a chapter sent next.
+    await Session.save(user.id, { step: 'await_upload', subject, from });
+    await WhatsAppService.sendMessage(from, t('noSource', lang, { subject }));
+    logToFile('📝 test paper: no source material', { userId: user.id, subject });
+    return;
+  }
+
+  const books = sources.textbooks.slice(0, MAX_BOOK_ROWS).map((b) => ({
+    id: b.id, grade: b.grade, subject: b.subject, chapterCount: b.chapterCount,
+  }));
+  const lessonPlans = sources.lessonPlans.map((lp) => ({ id: lp.id, topic: lp.topic, subject: lp.subject, grade: lp.grade }));
+  await Session.save(user.id, { step: 'pick_source', subject, from, books, lessonPlans });
+
+  const rows = [
+    ...books.map((b, i) => ({
+      id: `${ID_PREFIX}src_tb_${i}`,
+      title: fit(t('sourceTextbook', lang, { grade: b.grade, subject: subjectName(b.subject), chapters: b.chapterCount })),
+    })),
+  ];
+  if (lessonPlans.length) {
+    rows.push({ id: `${ID_PREFIX}src_lp`, title: fit(t('sourceLessonPlans', lang, { count: lessonPlans.length })) });
+  }
+  rows.push({ id: `${ID_PREFIX}src_up`, title: fit(t('sourceUpload', lang)), description: fit(t('sourceUploadHint', lang), DESC_MAX) });
+  rows.push({ id: `${ID_PREFIX}mine`, title: fit(t('myPapers', lang)) });
+
+  await _list(from, {
+    header: t('chooseSourceHeader', lang), body: t('chooseSourceBody', lang), button: t('chooseSourceButton', lang), rows,
+  });
+}
+
+// ── Steps ───────────────────────────────────────────────────────────────────
+
+async function _offerChapters(user, from, lang, state, bookIndex) {
+  const book = state.books?.[bookIndex];
+  if (!book) return false;
+  const chapters = (await Sources.listChapters(book.id)).map((c) => ({ number: c.number, title: c.title }));
+  const label = _bookLabel(book);
+  await Session.save(user.id, { ...state, step: 'pick_chapters', book, chapters });
+
+  if (chapters.length <= MAX_ROWS - 1) {
+    await _list(from, {
+      header: t('pickChaptersHeader', lang, { book: label }),
+      body: t('pickChaptersBody', lang),
+      rows: [
+        ...chapters.map((c) => ({ id: `${ID_PREFIX}ch_${c.number}`, title: fit(`${c.number}. ${c.title}`), description: fit(c.title, DESC_MAX) })),
+        { id: `${ID_PREFIX}ch_all`, title: fit(t('allChapters', lang)) },
+      ],
+    });
+  } else {
+    // More chapters than a list can hold: a numbered message, answered in text.
+    const list = chapters.map((c, i) => `${i + 1}. ${c.title}`).join('\n');
+    await WhatsAppService.sendMessage(from, t('pickChaptersText', lang, { book: label, list }));
+  }
+  return true;
+}
+
+async function _offerLessonPlans(user, from, lang, state) {
+  const plans = state.lessonPlans || [];
+  await Session.save(user.id, { ...state, step: 'pick_lessons' });
+  if (plans.length <= MAX_ROWS - 1) {
+    await _list(from, {
+      header: t('pickLessonsHeader', lang),
+      body: t('pickLessonsBody', lang),
+      rows: [
+        ...plans.map((lp, i) => ({ id: `${ID_PREFIX}lp_${i}`, title: fit(lp.topic), description: fit(lp.topic, DESC_MAX) })),
+        { id: `${ID_PREFIX}lp_all`, title: fit(t('allLessons', lang)) },
+      ],
+    });
+  } else {
+    const list = plans.map((lp, i) => `${i + 1}. ${lp.topic}`).join('\n');
+    await WhatsAppService.sendMessage(from, t('pickLessonsText', lang, { list }));
+  }
+  return true;
+}
+
+async function _askMix(user, from, lang, state) {
+  await Session.save(user.id, { ...state, step: 'pick_mix' });
+  await _list(from, {
+    header: t('pickMixHeader', lang),
+    body: t('pickMixBody', lang),
+    rows: [
+      { id: `${ID_PREFIX}mix_quick`, title: fit(t('mixQuick', lang)), description: fit(t('mixQuickHint', lang), DESC_MAX) },
+      { id: `${ID_PREFIX}mix_standard`, title: fit(t('mixStandard', lang)), description: fit(t('mixStandardHint', lang), DESC_MAX) },
+      { id: `${ID_PREFIX}mix_full`, title: fit(t('mixFull', lang)), description: fit(t('mixFullHint', lang), DESC_MAX) },
+    ],
+  });
+  return true;
+}
+
+async function _askLanguage(user, from, lang, state) {
+  await Session.save(user.id, { ...state, step: 'pick_language' });
+  const own = SUPPORTED_LANGUAGES.includes(lang) ? lang : 'en';
+  const codes = [own, ...LANGUAGE_CHOICES.filter((c) => c !== own && SUPPORTED_LANGUAGES.includes(c))].slice(0, MAX_ROWS);
+  await _list(from, {
+    header: t('pickLanguageHeader', lang),
+    body: t('pickLanguageBody', lang),
+    rows: codes.map((c) => ({
+      id: `${ID_PREFIX}lang_${c}`,
+      title: fit(LANGUAGES[c]?.native || c),
+      description: LANGUAGES[c] && LANGUAGES[c].native !== LANGUAGES[c].english ? fit(LANGUAGES[c].english, DESC_MAX) : undefined,
+    })),
+  });
+  return true;
+}
+
+/** The subject the paper's question types are chosen for. */
+function _subjectOf(state) {
+  if (state.source?.kind === 'textbook') return state.book?.subject || null;
+  if (state.source?.kind === 'lesson_plan') {
+    const picked = (state.lessonPlans || []).filter((lp) => state.source.lessonPlanIds.includes(lp.id));
+    return picked.find((lp) => lp.subject)?.subject || null;
+  }
+  return state.subject || null;
+}
+
+function _gradeOf(state) {
+  if (state.source?.kind === 'textbook') return state.book?.grade ?? null;
+  if (state.source?.kind === 'lesson_plan') {
+    const picked = (state.lessonPlans || []).filter((lp) => state.source.lessonPlanIds.includes(lp.id));
+    return picked.find((lp) => lp.grade)?.grade || null;
+  }
+  return null;
+}
+
+async function _withMix(user, from, lang, state, types) {
+  const next = { ...state, questionTypes: types, questionCount: types.reduce((s, q) => s + q.count, 0) };
+  return _askLanguage(user, from, lang, next);
+}
+
+/** Read the material now; refuse here, honestly, when there is none. */
+async function _loadSource(state, userId) {
+  const src = state.source;
+  if (src.kind === 'textbook') {
+    const c = await Sources.loadTextbookContent(src.textbookId, src.chapterNumbers);
+    return { ...c, sourceRef: { textbookId: src.textbookId, chapterNumbers: src.chapterNumbers } };
+  }
+  if (src.kind === 'lesson_plan') {
+    const c = await Sources.loadLessonPlanContent(src.lessonPlanIds, userId);
+    return { ...c, sourceRef: { lessonPlanIds: src.lessonPlanIds } };
+  }
+  return {
+    text: src.text,
+    subject: state.subject || null,
+    grade: null,
+    chapterTitle: src.filename || null,
+    label: src.filename ? `Uploaded: ${src.filename}` : 'Pasted chapter',
+    sourceRef: src.filename ? { filename: src.filename } : {},
+  };
+}
+
+async function _queue(user, from, lang, state, paperLanguage) {
+  let content;
+  try {
+    content = await _loadSource(state, user.id);
+  } catch (error) {
+    if (error.code !== 'INSUFFICIENT_SOURCE') throw error;
+    await Session.clear(user.id);
+    const message = state.source.kind === 'lesson_plan'
+      ? t('insufficientLessons', lang, { skipped: error.skipped })
+      : t('insufficient', lang, { what: state.book ? _bookLabel(state.book) : 'that material', reason: error.message.replace(/\.$/, '').toLowerCase() });
+    await WhatsAppService.sendMessage(from, message);
+    logToFile('📝 test paper: source refused before queueing', { userId: user.id, kind: state.source.kind, error: error.message });
+    return;
+  }
+
+  const request = await Store.createRequest({
+    userId: user.id,
+    sourceKind: state.source.kind,
+    sourceRef: content.sourceRef,
+    sourceLabel: content.label,
+    sourceText: content.text,
+    subject: content.subject || _subjectOf(state),
+    grade: content.grade ?? _gradeOf(state),
+    language: paperLanguage,
+    contentSource: 'unseen',
+    questionTypes: state.questionTypes,
+    questionCount: state.questionCount,
+  });
+  const paper = await Store.createPaper({ requestId: request.id });
+  await Session.clear(user.id);
+
+  try {
+    // eslint-disable-next-line global-require -- the queue driver dials its backend on require
+    const Queue = require('../queue');
+    await Queue.queueJob(user.id, 'testpaper_generate', { paperId: paper.id, userId: user.id, to: from, chatLanguage: lang });
+  } catch (error) {
+    await Store.markFailed(paper.id, 'QUEUE_UNAVAILABLE', error.message);
+    logToFile('❌ test paper: could not queue', { userId: user.id, error: error.message });
+    await WhatsAppService.sendMessage(from, t('failedQueue', lang));
+    return;
+  }
+
+  await WhatsAppService.sendMessage(from, t('making', lang, {
+    label: content.label, count: state.questionCount, language: getLabel(paperLanguage),
+  }));
+  logToFile('📝 test paper queued', { userId: user.id, paperId: paper.id, kind: state.source.kind, language: paperLanguage });
+}
+
+// ── My papers / edits ───────────────────────────────────────────────────────
+
+async function showMyPapers({ user, from, language }) {
+  const lang = _lang(language);
+  const papers = await Store.listPapers(user.id, MAX_ROWS);
+  if (!papers.length) {
+    await WhatsAppService.sendMessage(from, t('noPapers', lang));
+    return;
+  }
+  await _list(from, {
+    header: t('myPapersHeader', lang),
+    body: t('myPapersBody', lang),
+    rows: papers.map((p) => ({
+      id: `${ID_PREFIX}open_${p.paperId}`,
+      title: fit(t('paperRow', lang, { title: p.title || p.sourceLabel || 'Test paper', version: p.version })),
+      description: fit([p.sourceLabel, p.questionCount ? `${p.questionCount} Qs` : null].filter(Boolean).join(' · '), DESC_MAX),
+    })),
+  });
+}
+
+async function _resend(user, from, lang, paperId) {
+  const found = await Store.getPaper(paperId, user.id);
+  if (!found || found.paper.status !== 'ready') {
+    await WhatsAppService.sendMessage(from, t('paperGone', lang));
+    return;
+  }
+  // eslint-disable-next-line global-require -- prints through Chromium; loaded only on a re-send
+  const Delivery = require('./testpaper-delivery.service');
+  await Delivery.deliverPaper({ to: from, paper: found.paper, request: found.request, chatLanguage: lang });
+}
+
+async function _askEdit(user, from, lang, paperId) {
+  const found = await Store.getPaper(paperId, user.id);
+  if (!found || found.paper.status !== 'ready') {
+    await WhatsAppService.sendMessage(from, t('paperGone', lang));
+    return;
+  }
+  await Session.save(user.id, { step: 'await_edit', paperId, from });
+  await WhatsAppService.sendMessage(from, t('askEdit', lang));
+}
+
+async function _queueEdit(user, from, lang, state, instruction) {
+  const found = await Store.getPaper(state.paperId, user.id);
+  await Session.clear(user.id);
+  if (!found) {
+    await WhatsAppService.sendMessage(from, t('paperGone', lang));
+    return;
+  }
+  const next = await Store.createPaper({ requestId: found.request.id, editedFrom: found.paper.id, editInstruction: instruction });
+  try {
+    // eslint-disable-next-line global-require -- see _queue
+    const Queue = require('../queue');
+    await Queue.queueJob(user.id, 'testpaper_revise', { paperId: next.id, userId: user.id, to: from, chatLanguage: lang });
+  } catch (error) {
+    await Store.markFailed(next.id, 'QUEUE_UNAVAILABLE', error.message);
+    await WhatsAppService.sendMessage(from, t('failedQueue', lang));
+    return;
+  }
+  await WhatsAppService.sendMessage(from, t('revising', lang, { version: next.version }));
+}
+
+// ── Dispatch ────────────────────────────────────────────────────────────────
+
+/**
+ * A list row or button the teacher picked (any `tp_` id).
+ * @returns {Promise<boolean>} true when the id was ours and handled
+ */
+async function handleSelection({ user, from, id, language }) {
+  if (!isTestPaperId(id) || !user?.id) return false;
+  const lang = _lang(language);
+  const rest = id.slice(ID_PREFIX.length);
+
+  if (rest === 'new') { await start({ user, from, language: lang }); return true; }
+  if (rest === 'mine') { await Session.clear(user.id); await showMyPapers({ user, from, language: lang }); return true; }
+  if (rest.startsWith('open_')) { await _resend(user, from, lang, rest.slice(5)); return true; }
+  if (rest.startsWith('edit_')) { await _askEdit(user, from, lang, rest.slice(5)); return true; }
+
+  const state = await Session.get(user.id);
+  if (!state) {
+    // A menu from an expired conversation: start again rather than guess.
+    await start({ user, from, language: lang });
+    return true;
+  }
+
+  if (rest.startsWith('src_tb_')) return _offerChapters(user, from, lang, state, Number(rest.slice(7)));
+  if (rest === 'src_lp') return _offerLessonPlans(user, from, lang, state);
+  if (rest === 'src_up') {
+    await Session.save(user.id, { ...state, step: 'await_upload' });
+    await WhatsAppService.sendMessage(from, t('sendChapter', lang));
+    return true;
+  }
+  if (rest.startsWith('ch_') && state.chapters) {
+    const which = rest.slice(3);
+    const numbers = which === 'all' ? state.chapters.map((c) => c.number) : [Number(which)];
+    return _askMix(user, from, lang, { ...state, source: { kind: 'textbook', textbookId: state.book.id, chapterNumbers: numbers } });
+  }
+  if (rest.startsWith('lp_') && state.lessonPlans) {
+    const which = rest.slice(3);
+    const ids = which === 'all' ? state.lessonPlans.map((lp) => lp.id) : [state.lessonPlans[Number(which)]?.id].filter(Boolean);
+    if (!ids.length) return false;
+    return _askMix(user, from, lang, { ...state, source: { kind: 'lesson_plan', lessonPlanIds: ids } });
+  }
+  if (rest.startsWith('mix_') && state.source) {
+    const mix = QuestionTypes.presetMix(rest.slice(4), _subjectOf(state), _gradeOf(state));
+    if (!mix) return false;
+    return _withMix(user, from, lang, state, mix);
+  }
+  if (rest.startsWith('lang_') && state.questionTypes) {
+    const code = rest.slice(5);
+    await _queue(user, from, lang, state, SUPPORTED_LANGUAGES.includes(code) ? code : 'en');
+    return true;
+  }
+  logToFile('⚠️ test paper: selection out of step', { id, step: state.step });
+  return false;
+}
+
+function _languageFromText(text) {
+  const want = String(text || '').trim().toLowerCase();
+  return SUPPORTED_LANGUAGES.find((c) => c.toLowerCase() === want
+    || LANGUAGES[c].english.toLowerCase() === want
+    || LANGUAGES[c].native.toLowerCase() === want) || null;
+}
+
+/**
+ * Plain text while a pick is pending: chapter/lesson numbers, a typed mix, a
+ * language name, a pasted chapter, or an edit request.
+ * @returns {Promise<boolean>} true when the text was an answer and was handled
+ */
+async function handleText({ user, from, text, language }) {
+  if (!user?.id || typeof text !== 'string') return false;
+  const trimmed = text.trim();
+  if (!trimmed || trimmed.startsWith('/')) return false;
+  const state = await Session.get(user.id);
+  if (!state) return false;
+  const lang = _lang(language);
+
+  if (/^(cancel|stop|منسوخ)$/i.test(trimmed)) {
+    await Session.clear(user.id);
+    await WhatsAppService.sendMessage(from, t('cancelled', lang));
+    return true;
+  }
+
+  switch (state.step) {
+    case 'pick_chapters': {
+      const picks = parsePicks(trimmed, state.chapters.length);
+      if (!picks) {
+        if (trimmed.length > 40) return false; // talking, not answering
+        await WhatsAppService.sendMessage(from, t('pickAgain', lang));
+        return true;
+      }
+      const numbers = picks.map((i) => state.chapters[i - 1].number);
+      return _askMix(user, from, lang, { ...state, source: { kind: 'textbook', textbookId: state.book.id, chapterNumbers: numbers } });
+    }
+    case 'pick_lessons': {
+      const picks = parsePicks(trimmed, state.lessonPlans.length);
+      if (!picks) {
+        if (trimmed.length > 40) return false;
+        await WhatsAppService.sendMessage(from, t('pickAgain', lang));
+        return true;
+      }
+      const ids = picks.map((i) => state.lessonPlans[i - 1].id);
+      return _askMix(user, from, lang, { ...state, source: { kind: 'lesson_plan', lessonPlanIds: ids } });
+    }
+    case 'pick_mix': {
+      const preset = trimmed.toLowerCase().match(/^(quick|standard|full)$/);
+      const parsed = preset
+        ? { ok: true, types: QuestionTypes.presetMix(preset[1], _subjectOf(state), _gradeOf(state)) }
+        : QuestionTypes.parseMixText(trimmed, _subjectOf(state), _gradeOf(state));
+      if (!parsed.ok) {
+        if (!/\d/.test(trimmed)) return false;
+        await WhatsAppService.sendMessage(from, parsed.message);
+        return true;
+      }
+      return _withMix(user, from, lang, state, parsed.types);
+    }
+    case 'pick_language': {
+      const code = _languageFromText(trimmed);
+      if (!code) return false;
+      await _queue(user, from, lang, state, code);
+      return true;
+    }
+    case 'await_upload': {
+      if (trimmed.length < MIN_PASTE_CHARS) return false;
+      return _askMix(user, from, lang, { ...state, source: { kind: 'upload', text: trimmed, filename: null } });
+    }
+    case 'await_edit':
+      await _queueEdit(user, from, lang, state, trimmed);
+      return true;
+    default:
+      return false;
+  }
+}
+
+/**
+ * A document while the conversation is waiting for a chapter.
+ * @returns {Promise<boolean>} true when it was taken as the paper's source
+ */
+async function handleDocument({ user, from, message, language }) {
+  if (!user?.id || !message?.document) return false;
+  const state = await Session.get(user.id);
+  if (!state || state.step !== 'await_upload') return false;
+  const lang = _lang(language);
+  const { id, mime_type: mimeType, filename } = message.document;
+
+  let text;
+  try {
+    const buffer = await WhatsAppService.downloadMedia(id);
+    text = await Sources.extractUploadText(Buffer.from(buffer), mimeType, filename);
+  } catch (error) {
+    await WhatsAppService.sendMessage(from, t(error.code === 'UNSUPPORTED_FILE' ? 'uploadUnsupported' : 'uploadFailed', lang));
+    logToFile('⚠️ test paper: upload unreadable', { userId: user.id, mimeType, error: error.message });
+    return true;
+  }
+  if (!text || text.length < MIN_PASTE_CHARS) {
+    await WhatsAppService.sendMessage(from, t('uploadTooShort', lang));
+    return true;
+  }
+  await WhatsAppService.sendMessage(from, t('uploadRead', lang, { chars: text.length }));
+  return _askMix(user, from, lang, { ...state, source: { kind: 'upload', text, filename: filename || 'chapter' } });
+}
+
+module.exports = {
+  start, handleSelection, handleText, handleDocument, showMyPapers, isTestPaperId, parsePicks,
+};
