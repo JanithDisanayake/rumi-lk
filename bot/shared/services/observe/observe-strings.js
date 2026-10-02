@@ -46,6 +46,20 @@ const EN = {
   flow_button: 'Open the form',
   submitted_ack: '✅ Thank you! Your {fw} observation is saved, with your edits.',
   flow_terminal_refused: 'This observation was cancelled, so the form can no longer be submitted.',
+  // The published form's static copy (scripts/generate-observe-flow-json.js).
+  // A published Flow is one document, so these are baked in at generation time.
+  flow_screen_title: '{fw} review {n}/{total}',
+  flow_screen_body: 'Part {n} of {total} — check each rating and note, and change anything you disagree with.',
+  flow_evidence_label: 'Evidence',
+  flow_evidence_help: '{id} — what was seen',
+  flow_improve_label: 'To improve',
+  flow_improve_help: '{id} — one next step',
+  flow_next: 'Next',
+  flow_submit: 'Submit observation',
+  flow_success_title: 'Saved',
+  flow_success_heading: 'Thank you! ✅',
+  flow_success_body: 'Your {fw} observation is saved. The next step follows in the chat.',
+  flow_done: 'Done',
   // The stepwise chat form (every channel; the Flow's stand-in).
   form_domain_header: '📝 *{fw} — {domain}* ({n} of {total})',
   form_teacher_line: 'Teacher: {name}',
