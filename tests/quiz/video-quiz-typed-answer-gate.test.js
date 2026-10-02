@@ -211,3 +211,18 @@ describe('flag ON', () => {
     expect(answers()).toEqual([expect.objectContaining({ selected_option: 'B' })]);
   });
 });
+
+describe('two fast typed replies (review F-S8)', () => {
+  test('"B" then "C" before the first is graded: one answer, the next question sent once', async () => {
+    reset({ quizSource: 'transcript' });
+    // Both replies read the waiting question before either takes the answer
+    // lock; the second must find the question moved on and be dropped.
+    const both = Promise.all([vq.answerTypedLetter(PHONE, 'B'), vq.answerTypedLetter(PHONE, 'C')]);
+    const [first, second] = await settle(both);
+    expect(first).toBe(true);
+    expect(second).toBe(true);
+    expect(answers()).toEqual([expect.objectContaining({ question_id: 'q-1', selected_option: 'B' })]);
+    const asked = mockSent.filter((s) => JSON.stringify(s.payload).includes('Next question?'));
+    expect(asked).toHaveLength(1);
+  });
+});

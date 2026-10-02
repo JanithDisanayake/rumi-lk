@@ -788,9 +788,25 @@ async function acquireAnswerLock(phone) {
 }
 
 /**
- * Grade a tap and move on. Returns true if the input belonged to a video quiz.
+ * A TYPED reply was matched to the question that was waiting when it was read,
+ * outside the answer lock. Two fast replies ("B" then "C") both read the same
+ * question; by the time the second holds the lock the first has graded it and
+ * the quiz has moved on. That second reply is dropped here (taken, nothing sent)
+ * — grading it would hit the unique answer and re-send the next question.
+ * A tap is not checked: a button names its own question, and a re-tap is the
+ * duplicate path's job.
  */
-async function handleAnswer(phone, inputId) {
+function typedReplyIsStale(state, questionId) {
+  return !state || state.currentQuestionId !== questionId;
+}
+
+/**
+ * Grade a tap and move on. Returns true if the input belonged to a video quiz.
+ *
+ * @param {object} [opts]
+ * @param {boolean} [opts.typed] the answer came from answerTypedLetter
+ */
+async function handleAnswer(phone, inputId, { typed = false } = {}) {
   // The child's tap is what needs measuring, so the clock starts on the
   // FIRST line, before the render parse — not on our own bookkeeping.
   const answerStart = Date.now();
@@ -823,6 +839,12 @@ async function handleAnswer(phone, inputId) {
       questions: state ? (state.questionIds || []).length : 0,
       questionId: parsed.questionId,
     });
+    if (typed && typedReplyIsStale(state, parsed.questionId)) {
+      logEvent('video_quiz.typed_stale', {
+        sessionId: state ? state.sessionId : null, questionId: parsed.questionId, phoneTail,
+      });
+      return true;
+    }
     if (!state) {
       // The quiz's state is gone with it; the run's language is not.
       await WhatsAppService.sendMessage(phone, ux('vqQuizFinished', await lastRunLanguage(phone)));
@@ -1274,7 +1296,7 @@ const MULTI_QUESTION_COLUMNS = 'id, external_id, question_text, option_a, option
  *
  * @returns {Promise<boolean>} true when the reply belonged to a video quiz
  */
-async function handleMultiAnswer(phone, parsed) {
+async function handleMultiAnswer(phone, parsed, { typed = false } = {}) {
   const Multi = require('./transcript-quiz-multi');
   if (!parsed || !parsed.questionId) return false;
 
@@ -1294,6 +1316,12 @@ async function handleMultiAnswer(phone, parsed) {
         sessionId: state ? state.sessionId : null, questionId: parsed.questionId,
         waitedMs, phoneTail,
       });
+    }
+    if (typed && typedReplyIsStale(state, parsed.questionId)) {
+      logEvent('video_quiz.typed_stale', {
+        sessionId: state ? state.sessionId : null, questionId: parsed.questionId, phoneTail,
+      });
+      return true;
     }
     if (!state) {
       await WhatsAppService.sendMessage(phone, ux('vqExpired', undefined));
@@ -1554,9 +1582,11 @@ async function answerTypedLetter(phone, text) {
     sessionId: state.sessionId, questionId: q.id, positions, indices, multi,
   });
   if (multi) {
-    return handleMultiAnswer(phone, { sessionId: state.sessionId, questionId: q.id, indices: [...indices].sort((a, b) => a - b) });
+    return handleMultiAnswer(phone,
+      { sessionId: state.sessionId, questionId: q.id, indices: [...indices].sort((a, b) => a - b) },
+      { typed: true });
   }
-  return handleAnswer(phone, render.answerId(q.id, indices[0]));
+  return handleAnswer(phone, render.answerId(q.id, indices[0]), { typed: true });
 }
 
 module.exports = {
