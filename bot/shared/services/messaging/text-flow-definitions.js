@@ -258,11 +258,13 @@ function classSetupFlow() {
         prompt: () => ({
           // The phone number is optional but prompted for, because without it
           // the class cannot receive quizzes or reports — and the teacher only
-          // discovers that later, at the class picker.
+          // discovers that later, at the class picker. The example shows both
+          // forms the parser accepts (international and local), in the
+          // fictional 555 range.
           body: 'Now send me your students — *one per line*.\n\n'
             + "Add the parent's WhatsApp number if you have it, so I can send "
             + 'quizzes and reports to them.\n\nFor example:\n'
-            + 'Ahmed Khan +15550101234\nZara s/o Abdul +15550104321\nBilal Hussain',
+            + 'Ahmed Khan +1 555 0101234\nZara s/o Abdul 0555 0104321\nBilal Hussain',
         }),
       },
     ],
