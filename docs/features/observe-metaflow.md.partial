@@ -1,0 +1,64 @@
+### The editable form on Meta (optional)
+
+On every channel the coach reviews the AI's ratings in a stepwise chat form: one
+domain per message, reply `ok` to keep it or `<indicator> <rating>` to change one.
+A deployment on the Meta WhatsApp Cloud API can also publish the form as a
+**WhatsApp Flow**. The coach then gets one tappable form, one screen per domain,
+with a rating, the evidence and an improvement note for every indicator, all
+pre-filled and all editable.
+
+Nothing else changes. The Flow's endpoint saves edits through the same merge as the
+chat form, and when the coach submits, the bot acknowledges in the chat and offers
+the debrief, just as it does after the last chat-form step. If the Flow can't be
+sent (no `OBSERVE_FORM_FLOW_ID`, a coach on another channel, or a failed send), the
+coach gets the chat form.
+
+**What ships**
+
+| Piece | Where |
+|---|---|
+| Flow JSON (default TEACH pack) | `docs/flows/observe-form-flow.json` |
+| Generator (builds the JSON from the framework pack) | `bot/scripts/generate-observe-flow-json.js` |
+| data_exchange endpoint | `POST /api/flows/observe-form` (`bot/shared/routes/observe-form-endpoint.js`) |
+| Submission handling | the `nfm_reply` branch in `bot/whatsapp-bot.js` → `observe-draft.service` `completeFromFlow` |
+
+**Publish it**
+
+1. Pick the framework. The shipped JSON is built for the default pack
+   (`OBSERVE_FRAMEWORK=teach`). If you use `hots` or `mewaka`, regenerate it first:
+
+   ```bash
+   OBSERVE_FRAMEWORK=hots node bot/scripts/generate-observe-flow-json.js
+   ```
+
+   This rewrites `docs/flows/observe-form-flow.json`: one screen per domain
+   (`DOMAIN_1` … `DOMAIN_N`) plus a closing `SUCCESS` screen. The rating options
+   come from the endpoint (`${data.scale}`), so they always match the pack's scale.
+   Use `--out <file>` to write it somewhere else. The JSON's static labels are
+   English. A Flow is published as one document, so translate the `flow_*` keys in
+   `observe-strings` before you generate if your coaches need another language.
+
+2. Register it. Either:
+   - **`rumi setup` / `run-full-setup.js`**. The registrar includes **Observe
+     Form** (an endpoint Flow). Pass `--endpoint-base=https://<your-bot-host>` so
+     Meta's data endpoint is set to `<base>/api/flows/observe-form`. Flow
+     encryption must be configured (`FLOW_PRIVATE_KEY`), the same as for the other
+     endpoint Flows. The new Flow ID is written to `OBSERVE_FORM_FLOW_ID`.
+   - **By hand, in Meta's Flow builder**. Create a Flow, paste the JSON, set the
+     endpoint URI to `https://<your-bot-host>/api/flows/observe-form`, then publish.
+
+3. Set `OBSERVE_FORM_FLOW_ID=<flow id>` and restart. Leave it blank to keep the
+   chat form for everyone.
+
+**Behaviour worth knowing**
+
+- The Flow token is `<coachUserId>:<sessionId>`. The endpoint serves and accepts
+  edits only for the observation's own coach.
+- Edits are buffered per screen in Redis (`observe:edits:<sessionId>`, 2 hours) and
+  saved when the last screen is submitted. If Redis loses the buffer, those screens
+  keep the AI's values. Nothing breaks.
+- A cancelled observation's form won't submit. Meta shows only a generic error
+  inside the Flow, so the bot also tells the coach in the chat, once per
+  observation every five minutes.
+- After you change the framework, regenerate and re-publish the Flow. A Flow built
+  for one pack has the wrong screens for another.

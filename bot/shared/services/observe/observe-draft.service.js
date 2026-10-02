@@ -9,6 +9,9 @@
  *                     everywhere else and whenever the Flow can't be sent.
  * buildScreenPrefill: analysis_data → one domain screen's ${data.*} bindings
  *                     (the Meta Flow).
+ * completeFromFlow  : the Flow's nfm_reply after the last screen — clear the
+ *                     form state, acknowledge, offer the debrief (Meta only;
+ *                     the chat form does the same in observe-form.service).
  * applyObserverEdits: merge the coach's edits into analysis_data (v2),
  *                     re-run the pack's scorer, stamp observer_edit_summary
  *                     (the v1→v2 diff is the record of what the coach changed).
@@ -20,6 +23,7 @@
 const supabase = require('../../config/supabase');
 const WhatsAppService = require('../whatsapp.service');
 const ObserveState = require('./observe-state.service');
+const redisService = require('../cache/railway-redis.service');
 const { t } = require('./observe-strings');
 const { languageFor } = require('./observe-language');
 const { getObservePack, scaleBounds } = require('./observe-framework');
@@ -171,7 +175,63 @@ function buildScreenPrefill(analysis, domainKey) {
   return data;
 }
 
+// A redelivered webhook must not acknowledge twice or offer the debrief twice.
+const FLOW_DONE_TTL_S = 24 * 3600;
+const flowDoneKey = (sessionId) => `observe:flow_done:${sessionId}`;
+
+/**
+ * The coach submitted the form Flow. By the time this nfm_reply arrives the
+ * endpoint has already merged the edits (status observer_review_complete);
+ * this only closes the loop in the chat. Ownership is re-checked against the
+ * row: the reply's sender and its flow token must both be the observation's
+ * coach.
+ *
+ * @param {object} user          the sender (users row)
+ * @param {string} from          the sender's channel identity
+ * @param {object} responseJson  { observe_action, session_id, flow_token }
+ * @returns {Promise<boolean>} true when the reply was an observe submission (handled or refused)
+ */
+async function completeFromFlow(user, from, responseJson = {}) {
+  const [tokenUser, tokenSession] = String(responseJson.flow_token || '').split(':');
+  const sessionId = responseJson.session_id || tokenSession;
+  const userId = user && user.id;
+  if (!sessionId || !userId || (tokenUser && tokenUser !== userId)) {
+    logToFile('🚫 observe: form Flow reply refused — not the coach\'s token', { sessionId, userId });
+    return true;
+  }
+  const { data: session } = await supabase.from('coaching_sessions').select('*').eq('id', sessionId).maybeSingle();
+  if (!session || session.observation_type !== 'leader_observation'
+    || (session.observer_user_id || session.user_id) !== userId) {
+    logToFile('🚫 observe: form Flow reply refused — not this coach\'s observation', { sessionId, userId });
+    return true;
+  }
+  // Only a merged form is acknowledged: a terminal or still-in-review row
+  // means the endpoint refused or never wrote, and the debrief must not start.
+  if (session.status !== 'observer_review_complete') {
+    logToFile('🚫 observe: form Flow reply ignored — edits not applied', { sessionId, status: session.status });
+    return true;
+  }
+  const claimed = await redisService.setNX(flowDoneKey(sessionId), '1', FLOW_DONE_TTL_S);
+  if (!claimed) {
+    logToFile('🔁 observe: form Flow reply already handled', { sessionId });
+    return true;
+  }
+
+  const current = await ObserveState.getState(userId);
+  if (current && current.state === 'awaiting_form' && current.sessionId === sessionId) {
+    await ObserveState.clearState(userId);
+  }
+
+  const lang = await languageFor('coach', session);
+  const changed = ((session.analysis_data || {}).observer_edit_summary || {}).indicators_rescored || 0;
+  await WhatsAppService.sendMessage(from, `${t(lang, 'submitted_ack')}${changed ? `\n${t(lang, 'form_changes_count', { count: changed })}` : ''}`);
+  const ObserveDebrief = require('./observe-debrief.service');
+  await ObserveDebrief.offerDebriefChoice(user, from, sessionId);
+  logToFile('🔭 observe: form Flow submission acknowledged', { sessionId, changed });
+  return true;
+}
+
 module.exports = {
-  onAnalysisReady, buildScreenPrefill, applyObserverEdits, armFormState, clipWords, evidenceOf, improvementOf, fid,
+  onAnalysisReady, buildScreenPrefill, completeFromFlow, applyObserverEdits, armFormState, clipWords, evidenceOf, improvementOf, fid,
   PREFILL_TEXT_CAP,
 };

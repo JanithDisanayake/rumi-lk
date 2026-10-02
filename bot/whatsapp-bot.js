@@ -1090,6 +1090,20 @@ async function handleWebhookPost(req, res) {
         }
       }
 
+      // The coach's observation form (/observe). Routed on its own
+      // observe_action tag before the detector: its "<observerId>:<sessionId>"
+      // token would otherwise read as an attendance Flow.
+      if (responseJson.observe_action !== undefined) {
+        try {
+          const ObserveDraft = require('./shared/services/observe/observe-draft.service');
+          await ObserveDraft.completeFromFlow(user, from, responseJson);
+        } catch (observeFlowErr) {
+          // The edits are already saved by the endpoint; only the ack failed.
+          logToFile('❌ observe form Flow reply failed', { from, error: observeFlowErr.message });
+        }
+        return;
+      }
+
       // Use centralized flow type detection (fixes registration→attendance misrouting)
       const { detectFlowType } = require('./shared/utils/flow-type-detector');
       const flowType = detectFlowType(responseJson);

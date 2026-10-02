@@ -257,6 +257,17 @@ function scaleBounds(pack = getObservePack()) {
   return boundsOf(pack.scaleOptions);
 }
 
+/**
+ * The editable form's screens: one per domain, in review order, with ids
+ * DOMAIN_1..DOMAIN_N. The published Meta Flow (generated from the pack) and
+ * its data_exchange endpoint both read this, so a screen id always means the
+ * same domain on both sides.
+ * @returns {Array<{id: string, domainKey: string}>}
+ */
+function formScreens(pack = getObservePack()) {
+  return pack.domainOrder.map((domainKey, i) => ({ id: `DOMAIN_${i + 1}`, domainKey }));
+}
+
 module.exports = {
-  getObservePack, scaleBounds, OBSERVE_FRAMEWORK_KEYS, DEFAULT_FRAMEWORK, computeDomainScores,
+  getObservePack, scaleBounds, formScreens, OBSERVE_FRAMEWORK_KEYS, DEFAULT_FRAMEWORK, computeDomainScores,
 };
