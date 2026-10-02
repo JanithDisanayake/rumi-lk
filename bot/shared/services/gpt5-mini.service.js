@@ -597,6 +597,38 @@ CONVERSATIONAL FRAMEWORK: S.T.I.C.K.S. PRINCIPLES
   }
 
   /**
+   * Generic single-shot JSON completion on gpt-5-mini — same conventions as
+   * analyzePedagogy (one model, jsonrepair on parse, log + rethrow). The
+   * observe debrief guide, coach-the-coach feedback and the teacher's notes all
+   * run on it.
+   *
+   * @param {string} prompt   must contain the word "JSON" (json_object mode)
+   * @param {object} options  { maxTokens = 4000, label = 'completeJson' }
+   * @returns {Promise<{result: object, usage: object}>}
+   */
+  static async completeJson(prompt, options = {}) {
+    const { maxTokens = 4000, label = 'completeJson' } = options;
+    try {
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-5-mini-2025-08-07',
+        messages: [{ role: 'user', content: prompt }],
+        max_completion_tokens: maxTokens,
+        response_format: { type: 'json_object' },
+        // No temperature: GPT-5 mini only supports the default (1)
+      });
+      const choice = response.choices && response.choices[0];
+      if (choice && choice.finish_reason === 'length') {
+        logToFile(`⚠️ ${label}: response truncated at max_completion_tokens`, { maxTokens });
+      }
+      const result = this._safeJsonParse(choice.message.content);
+      return { result, usage: response.usage || {} };
+    } catch (error) {
+      logToFile(`❌ ${label} failed`, { error: error.message, stack: error.stack });
+      throw error;
+    }
+  }
+
+  /**
    * Safely parse JSON, attempting repair when payload is slightly malformed
    * @private
    */

@@ -60,6 +60,28 @@ async function handleVoiceMessage(message, from, user = null) {
     }
 
     // ============================================================
+    // OBSERVE: a coach's recording is an observation (or a debrief), never
+    // the coach's own self-coaching — the router decides, from the observe
+    // state and the real duration. Off unless OBSERVE_ENABLED=true.
+    // ============================================================
+    if (user) {
+      const { routeLeaderAudio } = require('../services/observe/observe-audio-router');
+      const handled = await routeLeaderAudio({
+        user,
+        from,
+        audioId,
+        sessionId,
+        durationSeconds: message.audio?.duration || message.voice?.duration || null,
+        sha256: message.audio?.sha256 || message.voice?.sha256 || null,
+        mimeType: message.audio?.mime_type || message.voice?.mime_type || null,
+      });
+      if (handled) {
+        typingController.stop();
+        return;
+      }
+    }
+
+    // ============================================================
     // FEATURE-BASED REGISTRATION: Check if waiting for name (voice)
     // ============================================================
     if (user) {

@@ -448,6 +448,19 @@ async function handleTextMessage(message, from, messageBody, user = null) {
   }
 
   // ============================================================
+  // OBSERVE (the coach's assistant): /observe, and any reply a pending
+  // observe step is waiting for. Off unless OBSERVE_ENABLED=true; for anyone
+  // outside the coach role family only /observe itself is looked at. The
+  // original-case message is passed — a teacher's name keeps its capitals.
+  // ============================================================
+  try {
+    const { handleObserveText } = require('./observe-command.handler');
+    if (await handleObserveText(user, from, messageBody)) return;
+  } catch (error) {
+    logToFile('❌ Error in observe text handling', { userId: user?.id, error: error.message });
+  }
+
+  // ============================================================
   // READING TEST COMMAND DETECTION: Check for /reading test command
   // ============================================================
   if (trimmedMessage === '/reading test' || trimmedMessage === '/readingtest') {

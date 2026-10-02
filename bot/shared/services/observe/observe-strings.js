@@ -137,6 +137,8 @@ const EN = {
   cancel_confirm_body: 'Cancel this observation? It will leave your list — the recording stays safe.',
   cancel_ack: '✅ Observation cancelled.',
   cancel_too_late: 'The report has already reached the teacher, so this observation can no longer be cancelled.',
+  long_audio_no_state:
+    "🎧 I received a long recording — but there's no observation waiting for you right now. If this was a lesson or debrief recording, type /observe first (and pick the right observation), then send it again.",
   watchdog_stalled_coach: "⚠️ The observation you recorded stopped partway and I couldn't restart it. Nothing is lost — your recording is saved. Send the audio again when you can and I'll start a fresh one.",
 
   // ── Coach-the-coach card ─────────────────────────────────────────────────

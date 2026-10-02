@@ -476,6 +476,13 @@ async function handleWebhookPost(req, res) {
       const buttonId = message.interactive.button_reply.id;
       logToFile('📱 Interactive button clicked', { buttonId, from });
 
+      // Observe taps (capture ack, cancel, debrief, report …) — one dispatcher,
+      // ahead of every other branch so no other feature can claim an observe id.
+      if (buttonId.startsWith('observe_')) {
+        const { handleObserveInteractive } = require('./shared/handlers/observe-interactive.handler');
+        if (await handleObserveInteractive(user, from, buttonId)) return;
+      }
+
       // Classroom-photo question (photo_yes_/photo_no_/photo_more_/photo_done_):
       // "No"/"Done" move the coaching session on to the lesson-plan step.
       const { handleCoachingFlowButton } = require('./shared/services/coaching/coaching-flow-buttons');
@@ -1203,6 +1210,11 @@ async function handleWebhookPost(req, res) {
       const listId = listReply.id;
       logToFile('📋 Interactive list item selected', { listId, from });
 
+      if (listId.startsWith('observe_')) {
+        const { handleObserveInteractive } = require('./shared/handlers/observe-interactive.handler');
+        if (await handleObserveInteractive(user, from, listId)) return;
+      }
+
       // Test papers (tp_ ids): source, chapter, size, language, my papers.
       if (await routeTestPaperSelection({ user, from, id: listId })) {
         res.status(200).send('EVENT_RECEIVED');
@@ -1589,6 +1601,25 @@ async function handleDocumentMessage(message, from, user) {
           durationMinutes: Math.round(audioDuration / 60),
           mimeType
         });
+
+        // OBSERVE: a coach's lesson recording usually arrives as a FILE. It is
+        // an observation (or a debrief), never the coach's own coaching — the
+        // observe router decides before the self-coaching threshold below.
+        const ObserveGate = require('./shared/services/observe/observe-gate');
+        if (user && ObserveGate.isObserveEnabled() && ObserveGate.isSchoolLeader(user)) {
+          const { routeLeaderAudio } = require('./shared/services/observe/observe-audio-router');
+          const { getOrCreateSession: observeSession } = require('./shared/database/bot-helpers');
+          const handled = await routeLeaderAudio({
+            user,
+            from,
+            audioId: documentId,
+            sessionId: await observeSession(user.id),
+            isLongAudio: audioDurationRounded >= 900,
+            durationSeconds: audioDurationRounded || null,
+            mimeType,
+          });
+          if (handled) return;
+        }
 
         // Check if audio is 15+ minutes (900 seconds) = classroom audio
         // COACHING_MIN_AUDIO_SECONDS, default 900 (15 minutes)
