@@ -82,6 +82,12 @@ function load() {
     getResponseWithFormat: jest.fn().mockResolvedValue('A friendly AI reply.'),
   });
   jest.doMock('../../bot/shared/services/openai.service', () => OpenAI);
+  // An LLM service whose JSON repair package is installed only with the bot's own dependencies (absent in CI's root job).
+  jest.doMock('../../bot/shared/services/gpt5-mini.service', () => inert());
+  jest.doMock('../../bot/shared/services/exam-checker/annotation.service', () => inert());
+  jest.doMock('../../bot/shared/services/feature-registration.service', () => inert());
+  jest.doMock('../../bot/shared/services/portal-invite.service', () => inert());
+  jest.doMock('../../bot/shared/services/pdf-report.service', () => inert());
   jest.doMock('../../bot/shared/services/llm-client', () => ({ getClient: () => inert() }));
   jest.doMock('../../bot/shared/utils/language-cache', () => inert({
     getUserLanguage: jest.fn().mockResolvedValue('en'), setUserLanguage: jest.fn(), setLanguageLock: jest.fn(),
