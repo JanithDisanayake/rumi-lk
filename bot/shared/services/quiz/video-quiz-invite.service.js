@@ -280,13 +280,15 @@ async function notifyInviter(session, language = 'en') {
       .eq('id', session.invited_by_student_id).maybeSingle();
     if (!inviterStudent?.phone) return false;
 
-    // The inviter's own run of the SAME quiz, for the comparison.
+    // The inviter's own run of the SAME quiz, for the comparison: their FIRST
+    // completed run, the attempt that counts, so a retake never changes it.
     const { data: mine } = await supabase
       .from('quiz_sessions')
       .select('correct_answers, total_questions_answered, mastery_percentage')
       .eq('student_id', inviterStudent.id)
       .eq('quiz_id', session.quiz_id)
       .eq('status', 'completed')
+      .order('completed_at', { ascending: true })
       .limit(1);
     const inviterRun = (mine || [])[0];
     if (!inviterRun) return false;   // nothing to compare against
