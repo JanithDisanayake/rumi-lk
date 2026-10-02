@@ -145,6 +145,16 @@ const FEATURES = [
     name: 'Exam-checker OCR (Mistral or Chandra)',
     keysAny: ['MISTRAL_API_KEY', 'CHANDRA_API_KEY'],
   },
+  // The lesson quiz needs no key of its own (it writes with OPENROUTER_API_KEY,
+  // which is core); its one gate is the TRANSCRIPT_QUIZ_ENABLED flag, so the
+  // flag is what `keys` presence-checks. The offer service still requires the
+  // value `true`, and the console switch below can turn it off.
+  {
+    id: 'lesson_quiz',
+    name: 'Lesson quiz (from a coaching recording or a lesson plan)',
+    keys: ['TRANSCRIPT_QUIZ_ENABLED'],
+    notes: 'Set TRANSCRIPT_QUIZ_ENABLED=true; writes with OPENROUTER_API_KEY. See docs/features/lesson-quiz.md.',
+  },
   { id: 'observability_axiom', name: 'Observability (Axiom)', keys: ['AXIOM_DATASET', 'AXIOM_TOKEN'] },
   // Lesson-plan fidelity is gated on a FLAG as well as a key: it ships off (LP_FIDELITY_ENABLED=true turns it on),
   // and it needs Soniox because only the diarized transcript carries the [MM:SS] timings the grader quotes.

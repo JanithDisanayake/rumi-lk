@@ -23,6 +23,15 @@
  * The through-line: a teacher must get ONE report, and it must contain results.
  */
 
+// The lesson-quiz language helpers (transcript-quiz-language, adapted by the
+// authoring slice) still read the retired config/languages registry in this
+// tree. Until they move to config/quiz-languages, stand that registry in with
+// the same shape; once they have moved this virtual module is simply unused.
+jest.mock('../../bot/shared/config/languages', () => ({
+  LANGUAGE_OFFER: ['en', 'ur'],
+  getLanguage: (c) => jest.requireActual('../../bot/shared/config/quiz-languages').getLanguage(c),
+}), { virtual: true });
+
 jest.mock('../../bot/shared/config/supabase', () => ({ from: jest.fn() }));
 jest.mock('../../bot/shared/services/whatsapp.service', () => ({
   sendMessage: jest.fn().mockResolvedValue(true),
@@ -30,6 +39,16 @@ jest.mock('../../bot/shared/services/whatsapp.service', () => ({
 }));
 jest.mock('../../bot/shared/services/queue/sqs-queue.service', () => ({
   queueJob: jest.fn().mockResolvedValue({ MessageId: 'm1' }),
+}));
+// The schedule and send claims are Redis SET NX keys; an in-memory map here,
+// so the suite never dials a real Redis.
+const mockKv = new Map();
+jest.mock('../../bot/shared/services/cache/railway-redis.service', () => ({
+  get: jest.fn(async (k) => (mockKv.has(k) ? mockKv.get(k) : null)),
+  set: jest.fn(async (k, v) => { mockKv.set(k, v); return true; }),
+  setNX: jest.fn(async (k, v) => { if (mockKv.has(k)) return false; mockKv.set(k, v); return true; }),
+  delete: jest.fn(async (k) => { mockKv.delete(k); return true; }),
+  isAvailable: () => true,
 }));
 jest.mock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn() }));
 jest.mock('../../bot/shared/utils/structured-logger', () => ({ logEvent: jest.fn() }));
@@ -75,6 +94,10 @@ function stubSupabase({ shareCode, teacher, sessions, answers = [] }) {
       };
       listy.eq = () => listy;
       listy.in = () => listy;
+      listy.is = () => listy;
+      listy.not = () => listy;
+      listy.order = () => listy;
+      listy.limit = () => listy;
       listy.select = () => listy;
       listy.maybeSingle = chain.maybeSingle;
       listy.update = chain.update;
@@ -87,6 +110,7 @@ function stubSupabase({ shareCode, teacher, sessions, answers = [] }) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockKv.clear();
 });
 
 describe('bd-2334 — scheduling must survive the queue', () => {
