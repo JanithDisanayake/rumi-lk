@@ -94,6 +94,7 @@ async function tryCurriculumLessonPlanServe(from, topic, user, language) {
 
 const { evaluateHomeworkTrigger } = require('./homework-trigger');
 const { detectEditClassIntent } = require('./edit-class-trigger');
+const { routeTestPaperText } = require('./testpaper-trigger');
 
 async function handleTextMessage(message, from, messageBody, user = null) {
   logToFile(`Processing TEXT message: ${messageBody}`);
@@ -332,6 +333,14 @@ async function handleTextMessage(message, from, messageBody, user = null) {
     } catch (svFbErr) {
       logToFile('Student Video Feedback: consumeReasonIfPending error', { error: svFbErr.message });
     }
+  }
+
+  // Test papers: /testpaper, /paper, /mypapers — and, while a pick is pending,
+  // the teacher's numbers, typed mix, pasted chapter or edit request. Slash
+  // commands other than these always pass through (see testpaper-trigger.js).
+  if (messageBody && await routeTestPaperText({ user, from, messageBody, language: responseLanguage })) {
+    typingController.stop();
+    return;
   }
 
   // When user taps ice breaker, WhatsApp sends the ice breaker text as message

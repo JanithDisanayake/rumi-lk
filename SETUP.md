@@ -426,6 +426,21 @@ There are **no tiers** — each feature turns on the moment its key(s) are prese
 3. Set up the stale session cron job (Step 11)
 4. Redeploy
 
+### Set test papers from your own textbooks
+
+Test papers (`/testpaper`) are on with the LLM key you already have; teachers can build them from their own
+lesson plans or an uploaded chapter straight away. To let them pick chapters of **your** textbooks, run the
+[curriculum pipeline](curriculum/README.md) over the books, then load its page-truth output:
+
+```bash
+node bot/scripts/testpaper/import-curriculum-corpus.js path/to/curriculum-project --dry-run   # what it would write
+node bot/scripts/testpaper/import-curriculum-corpus.js path/to/curriculum-project
+```
+
+Printing needs Chromium on the bot's host (`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`), and papers are written by
+the background worker. Existing databases: apply `infrastructure/supabase/migrations/V2.4.0__test_papers.sql`.
+See [docs/features/test-papers.md](docs/features/test-papers.md).
+
 ### Add regional-language speech-to-text (optional)
 
 Speech-to-text for regional Pakistani languages (Balochi, Sindhi, Pashto) uses Meta's MMS-ASR model deployed on [Modal.com](https://modal.com).

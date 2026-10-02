@@ -32,6 +32,9 @@
 const { runWithCorrelation, generateCorrelationId } = require('../shared/utils/structured-logger');
 
 require('dotenv').config();
+// The operator's RUMI_FEATURE_* switches, as the bot loads them: a job for a
+// feature switched off after it was queued is not run (see testpaper.worker).
+require('../shared/config/feature-availability').overrides.load(process.env);
 const supabase = require('../shared/config/supabase');
 const { logToFile } = require('../shared/utils/logger');
 const SQSQueueService = require('../shared/services/queue');
@@ -404,6 +407,20 @@ class SQSCoachingWorker {
       case 'quiz_reminder': {
         const QuizJobHandler = require('./quiz-job-handler');
         await QuizJobHandler.handleQuizReminder(this._buildQuizBody(body));
+        break;
+      }
+
+      // Test papers (/testpaper): write or revise one version, then print and
+      // send the paper + answer key. A long paper in a right-to-left script can
+      // take a few minutes end to end, so the job gets ten.
+      case 'testpaper_generate':
+      case 'testpaper_revise': {
+        await SQSQueueService.extendJobTimeout(receiptHandle, 600);
+        const TestPaperWorker = require('./testpaper.worker');
+        await TestPaperWorker.process({
+          ...payload,
+          action: jobType === 'testpaper_revise' ? 'revise' : 'generate',
+        });
         break;
       }
 

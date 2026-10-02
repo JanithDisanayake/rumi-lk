@@ -121,6 +121,16 @@ const FEATURES = [
     probe: 'diarization',
     notes: 'Set LP_FIDELITY_ENABLED=true. Grades with OPENROUTER_API_KEY (LP_FIDELITY_MODEL, default google/gemini-3.8-flash).',
   },
+  // Test papers need only the model key every deployment already has (either
+  // provider llm-client supports), so they are on by default; RUMI_FEATURE_TEST_PAPER=off
+  // turns them off. Printing the PDF needs Chromium, like the reading report.
+  {
+    id: 'test_paper',
+    name: 'Test papers from the book (/testpaper)',
+    keysAny: ['OPENROUTER_API_KEY', 'OPENAI_API_KEY'],
+    notes: 'Builds papers from loaded textbooks, a teacher\'s lesson plans or an uploaded chapter. '
+      + 'Optional: TESTPAPER_MODEL, TESTPAPER_CURRICULUM. PDFs need Chromium (PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH).',
+  },
 ];
 
 // A var counts as "set" only if it holds a real value — not a template placeholder.

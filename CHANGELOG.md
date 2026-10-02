@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-10-02
+
+**Make a test from the book.** A teacher picks a chapter — or a whole unit — from material the deployment
+already has (a textbook loaded from the curriculum pipeline, the teacher's own lesson plans, or a chapter
+they upload) and gets a printable test paper with a separate answer key in the chat, in about a minute. It
+works in any language the model writes, right-to-left papers included; every edit makes a new version, and
+"my papers" re-sends any of them. A paper is only ever built from real material: with nothing to build it
+from, the teacher is told so instead of getting an invented one.
+
+### Added
+
+- **`/testpaper`** (alias **`/paper`**, optionally with a subject and grade: `/testpaper science 8`) and **`/mypapers`** —
+  source → chapter(s) (one, several, a range or all) → size (quick 10 / standard 20 / full 30, or a typed mix
+  such as "5 MCQs, 3 true/false, 2 short") → paper language → paper + answer key PDFs → Edit / New paper / My
+  papers. Every pick is an interactive list or reply buttons through the messaging facade: native on
+  WhatsApp, a numbered menu on Baileys, Matrix, Slack and Discord. No WhatsApp Flow needed. Past six loaded
+  books, a "Textbooks (N)" row opens a numbered list of every book.
+- **`bot/shared/services/testpaper/`** — the conversation, sources, store, session, generation (one model call
+  with a neutral prompt pack; marks budget, MCQ answers and image keys made true after the call), the
+  question-type catalogue by subject family, the paper/answer-key renderer (right to left in Nastaliq or Naskh
+  for Perso-Arabic-script languages), and delivery through the repo's html-to-pdf. Ported from a fork's
+  assessment generator, generalised: no country-bound catalogue, prompts or subject packs.
+- **`bot/workers/testpaper.worker.js`** — the `testpaper_generate` and `testpaper_revise` jobs.
+- **`bot/scripts/testpaper/import-curriculum-corpus.js`** — loads the curriculum pipeline's page-truth output
+  into `textbooks` / `textbook_toc` / `textbook_pages` (idempotent, `--dry-run`; books of different
+  `--curriculum` keys are kept apart).
+- **`bot/shared/config/model-registry.js`** — a slim per-job model registry (`resolveModelForJob`); test papers
+  default to `google/gemini-2.5-pro` via OpenRouter, override with `TESTPAPER_MODEL`.
+- **Schema:** `test_paper_requests` and `test_papers` (versions via `edited_from`), RLS, and migration
+  `V2.4.0__test_papers.sql` (additive).
+- `docs/features/test-papers.md`, README and feature-library rows, a SETUP section, a `.env.template` block
+  (`TESTPAPER_MODEL`, `TESTPAPER_CURRICULUM`, `RUMI_FEATURE_TEST_PAPER`), and a `test_paper` entry in
+  `FEATURES` (on with the LLM key; `RUMI_FEATURE_TEST_PAPER=off` switches every entry point off, including
+  buttons from earlier papers and jobs already queued).
+- Lesson plans made by Rumi are read through the shared `content.plan_text` reader
+  (`bot/shared/services/coaching/fidelity/lesson-plan-text.js`, from the lesson-plan fidelity release).
+
+### Changed
+
+- **The bot's Meta webhook acknowledges a handled test-paper pick** before returning, so Meta does not
+  re-send it.
+- **The SQS worker loads the operator's `RUMI_FEATURE_*` switches at startup**, as the bot does, so a job for
+  a feature switched off after it was queued is not run (test papers check this).
+
 ## [2.3.0] - 2026-10-02
 
 **Did the lesson follow the plan?** A teacher sends a lesson recording and links the plan they meant to teach — one

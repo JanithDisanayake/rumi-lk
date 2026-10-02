@@ -202,6 +202,7 @@ key(s) that switch it on.
 | 📸 **[Pic-to-LP](docs/features/pic-to-lp.md)** | A photo of a textbook page → an illustrated 2-page lesson plan | `KIE_API_KEY` |
 | 📚 **[Homework](docs/features/homework.md)** | Pick a class + chapters → a curriculum homework bundle PDF | `HOMEWORK_FLOW_ID` |
 | 🧠 **[Quiz](docs/features/quiz.md)** | Teacher sends a topic quiz to a class; students answer on their parents' WhatsApp, teacher gets a results report | _core (uses `OPENROUTER_API_KEY`)_ |
+| 📝 **[Test Papers](docs/features/test-papers.md)** | A chapter or a whole unit — from a loaded textbook, the teacher's own lesson plans or an uploaded chapter — → a printable test paper + separate answer key, any language (right-to-left included); edits make new versions, "my papers" re-sends | _core (uses `OPENROUTER_API_KEY`)_; PDFs need Chromium |
 | 🎬🎓 **[Video Quizzes](docs/features/video-quizzes.md)** | A curriculum video → its quiz, 3 s later — pictures, voice notes, class share links, and a next-morning reteach report. Ships with the open **Taleemabad content library** ([see below ↓](#-the-taleemabad-content-library)) | one import script + `DEFAULT_REGION=pakistan` |
 | 🗣️ **[Voice Messages](docs/features/voice.md)** | Full spoken interaction in many languages | `SONIOX_API_KEY` + `ELEVENLABS_API_KEY` |
 | 🎬 **[Video Generation](docs/features/video.md)** | A topic → a short narrated educational video | `VIDEO_GENERATION_ENABLED` + `KIE_API_KEY` |
