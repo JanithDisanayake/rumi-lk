@@ -802,7 +802,9 @@ async function processDebriefRecording(sessionId, payload = {}) {
   if (error || !session) throw new Error(`observe debrief: session not found: ${error && error.message}`);
 
   const coach = (await _loadCoach(session.observer_user_id)) || { id: session.observer_user_id };
-  const from = payload.from || coach.phone_number;
+  // A retry sweep re-queues without a `from`: resolve the coach's address on
+  // their own channel (a Matrix coach has no phone_number).
+  const from = payload.from || await require('./observe-identity').identityForUser(coach.id);
   const lang = await languageFor('coach', session);
   const S = observeStrings(lang);
   const observerDebrief = (session.analysis_data && session.analysis_data.observer_debrief) || {};

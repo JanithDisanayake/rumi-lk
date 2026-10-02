@@ -14,6 +14,7 @@
 const supabase = require('../../config/supabase');
 const { logToFile } = require('../../utils/logger');
 const { isSchoolLeader } = require('./observe-gate');
+const { identitiesForUsers } = require('./observe-identity');
 
 /** @returns {Promise<Array<{id, ext_id, name}>>} the coach's schools, by name */
 async function listSchools(leaderUserId) {
@@ -51,16 +52,20 @@ async function listTeachers(leaderUserId, { schoolId } = {}) {
     logToFile('⚠️ observe-roster: teacher list failed', { leaderUserId, error: error.message });
     return [];
   }
-  return (data || [])
+  const teachers = (data || [])
     // Another coach attached to the same school is a colleague, not a teacher to observe.
-    .filter((u) => u.id !== leaderUserId && !isSchoolLeader(u))
+    .filter((u) => u.id !== leaderUserId && !isSchoolLeader(u));
+  // `phone` is the teacher's channel identity: their phone number on WhatsApp,
+  // their channel address otherwise (a Matrix teacher has no phone_number).
+  const identities = await identitiesForUsers(teachers.map((u) => u.id));
+  return teachers
     .map((u) => {
       const school = bySchool.get(u.school_id);
       return {
         user_id: u.id,
         teacher_ext_id: u.id,
         name: u.name || u.first_name || 'Teacher',
-        phone: u.phone_number || null,
+        phone: identities.get(u.id) || null,
         school_id: u.school_id,
         school_ext_id: school.ext_id,
         school_name: school.name,

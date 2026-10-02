@@ -32,8 +32,8 @@ async function resolveBoundTeacherUserId(boundTeacher) {
     if (!boundTeacher) return null;
     if (boundTeacher.user_id) return boundTeacher.user_id;
     if (!boundTeacher.phone) return null;
-    const { data } = await supabase.from('users').select('id').eq('phone_number', boundTeacher.phone).limit(1);
-    return data && data[0] ? data[0].id : null;
+    const { userIdForIdentity } = require('./observe-identity');
+    return await userIdForIdentity(boundTeacher.phone);
   } catch (_) {
     return null;
   }

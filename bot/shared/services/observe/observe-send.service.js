@@ -198,7 +198,10 @@ async function _coachOf(session) {
   if (!session || !session.observer_user_id) return null;
   const { data } = await db().from('users')
     .select('id, name, phone_number, preferred_language').eq('id', session.observer_user_id).maybeSingle();
-  return data || null;
+  if (!data) return null;
+  // `identity` is where the coach is reached: their number on WhatsApp, their
+  // channel address otherwise (see observe-identity).
+  return { ...data, identity: await require('./observe-identity').identityForUser(data.id) };
 }
 
 const isBound = (session) => !!(session && session.user_id && session.user_id !== session.observer_user_id);
@@ -209,21 +212,20 @@ const isBound = (session) => !!(session && session.user_id && session.user_id !=
  * the bare digits themselves.
  */
 async function resolveTeacherIdentity(digits) {
-  const d = String(digits || '').replace(/\D/g, '');
-  if (!d) return { phone: null, userId: null };
-  const shapes = [d, `+${d}`, `mtx:${d}`, `matrix:${d}`];
+  const Identity = require('./observe-identity');
+  const shapes = Identity.candidatesForTypedNumber(digits);
+  if (!shapes.length) return { phone: null, userId: null };
   try {
-    const { data } = await db().from('users').select('id, phone_number').in('phone_number', shapes).limit(5);
-    const rows = data || [];
-    // Prefer the exact shapes in the order above, so a bare WhatsApp row wins a tie.
+    // Preference order: a WhatsApp number on file, then a channel account
+    // (a Matrix phone-number username) — the person the coach most likely meant.
     for (const shape of shapes) {
-      const hit = rows.find((r) => r.phone_number === shape);
-      if (hit) return { phone: hit.phone_number, userId: hit.id };
+      const userId = await Identity.userIdForIdentity(shape);
+      if (userId) return { phone: (await Identity.identityForUser(userId)) || shape, userId };
     }
   } catch (err) {
     logToFile('⚠️ observe send: identity lookup failed — using the typed number', { error: err.message });
   }
-  return { phone: d, userId: null };
+  return { phone: shapes[0], userId: null };
 }
 
 // ── Coach side ─────────────────────────────────────────────────────────
@@ -311,9 +313,10 @@ async function startSendFlow(sessionId, from, user) {
   if (isBound(session)) {
     const { data: teacher } = await db().from('users')
       .select('id, name, phone_number').eq('id', session.user_id).maybeSingle();
-    if (teacher && teacher.phone_number) {
+    const teacherIdentity = teacher && await require('./observe-identity').identityForUser(teacher.id);
+    if (teacherIdentity) {
       await _chooseRecipient(user, from, sessionId,
-        { name: teacher.name || '', phone: teacher.phone_number, userId: teacher.id }, 'session_binding');
+        { name: teacher.name || '', phone: teacherIdentity, userId: teacher.id }, 'session_binding');
       return;
     }
   }
@@ -658,7 +661,7 @@ async function processTeacherReport(sessionId, payload = {}) {
   const { languageFor } = require('./observe-language');
   const coach = await _coachOf(session);
   const phase = payload.phase || 'preview';
-  const coachTo = (phase !== 'teacher_tap' && payload.from) || (coach && coach.phone_number) || null;
+  const coachTo = (phase !== 'teacher_tap' && payload.from) || (coach && coach.identity) || null;
   const coachName = (coach && coach.name) || '';
   const lang = await languageFor('coach', session);
   const teacherLang = await languageFor('teacher', session);
@@ -693,7 +696,7 @@ async function processUntappedDelivery(sessionId, nowMs = Date.now()) {
     return decision;
   }
   const coach = await _coachOf(session);
-  if (!coach || !coach.phone_number) return { action: 'skip', reason: 'coach_unresolved' };
+  if (!coach || !coach.identity) return { action: 'skip', reason: 'coach_unresolved' };
   const { languageFor } = require('./observe-language');
   const lang = await languageFor('coach', session);
   const name = d.teacher_name || '';
@@ -702,12 +705,12 @@ async function processUntappedDelivery(sessionId, nowMs = Date.now()) {
     const ok = await _sendReportTemplate(d, coach.name || '', sessionId).catch(() => false);
     // Stamped either way: one nudge is the whole budget, even a failed one.
     await mergeTeacherDelivery(sessionId, { nudged_at: iso, nudge_count: Number(d.nudge_count || 0) + 1 });
-    if (ok) await wa().sendMessage(coach.phone_number, t(lang, 'send_nudged_fo', { name })).catch(() => {});
+    if (ok) await wa().sendMessage(coach.identity, t(lang, 'send_nudged_fo', { name })).catch(() => {});
     else logToFile('⚠️ observe send: untapped nudge template failed', { sessionId });
     return decision;
   }
   await mergeTeacherDelivery(sessionId, { gave_up_at: iso, gave_up_reason: decision.reason });
-  await wa().sendMessage(coach.phone_number, t(lang, 'send_gave_up_fo', { name })).catch(() => {});
+  await wa().sendMessage(coach.identity, t(lang, 'send_gave_up_fo', { name })).catch(() => {});
   return decision;
 }
 
@@ -726,7 +729,7 @@ async function processUndeliveredDelivery(sessionId, nowMs = Date.now()) {
   // Resolve the recipient BEFORE writing: a reminder that cannot be delivered
   // leaves the row untouched for a later tick.
   const coach = await _coachOf(session);
-  if (!coach || !coach.phone_number) return { action: 'skip', reason: 'coach_unresolved' };
+  if (!coach || !coach.identity) return { action: 'skip', reason: 'coach_unresolved' };
   const patch = decision.action === 'remind'
     ? { reminded_at: iso, reminder_count: Number(d.reminder_count || 0) + 1 }
     : { gave_up_at: iso, gave_up_reason: decision.reason };
@@ -735,7 +738,7 @@ async function processUndeliveredDelivery(sessionId, nowMs = Date.now()) {
   const lang = await languageFor('coach', session);
   const key = decision.action === 'remind' ? 'send_undelivered_reminder_fo' : 'send_undelivered_gave_up_fo';
   const name = d.teacher_name || t(lang, 'send_undelivered_unnamed_teacher');
-  await wa().sendMessage(coach.phone_number, t(lang, key, { name })).catch(() => {});
+  await wa().sendMessage(coach.identity, t(lang, key, { name })).catch(() => {});
   return decision;
 }
 

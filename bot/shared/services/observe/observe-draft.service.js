@@ -29,6 +29,7 @@ const { languageFor } = require('./observe-language');
 const { getObservePack, scaleBounds } = require('./observe-framework');
 const { TERMINAL_IN_FILTER, isTerminalStatus } = require('./observe-terminal');
 const { resolveChannelDriver } = require('../../config/feature-availability');
+const { identityForUser } = require('./observe-identity');
 const { logToFile } = require('../../utils/logger');
 
 const {
@@ -54,8 +55,8 @@ async function loadSession(sessionId) {
  */
 async function observerIdentity(session, fallback) {
   const observerId = session.observer_user_id || session.user_id;
-  const { data } = await supabase.from('users').select('phone_number').eq('id', observerId).maybeSingle();
-  if (data && data.phone_number) return data.phone_number;
+  const identity = await identityForUser(observerId);
+  if (identity) return identity;
   logToFile('⚠️ observe: observer identity not found — draft falls back to the job `from`', { sessionId: session.id, observerId });
   return fallback;
 }

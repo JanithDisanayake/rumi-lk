@@ -63,8 +63,12 @@ async function _preferredLanguage(column, value) {
  */
 async function _teacherLanguage(session) {
   const delivery = (session && session.analysis_data && session.analysis_data.teacher_delivery) || {};
-  const byPhone = await _preferredLanguage('phone_number', delivery.teacher_phone);
-  if (byPhone) return byPhone;
+  if (delivery.teacher_phone) {
+    // The address may be a channel identity (a Matrix teacher has no phone_number).
+    const { userIdForIdentity } = require('./observe-identity');
+    const byAddress = await _preferredLanguage('id', await userIdForIdentity(delivery.teacher_phone));
+    if (byAddress) return byAddress;
+  }
 
   const teacherUserId = session && session.user_id;
   const bound = teacherUserId && teacherUserId !== (session && session.observer_user_id);
