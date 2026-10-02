@@ -334,7 +334,8 @@ class AttendanceConversationService {
 
     return [
       title,
-      ...(date && date !== AttendanceDates.todayString() ? [`📅 ${AttendanceDates.formatDisplayDate(date)}`] : []),
+      // Always the day being marked, today included: a teacher who meant another day sees it before marking.
+      `📅 ${AttendanceDates.formatDisplayDate(date || AttendanceDates.todayString())}`,
       '',
       'How would you like to mark attendance?',
       '',

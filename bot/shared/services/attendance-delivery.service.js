@@ -26,6 +26,7 @@ const WhatsAppService = require('./whatsapp.service');
 const AttendanceConversationService = require('./attendance-conversation.service');
 const { logToFile } = require('../utils/logger');
 const { deliverRegisterFile } = require('./attendance-register-delivery.service');
+const crypto = require('crypto');
 const supabase = require('../config/supabase');
 
 class AttendanceDeliveryService {
@@ -282,7 +283,8 @@ class AttendanceDeliveryService {
    * updated — rather than refused. The old duplicate guard dead-ended a teacher who
    * had made a mistake; a correction is the commonest reason to mark a day twice.
    * The new records are written BEFORE the old ones are removed, and the tallies
-   * last, so a write that fails part-way leaves the day already on file intact.
+   * last, so a write that fails part-way leaves the day already on file intact
+   * (if removing the old ones fails, the new ones are taken back out).
    *
    * Only the teacher whose class it is can file or replace its day: a stray token
    * or session naming someone else's list is refused before anything is written.
@@ -363,7 +365,10 @@ class AttendanceDeliveryService {
       sessionId = session.id;
     }
 
+    // Ids chosen here, so a replace that fails after this insert can take
+    // exactly these rows back out again.
     const recordInserts = records.map(r => ({
+      id: crypto.randomUUID(),
       session_id: sessionId,
       student_id: r.studentId,
       student_name: r.studentName,
@@ -390,7 +395,12 @@ class AttendanceDeliveryService {
           .delete()
           .in('id', oldRecordIds);
         if (deleteError) {
-          throw new Error(`Saved the correction but could not remove the old records: ${deleteError.message}`);
+          // Take the new rows back out, so the day holds what was on file rather than both.
+          await supabase
+            .from('attendance_records')
+            .delete()
+            .in('id', recordInserts.map(r => r.id));
+          throw new Error(`Could not save the correction; the day on file is unchanged: ${deleteError.message}`);
         }
       }
 

@@ -192,3 +192,50 @@ describe('staff attendance is refused at submit time for anyone but a linked hea
     expect(mockDb.rowsOf('teacher_attendance_records')).toHaveLength(0);
   });
 });
+
+describe('a correction whose cleanup fails', () => {
+  it('removes the new records again, so the day holds only what was on file', async () => {
+    await Delivery.processAndDeliver('u1', '15550100001', classDay('absent'));
+    // The first delete (removing the old records) fails; the next one (taking the new ones back) works.
+    const realFrom = mockDb.client.from;
+    let deletes = 0;
+    mockDb.client.from = (t) => {
+      const b = realFrom(t);
+      if (t === 'attendance_records') {
+        const del = b.delete;
+        b.delete = (...a) => {
+          deletes += 1;
+          if (deletes === 1) return { in: () => ({ then: (res) => res({ data: null, error: { message: 'simulated delete failure' } }) }) };
+          return del.apply(b, a);
+        };
+      }
+      return b;
+    };
+    const second = await Delivery.processAndDeliver('u1', '15550100001', classDay('leave'));
+    mockDb.client.from = realFrom;
+    expect(second.success).toBe(false);
+    expect(mockDb.rowsOf('attendance_records').map((r) => r.status).sort()).toEqual(['absent', 'present']);
+  });
+});
+
+describe('every date in the message is considered, and the class word may be punctuated', () => {
+  const now = new Date('2026-10-02T09:00:00Z');
+  it.each([
+    ['attendance grade 5 sep 30', { date: '2026-09-30' }],
+    ['attendance class 9/10 for 30/9', { date: '2026-09-30' }],
+    ['attendance class: 1/10', null],
+    ['attendance class-1/10', null],
+    ['attendance cls 1/10', null],
+    ['attendance class #1/10', null],
+  ])('%s', (text, expected) => {
+    expect(dates.parseRequestedDate(text, now)).toEqual(expected);
+  });
+});
+
+describe('the method menu always names the day being marked', () => {
+  const Conversation = require('../../bot/shared/services/attendance-conversation.service');
+  it('names today when no day was asked for', () => {
+    const msg = Conversation.generateMarkingMethodMessage({ class_name: 'Grade 5', section: 'A' });
+    expect(msg).toContain(`📅 ${dates.formatDisplayDate(dates.todayString())}`);
+  });
+});
