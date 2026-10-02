@@ -407,6 +407,20 @@ class SQSCoachingWorker {
         break;
       }
 
+      // Test papers (/testpaper): write or revise one version, then print and
+      // send the paper + answer key. A long paper in a right-to-left script can
+      // take a few minutes end to end, so the job gets ten.
+      case 'testpaper_generate':
+      case 'testpaper_revise': {
+        await SQSQueueService.extendJobTimeout(receiptHandle, 600);
+        const TestPaperWorker = require('./testpaper.worker');
+        await TestPaperWorker.process({
+          ...payload,
+          action: jobType === 'testpaper_revise' ? 'revise' : 'generate',
+        });
+        break;
+      }
+
       default:
         throw new Error(`Unknown job type: ${jobType}`);
     }
