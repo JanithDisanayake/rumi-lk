@@ -31,7 +31,11 @@ jest.mock('../../bot/shared/services/whatsapp.service', () => ({
   sendImage: jest.fn(async () => true),
   sendSticker: jest.fn(async () => true),
 }));
-jest.mock('../../bot/shared/storage/r2', () => ({ uploadClassroomAudio: jest.fn(async () => 'r2://audio') }));
+const mockR2 = { configured: true };
+jest.mock('../../bot/shared/storage/r2', () => ({
+  isR2Configured: () => mockR2.configured,
+  uploadClassroomAudio: jest.fn(async () => { if (!mockR2.configured) throw new Error('S3Client cannot be constructed'); return 'r2://audio'; }),
+}));
 const mockLang = { getUserLanguage: jest.fn(async () => 'en'), setUserLanguage: jest.fn(async () => true) };
 jest.mock('../../bot/shared/utils/language-cache', () => mockLang);
 jest.mock('../../bot/shared/utils/language-detector', () => ({
@@ -72,5 +76,15 @@ describe('transcription on a leader observation', () => {
     expect(WhatsAppService.sendMessage).toHaveBeenCalledWith('15550100002', 'Great lesson!');
     expect(WhatsAppService.sendInteractiveButtons).toHaveBeenCalled();
     expect(mockQueue.queueCoachingJob).not.toHaveBeenCalledWith('dc-1', 'analysis', expect.anything());
+  });
+
+  test('without object storage (R2 is optional) the recording is still transcribed and analysed', async () => {
+    mockR2.configured = false;
+    const row = mockDb.tables.coaching_sessions.find((x) => x.id === 'obs-1');
+    row.status = 'confirmed';
+    await TranscriptionProcessor.processTranscription('obs-1', { from: '15550100001', audioId: 'media-1' });
+    mockR2.configured = true;
+    expect(row).toMatchObject({ status: 'transcription_complete', audio_url: null });
+    expect(mockQueue.queueCoachingJob).toHaveBeenCalledWith('obs-1', 'analysis', { from: '15550100001' });
   });
 });
