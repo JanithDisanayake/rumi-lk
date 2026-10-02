@@ -33,7 +33,7 @@ function seed() {
       { id: 'lp-x', user_id: OTHER, topic: 'Not yours', content: { text: LONG }, created_at: '2026-09-23T10:00:00Z' },
     ],
     textbooks: [
-      { id: 'tb-1', grade: 2, subject: 'Math', curriculum: 'corpus', total_pages: 30 },
+      { id: 'tb-1', grade: 2, subject: 'math', curriculum: 'corpus', total_pages: 30 },
       { id: 'tb-2', grade: 5, subject: 'Science', curriculum: 'other', total_pages: 10 },
     ],
     textbook_toc: [
@@ -72,7 +72,7 @@ describe('listSources', () => {
     const s = await Sources.listSources(TEACHER);
     expect(s.lessonPlans.map((l) => l.id)).toEqual(['lp-3', 'lp-2', 'lp-1']);
     expect(s.textbooks.map((t) => t.id).sort()).toEqual(['tb-1', 'tb-2']);
-    expect(s.textbooks.find((t) => t.id === 'tb-1')).toMatchObject({ grade: 2, subject: 'Math', chapterCount: 2 });
+    expect(s.textbooks.find((t) => t.id === 'tb-1')).toMatchObject({ grade: 2, subject: 'math', chapterCount: 2 });
   });
 
   it('never lists another teacher\'s lesson plans', async () => {
@@ -114,8 +114,8 @@ describe('listChapters / loadTextbookContent', () => {
   it('assembles one chapter as page-marked text', async () => {
     const c = await Sources.loadTextbookContent('tb-1', [1]);
     expect(c.text).toBe('=== Page 1 ===\nA 3-digit number has hundreds, tens and ones.\n\n=== Page 2 ===\nWe compare numbers with <, > and =.');
-    expect(c).toMatchObject({ subject: 'Math', grade: 2, chapterTitle: 'Numbers up to 999', pageReference: '1-2' });
-    expect(c.label).toMatch(/Chapter 1/);
+    expect(c).toMatchObject({ subject: 'math', grade: 2, chapterTitle: 'Numbers up to 999', pageReference: '1-2' });
+    expect(c.label).toBe('Math · Chapter 1: Numbers up to 999');
   });
 
   it('assembles a whole unit (several chapters) in chapter order', async () => {

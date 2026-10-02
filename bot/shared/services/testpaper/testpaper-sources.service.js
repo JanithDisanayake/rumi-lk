@@ -25,6 +25,7 @@
 const supabase = require('../../config/supabase');
 const { logToFile } = require('../../utils/logger');
 const { familyOf } = require('./question-types');
+const { subjectName } = require('./paper-renderer');
 
 /** How many of a teacher's recent lesson plans are offered. */
 const LESSON_PLAN_LIMIT = 20;
@@ -206,9 +207,10 @@ async function loadTextbookContent(textbookId, chapterNumbers) {
     grade: book.grade,
     chapterTitle,
     pageReference,
+    // A subject stored as a code ("math", "social_studies") reads as words.
     label: chapters.length === 1
-      ? `${book.subject} · Chapter ${chapters[0].number}: ${chapters[0].title}`
-      : `${book.subject} · ${chapterTitle}: ${chapters.map((c) => c.title).join('; ')}`,
+      ? `${subjectName(book.subject)} · Chapter ${chapters[0].number}: ${chapters[0].title}`
+      : `${subjectName(book.subject)} · ${chapterTitle}: ${chapters.map((c) => c.title).join('; ')}`,
   };
 }
 
