@@ -395,7 +395,7 @@ function render(spec) {
     // above already does (nameH: 2.9x for Urdu vs 1.9x). A Nastaliq label rides in a
     // foreignObject whose box grows UPWARD from this baseline, so a flat 1.05x pushed
     // that box back into the formula's subscript — visually a near-miss, but
-    // checkOverlaps() saw the boxes touch and lint_lp.js's DIAGRAM_OVERLAP is a hard
+    // checkOverlaps() saw the boxes touch and the overlap gate is a hard
     // fail, so an Urdu molecule name made the whole lesson plan unshippable. The extra
     // drop stays inside the room nameH already reserved, so nothing else moves, and a
     // Latin name keeps its 1.05x exactly.

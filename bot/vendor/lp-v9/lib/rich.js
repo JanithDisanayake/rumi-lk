@@ -44,7 +44,7 @@ const MATH = /\$\$([\s\S]+?)\$\$|\$([^$]+?)\$|\\ce\{((?:[^{}]|\{[^{}]*\})*)\}/g;
 
 // ── v9: A MATRIX IS NEVER TYPESET AS A SUBSCRIPT ────────────────────────────
 //
-// The expert's printed G10 determinants LP carried inline matrices set at script size —
+// A printed lesson plan on determinants carried inline matrices set at script size —
 // KaTeX's textstyle, which is what `$\begin{bmatrix}…\end{bmatrix}$` legitimately means. On a
 // page the teacher reads at arm's length that is unreadable, and on a phone it is a smear.
 // A matrix environment inside an inline run is therefore promoted to \displaystyle: the same
@@ -92,7 +92,7 @@ const prose = (s) => (RTL_PROSE ? isolateRanges(s) : s);
 // the hero, in a Development paragraph, and in the footer.
 //
 // Taking the whole page to the Nastaliq branch is the wrong lever: it inflates every English page
-// carrying one honorific by ~50% and blows the packer's page budget (render_lp.js:94-117). Only
+// carrying one honorific by ~50% and blows the packer's page budget. Only
 // the runs that actually carry Arabic need the taller box, so only they get it.
 //
 // The ﷺ ligature is a second defect wearing the same costume. Measured over every glyph in

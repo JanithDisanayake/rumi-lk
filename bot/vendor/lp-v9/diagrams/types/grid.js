@@ -143,8 +143,8 @@ function render(spec) {
   // The legend above is built from rows/cols/shaded — "1/4 = 25% = 0.25" is 116 units at
   // SIZE.label — while the body used to be sized from the GRID alone. A 2x2 therefore
   // produced a 76-unit canvas carrying a readout wider than itself: the text ran edge to
-  // edge, checkOverlaps flagged it against the page rect, and lint_lp.js's
-  // DIAGRAM_OVERLAP — a HARD FAIL — rejected a minimal, entirely correct grid. The
+  // edge, checkOverlaps flagged it against the page rect, and the overlap
+  // gate — a HARD FAIL — rejected a minimal, entirely correct grid. The
   // failure only appears BELOW about 5x5, which is why a 10x10 hundred square never
   // showed it and why nobody had seen it. Measured with the engine's own estimator, so
   // the reservation and the drawing can never disagree.

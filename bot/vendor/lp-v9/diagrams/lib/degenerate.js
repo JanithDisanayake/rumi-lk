@@ -2,7 +2,7 @@
 // one row per defect otherwise. Sibling of checkOverlaps: same input (the emitted SVG string),
 // same "read what actually shipped" discipline, a different failure mode.
 //
-// Why it exists. The G10 determinants LP carried a parallelogram of determinant 3 that was
+// Why it exists. A lesson plan on determinants carried a parallelogram of determinant 3 that was
 // GEOMETRICALLY FAITHFUL and pedagogically useless: the author picked vectors whose cross
 // product is 3, the auto-fitter drew them honestly, and the result was a near-flat sliver a
 // teacher cannot point at and a pupil cannot read an area off. checkOverlaps passed it — no

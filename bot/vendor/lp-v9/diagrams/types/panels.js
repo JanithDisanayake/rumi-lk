@@ -2,7 +2,7 @@
 //
 // The single most-used diagram shape in the 6-12 corpus: two columns that hold
 // the same *kind* of claim about two different things, so the difference is the
-// only thing that moves. Replaces the CSS `panelGroup()` in render_lp_html.js
+// only thing that moves. Replaces a CSS panel group in the lesson-plan page
 // (bold heading / small italic subtitle / body lines / bold coloured footer) and
 // the AI-image prompts that duplicated it (hist_evidence_scales,
 // chem_atoms_vs_molecules, urdu_breath_marks).

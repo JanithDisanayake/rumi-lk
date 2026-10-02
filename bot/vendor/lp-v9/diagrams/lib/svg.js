@@ -5,8 +5,8 @@
 // title strip, the caption strip and the outer <svg> element, so every type
 // gets the same framing for free and none of them has to do viewBox arithmetic.
 //
-// Self-containment rules (the L1 renderer inlines these strings straight into
-// the lesson-plan HTML, and the PDF is printed by headless Chromium):
+// Self-containment rules (a page renderer inlines these strings straight into
+// its HTML, and the PDF is printed by headless Chromium):
 //   * no external refs — no <image href="http...">, no @import, no <use> across files
 //   * arrowheads are polygons, not <marker>, so nothing depends on defs ids
 //   * ids are prefixed with a hash of the spec, so two diagrams on one page
@@ -250,7 +250,7 @@ class Svg {
     // spilled out of it silently (overflow:visible).
     const boxH = o.h ?? urduBoxH(s, size, boxW);
     const fx = anchor === "middle" ? x - boxW / 2 : anchor === "end" ? x - boxW : x;
-    // Vertical placement, calibrated against rendered PNGs (scratchpad/cal.png):
+    // Vertical placement, calibrated against rendered PNGs:
     // with line-height:normal the Nastaliq glyph body sits high in its line box
     // and the descenders of ن/ک/گ hang below. Putting the box bottom ~0.95em
     // under the requested baseline lines the Urdu body up with Latin text on the
@@ -501,7 +501,7 @@ class Svg {
     // The smallest type actually emitted, in user units. The renderer needs this:
     // an SVG is scaled by min(boxW/vbW, boxH/vbH), so whether a label is legible
     // is a property of the BOX IT IS GIVEN, not of the font size alone. Declaring
-    // it lets render_lp.js allocate a slot instead of silently crushing the figure.
+    // it lets the page renderer allocate a slot instead of silently crushing the figure.
     const emitted = [...body.matchAll(/font-size[:="]+\s*([\d.]+)/g)].map((m) => Number(m[1]));
     const minFont = emitted.length ? Math.min(...emitted) : SIZE.small;
 

@@ -3,7 +3,7 @@
 // Self-contained output is the point: the rendered HTML must carry its own fonts as
 // base64 @font-face so a PDF produced on a laptop, on Railway and on EC2 look identical.
 // "Text overlap" and "gibberish Urdu" are font-load races, not
-// missing glyphs — that is why render_lp.js also awaits document.fonts.ready.
+// missing glyphs — that is why the renderer also awaits document.fonts.ready.
 //
 // Nothing here hardcodes an absolute /Users path: candidates are resolved relative to
 // the repo root (four levels up from this file), then the OS font dirs as a last resort.
@@ -104,7 +104,7 @@ function fontCss({ urdu = false } = {}) {
  * `\neq` is not a codepoint, it is an `\rlap`-ed U+E020 (a Private Use Area negation slash
  * living only in KaTeX_Main-Regular) painted over a plain `=`. A PUA codepoint has no
  * meaningful fallback, so Chrome substituted the body font and its unrelated PUA glyph. The
- * G10 determinants LP told teachers `|A| <smear> 0`.
+ * page told teachers `|A| <smear> 0`.
  *
  * Gates: `test/run_tests.js` (block integrity) and `test/math_glyphs.js` (Chrome's own answer
  * to which font it painted U+E020 with).

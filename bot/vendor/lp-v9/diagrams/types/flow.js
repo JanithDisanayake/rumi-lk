@@ -1,7 +1,7 @@
 // flow — a chain of rounded boxes joined by labelled arrows, with optional
 // branching (a decision that forks into two or more outcomes).
 //
-// Replaces the CSS `flowGroup()` in render_lp_html.js and the
+// Replaces a CSS flow group in the lesson-plan page and the
 // phys_mass_never_appears image prompt: bold heading + up to ~4 supporting lines
 // per box, arrows between them, everything auto-sized to its own text.
 //

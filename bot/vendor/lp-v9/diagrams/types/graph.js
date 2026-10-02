@@ -498,7 +498,7 @@ module.exports = {
   drawnExtent,
   aliases: ["plot", "function_plot"],
   summary:
-    "Cartesian plot, ALWAYS with both axes named (xLabel + yLabel are required by lint_lp.js GRAPH_AXES; give the quantity and its unit, or \"x\"/\"y\" for a pure-maths curve). A graph reads (x-quantity) -> (y-quantity) and every plotted point is stated in that same order — sampled function curves (safe expression strings), plotted points, straight segments, gridlines and labelled axes. A function can set shade:'above'|'below' to fill the half-plane on one side of it, for inequality diagrams; two shaded functions overlap into a visibly darker region, which is the right convention for a system of inequalities.",
+    "Cartesian plot, ALWAYS with both axes named (xLabel + yLabel are required; give the quantity and its unit, or \"x\"/\"y\" for a pure-maths curve). A graph reads (x-quantity) -> (y-quantity) and every plotted point is stated in that same order — sampled function curves (safe expression strings), plotted points, straight segments, gridlines and labelled axes. A function can set shade:'above'|'below' to fill the half-plane on one side of it, for inequality diagrams; two shaded functions overlap into a visibly darker region, which is the right convention for a system of inequalities.",
   render,
   examples: [
     {

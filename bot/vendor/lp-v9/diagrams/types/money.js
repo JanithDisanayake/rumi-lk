@@ -14,12 +14,13 @@
 // the answer is not on any single piece — the total, the count of pieces, the
 // swap.
 //
-// Currency is a SYMBOL the caller supplies (`currency`, default "Rs"), never a
-// hardcoded country: this engine serves several markets.
+// Currency is a SYMBOL the caller supplies (`currency`), never a hardcoded
+// country: this engine serves several markets. With none, a value is written
+// bare ("20").
 //
 // Spec
 //   items     [{value:10, kind:"coin"|"note", count:2}, …]   required
-//   currency  "Rs"          the unit written beside each value
+//   currency  ""            the unit written beside each value (none by default)
 //   perRow    5
 //   lang      "en" | "ur"
 
@@ -41,7 +42,7 @@ function render(spec) {
   });
   if (pieces.length > MAX_PIECES) throw new Error(`money: ${pieces.length} pieces is past counting; keep it to ${MAX_PIECES}`);
 
-  const currency = spec.currency == null ? "Rs" : String(spec.currency);
+  const currency = spec.currency == null ? "" : String(spec.currency).trim();
   const size = Math.max(SIZE.big, 26);
   const GAP = 20;
   const PAD = 18;
@@ -55,7 +56,7 @@ function render(spec) {
   // <circle> is not on that list, so a coin is INVISIBLE to the collision
   // contract. It was found by rasterising the picture to 390px and looking at
   // it, which is the only gate that would have.
-  const label = (p) => `${currency} ${p.value}`;
+  const label = (p) => (currency ? `${currency} ${p.value}` : String(p.value));
   const textW = Math.max(...pieces.map((p) => measure(label(p), size, { weight: 700 })));
   const coinR = Math.max((spec.coinSize ?? 108) / 2, textW / 2 + size * 0.55);
   const noteW = Math.max(spec.noteWidth ?? 172, textW + size * 1.4);

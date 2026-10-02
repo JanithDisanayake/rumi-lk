@@ -5,7 +5,7 @@
 // Colours are emitted as `var(--navy, #0B2545)`. Verified in headless Chrome:
 // CSS custom properties DO resolve inside SVG presentation attributes, and the
 // fallback is used when the property is not defined. So one string works in both
-// places we render — inside L1's lesson-plan page (inherits the LP palette) and
+// places we render — inside a page that defines the palette (inherits it) and
 // standalone in the test wrapper / gallery (falls back to these literals).
 
 const v = (name, hex) => `var(--${name}, ${hex})`;
@@ -58,7 +58,7 @@ const FONT = {
 };
 
 // Type scale in SVG *user units*. A diagram body is designed ~640 units wide and
-// is rendered into a ~700 px LP content column, so 1 unit ≈ 1.09 px. L1's floor
+// is rendered into a ~700 px LP content column, so 1 unit ≈ 1.09 px. The page's floor
 // is 13 px at a 794 px page width, hence a 12-unit minimum here. Nothing in a
 // diagram may be smaller than SIZE.tiny — test.js fails the build if it is.
 const SIZE = {

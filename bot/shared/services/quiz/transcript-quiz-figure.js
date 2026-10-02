@@ -294,7 +294,7 @@ function minimalSpecFor(type) {
  * section numbering). The second kind is noise in a WhatsApp quiz prompt: it
  * costs tokens and names machinery the model cannot act on.
  */
-const LP_ONLY_LIMIT = /lint_lp\.js|visual_check|author brief|A4|750px|794|column|PR #|bd-[a-z0-9]|blocking defect|serving repo|SS\d|§\d/i;
+const LP_ONLY_LIMIT = /lint_lp\.js|page lint|visual_check|author brief|A4|750px|794|column|PR #|bd-[a-z0-9]|blocking defect|serving repo|SS\d|§\d/i;
 
 /** The manifest's limits for a type, minus the lines that are about the LP page. */
 function limitsFor(type) {
@@ -1183,6 +1183,12 @@ function figureLeaksAnswer(spec, options, correctIndex, svg = null) {
   // sharing for the child ("12 flowers in 3 vases" drawn as 3 rows of 4).
   if (type === 'grid' && /^\d+$/.test(correct)) {
     if ([spec.rows, spec.cols].map((v) => norm(String(v))).includes(correct)) return true;
+  }
+  // A coin or note whose value IS the answer shows it, whatever symbol the
+  // option and the piece are written with ("Rs 5" against a coin marked "5").
+  if (type === 'money' && Array.isArray(spec.items)) {
+    const nums = correct.match(/\d+(?:\.\d+)?/g);
+    if (nums && nums.length === 1 && spec.items.some((it) => it && String(it.value) === nums[0])) return true;
   }
 
   if (!shows(correct)) return false;

@@ -1,15 +1,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // DIAGRAM ENGINE — deterministic diagram-as-code → SVG for 6-12 lesson plans.
-// LANE L2 owns this folder. (This replaces L1's placeholder stub; the contract
-// L1 documented there is preserved verbatim below and is honoured by this code.)
 //
-// CONTRACT (the only thing render_lp.js depends on):
+// CONTRACT (the only thing a page renderer depends on):
 //
 //     module.exports.renderDiagram(spec) -> string   // an <svg>…</svg> fragment
 //
 //   • `spec` is the lp_doc `diagram.spec` object, verbatim. It always has a
-//     `type` (string); everything else is L2's per-type vocabulary. L1 never
-//     inspects or rewrites it.
+//     `type` (string); everything else is the type's own vocabulary. The page
+//     renderer never inspects or rewrites it.
 //   • The return value is inlined into the page inside a <figure>. It IS an
 //     SVG fragment — no <html>, no <script>, no external url() references.
 //   • The root <svg> carries a `viewBox` and `width="100%"` plus an inline
@@ -19,15 +17,15 @@
 //   • Text is real <text>. Urdu comes through as <foreignObject> + dir="rtl" +
 //     the Nastaliq stack, never SVG <text> (SVG has no bidi/shaping guarantees).
 //   • Minimum type size is 12 user units ≈ 13 px at a 794 px page width.
-//   • THROWS for an unknown `type` — L1 catches, substitutes its placeholder and
+//   • THROWS for an unknown `type` — the caller catches, substitutes a placeholder and
 //     reports an unrendered diagram rather than shipping a silently blank box.
 //   • Pure and SYNCHRONOUS: no network, no async. (It is also await-safe, so
 //     `await renderDiagram(spec)` works if a caller prefers that form.)
 //
 // The one exception to "no filesystem": `labelled_figure` reads an image from a
-// path when the spec gives one instead of a data URI, and `circuit` can shell out
-// to schemdraw when `engine:"schemdraw"` is asked for explicitly. Both default to
-// pure in-process rendering; the serving path never touches either.
+// path when the spec gives one instead of a data URI. It defaults to pure
+// in-process rendering, and labelled_figure is not a lesson-quiz type. Nothing
+// here starts a process.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const fs = require("fs");
@@ -38,8 +36,8 @@ const { texToUnicode } = require("./lib/tex");
 const TYPES_DIR = path.join(__dirname, "types");
 
 // ─── VENDOR DIVERGENCE — local divergence from the upstream engine ─
-// The contract above says L1 never rewrites the spec. This is L2 rewriting its
-// OWN input, once, at the door: authored `diagram.spec` strings carry TeX, and
+// The contract above says the page renderer never rewrites the spec. This is the
+// engine rewriting its OWN input, once, at the door: authored `diagram.spec` strings carry TeX, and
 // every type draws them through wrap() + Svg.text(), whose esc() escapes only
 // & < > " ' — a `$` and a backslash land in the emitted SVG verbatim. Converting
 // at the egress is too late: wrap() measures and breaks the string first, so a
@@ -121,8 +119,8 @@ function allExamples() {
 
 // The collision contract. `checkOverlaps(svg)` returns [] for a clean diagram
 // and one row per colliding pair otherwise. It reads the emitted STRING, so it
-// is the same check whether the SVG came from this engine, a cached LP doc, or
-// the lint gate in ../lint_lp.js. See README.md §"Collision contract".
+// is the same check whether the SVG came from this engine, a cached document,
+// or a caller's own gate (the lesson quiz's figure gates).
 const { checkOverlaps, elementBoxes, textBox } = require("./lib/measure");
 
 // The DEGENERACY contract, alongside the collision one. checkOverlaps asks "can you read every

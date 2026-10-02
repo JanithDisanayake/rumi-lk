@@ -141,7 +141,7 @@ exports[`round 4 — the roster the author reads is the engine manifest, limits 
   required: items
   minimal: {"type":"money","items":[{"value":10,"kind":"coin"},{"value":5,"kind":"coin","count":2}]}
   limits:
-    · \`currency\` is the symbol written beside each value (default "Rs") — never a hardcoded country.
+    · \`currency\` is the symbol written beside each value (no default: without one a value is written bare) — never a hardcoded country.
     · The value IS printed on each piece, as it is on the real thing. A question whose answer is one piece's value is therefore a leak and will be rejected; the questions this type earns are the total, the number of pieces, and the swap.
     · A piece is {value, kind:"coin"|"note", count}. At most 12 pieces.
 - compare_size — Bars of different length or height, or a balance scale with things on its pans — longer/shorter, taller/shorter, heavier/lighter.
