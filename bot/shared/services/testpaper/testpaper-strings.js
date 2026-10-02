@@ -58,6 +58,7 @@ const STRINGS = {
     newButton: '➕ New paper',
     papersButton: '📂 My papers',
     askEdit: 'What should change? For example:\n• *make it easier*\n• *add 5 MCQs about rounding*\n• *remove question 4*\n• *give question 6 three marks*\n\nA new version is made; the current one stays as it is.',
+    editTooShort: 'Tell me what to change in a few words — for example *make it easier* or *add 5 MCQs about rounding*. Or reply *cancel*.',
     editUnchanged: ({ note }) => `I left the paper as it was${note ? ` — ${note}` : ''}. You can ask for a different change, or start a new paper with /testpaper.`,
     noPapers: 'You have no test papers yet. Type /testpaper to make one.',
     myPapersHeader: '📂 My papers',

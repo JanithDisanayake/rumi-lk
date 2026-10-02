@@ -508,6 +508,14 @@ async function handleText({ user, from, text, language }) {
       return _askMix(user, from, lang, { ...state, source: { kind: 'upload', text: trimmed, filename: null } });
     }
     case 'await_edit':
+      // A bare number or a two-letter reply is a stray (a menu answer typed
+      // twice, an "ok"), not a change request — asking again costs a message;
+      // treating it as one costs a whole new version built from nothing.
+      // A real one-word request ("easier") still goes through.
+      if (/^\d+$/.test(trimmed) || trimmed.length < 4) {
+        await WhatsAppService.sendMessage(from, t('editTooShort', lang));
+        return true;
+      }
       await _queueEdit(user, from, lang, state, trimmed);
       return true;
     default:

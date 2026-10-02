@@ -303,6 +303,20 @@ describe('my papers and editing', () => {
     expect(lastText()).toMatch(/version 2/);
   });
 
+  it('a bare number or "ok" is not an edit request: asks again, makes no version', async () => {
+    const { paper } = await withReadyPaper();
+    await pick(`tp_edit_${paper.id}`);
+    for (const stray of ['1', 'ok']) {
+      expect(await say(stray)).toBe(true);
+      expect(lastText()).toMatch(/Tell me what to change/);
+    }
+    expect(db.tables.test_papers.filter((p) => p.version === 2)).toHaveLength(0);
+    expect(queue.queueJob).not.toHaveBeenCalled();
+    // A real one-word request still goes through.
+    expect(await say('easier')).toBe(true);
+    expect(db.tables.test_papers.filter((p) => p.version === 2)).toHaveLength(1);
+  });
+
   it('another teacher\'s paper id is refused', async () => {
     const { paper } = await withReadyPaper();
     await O.handleSelection({ user: { id: OTHER }, from: '15550100002', id: `tp_open_${paper.id}`, language: 'en' });
