@@ -5,6 +5,60 @@
 
 Part of [Classroom Coaching](coaching.md). Off by default; turn it on with `LP_FIDELITY_ENABLED=true`.
 
+## In programme terms
+
+**Did the lesson follow the plan? A move-by-move check that structured pedagogy is actually being taught.**
+
+Structured pedagogy only works if the lessons in the teacher guide actually reach the classroom. This feature measures adherence, the core dimension of fidelity of implementation. The plan becomes about 10–15 steps, and the recorded lesson is checked step by step, with a timestamped quote as evidence for each verdict. When a teacher swaps in a different activity that serves the same learning objective, the step earns full credit, and a clearly stronger swap is also named as a strength. This follows the implementation-science principle of standardising the function of a step, not its form. A step that was started but left unfinished earns half credit. A step with no evidence earns none. Steps the recording cannot show are reported as "not assessed" and left out of the score. A garbled recording is never scored 0%, and a recording of a different lesson is flagged as a mismatch. The result is a high, partial or low band, with the percentage beside it.
+
+### When a teacher does it differently: how substitution is treated
+
+Programmes have moved past "fidelity or adaptation". The working principle is to **standardise the function of each
+step, not its form** [Hawe04]: a change that keeps the core of a step is *fidelity-consistent* [FRAME19]. Classroom
+evidence backs this: across 13 countries, about a quarter of teachers' modifications to scripted guides were positive,
+while partly skipped activities were harmful almost every time [Piper-RTI18], and teachers who adapted rarely and
+purposefully had the best outcomes [Hansen13].
+
+So a substitution **earns full credit** when all four hold:
+1. **Same function** — it serves the same learning objective and sub-skill as the planned step.
+2. **The core is intact** — it changes the example, materials or activity format, not an essential element.
+3. **Student practice is kept or increased** — the "you do" is not replaced by teacher talk.
+4. **There is evidence** — a quoted, timestamped moment shows it happened.
+
+A clearly **better** substitution earns full credit and is named as a strength in the teacher's report. A step that is
+only started earns half credit and becomes a coaching focus; a step that cannot be heard is "not assessed", never zero.
+Coaches are encouraged to treat the result as mentorship, not inspection [Piper-Dubeck24].
+
+**Where it sits in a structured-pedagogy programme:** teacher guide → **delivery** → coaching → assessment → M&E. It measures delivery, and its result feeds the coaching report and programme monitoring.
+
+
+### Honest limits
+
+- **Why structured pedagogy, and why check delivery.** Structured pedagogy is rated a "Great Buy" for learning [GEEAP23]; large programmes have long checked delivery by having coaches follow the teacher guide during observations [Piper-JEC18][NORC20]. This feature makes that check possible from a classroom recording.
+- **Validation.** There is no validation against blinded, trained human observers. Agreement figures are against AI readers. Scores are stricter than coaches' scores.
+- **Run-to-run variation.** Scores move a few points between runs, and more on borderline lessons.
+- **Audio only.**
+  - Silent board work that is never spoken is "not assessed".
+  - Time on task is best-effort.
+- **What it does not catch or read.**
+  - A plan from the same chapter but a different lesson is not caught.
+  - Scanned plans cannot be read.
+- **Scope.** It measures adherence only. It does not measure quality of delivery or how students responded.
+- **Sampling.** Teachers choose which lessons to record, so the lessons scored are not a random sample.
+- **Partial credit.** Half credit for partial delivery is a design choice. Evidence shows partly skipped activities are usually harmful [Piper-RTI18], so treat a partial verdict as a coaching focus.
+- **Where the false-credit check comes from.** The check that the grader gives no credit for steps a person confirmed were missed was run on the method in its original deployment. This open-source port was re-calibrated on fictional known-answer lessons: 18 of 18 gradings landed in the expected range.
+
+### Sources
+
+- [Hawe04] Hawe, P., Shiell, A., & Riley, T., 2004, "Complex interventions: how 'out of control' can a randomised controlled trial be?", *BMJ* 328:1561–1563. https://doi.org/10.1136/bmj.328.7455.1561
+- [FRAME19] Wiltsey Stirman, S., Baumann, A. A., & Miller, C. J., 2019, "The FRAME: an expanded framework for reporting adaptations and modifications to evidence-based interventions", *Implementation Science* 14:58. https://doi.org/10.1186/s13012-019-0898-y
+- [Hansen13] Hansen, W. B., Pankratz, M. M., Dusenbury, L., Giles, S. M., Bishop, D. C., Albritton, J., Albritton, L. P., & Strack, J., 2013, "Styles of adaptation: The impact of frequency and valence of adaptation on preventing substance use", *Health Education* 113(4):345–363. https://doi.org/10.1108/09654281311329268
+- [Piper-Dubeck24] Piper, B., & Dubeck, M., 2024, "Responding to the learning crisis: Structured pedagogy in sub-Saharan Africa", *International Journal of Educational Development* 109:103095. https://doi.org/10.1016/j.ijedudev.2024.103095
+- [GEEAP23] Global Education Evidence Advisory Panel, 2023, *2023 Cost-Effective Approaches to Improve Global Learning…*, FCDO/World Bank/UNICEF/USAID. https://documents1.worldbank.org/curated/en/099420106132331608/pdf/IDU0977f73d7022b1047770980c0c5a14598eef8.pdf
+- [Piper-JEC18] Piper, B., DeStefano, J., Kinyanjui, E. M., & Ong'ele, S., 2018, "Scaling up successfully: Lessons from Kenya's Tusome national literacy program", *Journal of Educational Change* 19(3):293–321. https://doi.org/10.1007/s10833-018-9325-4
+- [NORC20] Keaveney, E., Fierros, C., Rigaux, A., & Menendez, A. (NORC), 2020 (rev. 2021), *Tusome External Evaluation: Endline Report*, USAID. https://www.norc.org/content/dam/norc-org/documents/standard-projects-pdf/PA00XVBP.pdf
+- [Piper-RTI18] Piper, B., Sitabkhan, Y., Mejía, J., & Betts, K., 2018, *Effectiveness of Teachers' Guides in the Global South: Scripting, Learning Outcomes, and Classroom Utilization*, RTI Press OP-0053-1805. https://doi.org/10.3768/rtipress.2018.op.0053.1805
+
 ## What it is
 
 When a teacher sends a lesson recording, Rumi asks which lesson plan the lesson followed. The plan can be:
