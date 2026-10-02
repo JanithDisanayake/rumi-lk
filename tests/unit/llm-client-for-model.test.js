@@ -5,9 +5,11 @@
  */
 
 const mockCreate = jest.fn(async (params) => ({ choices: [{ message: { content: '{}' } }], params }));
+// Like the SDK, `parse` and `stream` live on the Completions prototype, not on the instance.
+const mockParse = jest.fn(async () => ({ parsed: true }));
 jest.mock('openai', () => jest.fn((config) => ({
   _config: config,
-  chat: { completions: { create: mockCreate } },
+  chat: { completions: Object.assign(Object.create({ parse: mockParse, stream() {} }), { create: mockCreate }) },
 })));
 
 describe('llm-client getClientForModel', () => {
@@ -48,6 +50,56 @@ describe('llm-client getClientForModel', () => {
     expect(sent.usage).toBeUndefined();
     expect(sent.reasoning).toBeUndefined();
     expect(sent.model).toBe('gpt-5.4-mini');
+  });
+});
+
+describe('getClientForModel follows the client getClient() built (review A-N5)', () => {
+  const originalEnv = process.env;
+  beforeEach(() => {
+    jest.resetModules();
+    mockCreate.mockClear();
+    process.env = { ...originalEnv };
+    delete process.env.LLM_PROVIDER;
+    delete process.env.TRANSCRIPT_QUIZ_VERIFY_MODEL;
+  });
+  afterAll(() => { process.env = originalEnv; });
+
+  it('an env flip after start does not turn the OpenRouter client into the OpenAI wrapper', () => {
+    const { getClientForModel, getClient } = require('../../bot/shared/services/llm-client');
+    process.env.LLM_PROVIDER = 'openai';
+    const out = getClientForModel('openai/gpt-5.4-mini', { job: 'quiz.videoReport' });
+    expect(out.client).toBe(getClient());
+    expect(out.model).toBe('openai/gpt-5.4-mini');
+    // and a job default is the OpenRouter one the client can run
+    expect(getClientForModel(null, { job: 'quiz.keyVerify' }).model).toBe('anthropic/claude-sonnet-5');
+  });
+
+  it('started on openai, it stays on openai when the env is changed later', () => {
+    process.env.LLM_PROVIDER = 'openai';
+    const { getClientForModel } = require('../../bot/shared/services/llm-client');
+    delete process.env.LLM_PROVIDER;
+    expect(getClientForModel('openai/gpt-5.4-mini', { job: 'quiz.videoReport' }).model).toBe('gpt-5.4-mini');
+    expect(getClientForModel(null, { job: 'quiz.transcript' }).model).toBe('gpt-4.1-mini');
+  });
+
+  it('the OpenAI wrapper keeps the SDK prototype methods (parse, stream)', async () => {
+    process.env.LLM_PROVIDER = 'openai';
+    const { getClientForModel } = require('../../bot/shared/services/llm-client');
+    const { client } = getClientForModel('gpt-4.1-mini', { job: 'quiz.transcript' });
+    expect(typeof client.chat.completions.parse).toBe('function');
+    expect(typeof client.chat.completions.stream).toBe('function');
+    await expect(client.chat.completions.parse({})).resolves.toEqual({ parsed: true });
+  });
+
+  it('on openai, an OpenRouter id of another vendor falls back to the job\'s OpenAI default', () => {
+    process.env.LLM_PROVIDER = 'openai';
+    const { getClientForModel } = require('../../bot/shared/services/llm-client');
+    const { JOBS } = require('../../bot/shared/config/model-registry');
+    const out = getClientForModel('anthropic/claude-sonnet-5', { job: 'quiz.keyVerify' });
+    expect(out.model).toBe(JOBS['quiz.keyVerify'].openaiDefault);
+    expect(out.model).not.toMatch(/\//);
+    // with no job, still never a foreign id sent to api.openai.com
+    expect(getClientForModel('google/gemini-2.5-flash').model).not.toMatch(/\//);
   });
 });
 
