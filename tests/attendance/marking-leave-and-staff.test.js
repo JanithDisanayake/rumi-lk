@@ -184,6 +184,8 @@ describe('the submission, end to end through the real handler and delivery', () 
 
     const confirmation = mockSendMessage.mock.calls.map((c) => c[1]).join('\n');
     expect(confirmation).toMatch(/On leave: 1/);
+    // The class as the teacher knows it — with its section, not just the name in the token.
+    expect(confirmation).toMatch(/Class: Grade 5 - A/);
 
     const { fileName, buffer } = mockSent[0];
     expect(fileName).toBe('Attendance_Grade_5_A_September_2026.xlsx');

@@ -494,9 +494,35 @@ async function handleAttendanceMarkingFlow(message, phoneNumber, userId) {
       return false;
     }
 
-    // Send confirmation
+    let selectedClass = { class_name: className, section: null, id: listId };
+    if (!isStaff) {
+      // Fetch class info from DB to get proper section
+      // Also validates that listId exists in database
+      const StudentListService = require('../services/student-list.service');
+      const { data: classInfo, error: classError } = await StudentListService.getStudentListById(listId);
+
+      // Validate listId exists before proceeding
+      if (classError || !classInfo) {
+        logToFile('❌ Invalid listId - class not found in database', {
+          userId,
+          listId,
+          error: classError?.message
+        });
+        await WhatsAppService.sendMessage(
+          phoneNumber,
+          `⚠️ The class you selected no longer exists. Please say "attendance" or "حاضری" to start again.`
+        );
+        return false;
+      }
+      selectedClass = { class_name: classInfo.class_name || className, section: classInfo.section || null, id: listId };
+    }
+
+    // Send confirmation, naming the class as the teacher knows it (with its section)
+    const displayName = selectedClass.section
+      ? `${selectedClass.class_name} - ${selectedClass.section}`
+      : selectedClass.class_name;
     const confirmMessage = AttendanceFlowHandler.generateConfirmationMessage(
-      className,
+      displayName,
       result.stats
     );
 
@@ -511,29 +537,6 @@ async function handleAttendanceMarkingFlow(message, phoneNumber, userId) {
         leave: result.stats.leave,
         attendancePercentage: parseFloat(result.stats.attendanceRate) || 0
       };
-
-      let selectedClass = { class_name: className, section: null, id: listId };
-      if (!isStaff) {
-        // Fetch class info from DB to get proper section
-        // Also validates that listId exists in database
-        const StudentListService = require('../services/student-list.service');
-        const { data: classInfo, error: classError } = await StudentListService.getStudentListById(listId);
-
-        // Validate listId exists before proceeding
-        if (classError || !classInfo) {
-          logToFile('❌ Invalid listId - class not found in database', {
-            userId,
-            listId,
-            error: classError?.message
-          });
-          await WhatsAppService.sendMessage(
-            phoneNumber,
-            `⚠️ The class you selected no longer exists. Please say "attendance" or "حاضری" to start again.`
-          );
-          return false;
-        }
-        selectedClass = { class_name: classInfo.class_name || className, section: classInfo.section || null, id: listId };
-      }
 
       const deliveryResult = await AttendanceDeliveryService.processAndDeliver(
         userId,
