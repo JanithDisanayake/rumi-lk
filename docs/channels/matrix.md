@@ -20,6 +20,32 @@ form's questions one message at a time.
 | **Redis** (`REDIS_URL`) | Already required. On Matrix it also carries the worker's sends to the bot (see [The relay](#the-relay)) |
 | Object storage (`R2_*`) | For coaching recordings, reading recordings and generated images, as on any non-Meta channel |
 
+## In programme terms
+
+**Own the channel: run your teacher-support programme on a messenger your school system controls.**
+
+In programmes that work, the delivery channel is infrastructure for a human support cycle. Coaches use tablets, and teachers get SMS tips on top of training [Jordan-Mitchell20; Piper-JEC18]. Most programmes rent that infrastructure from a commercial messaging platform. Its prices and rules can change, and every service message can carry a fee. This channel lets a school system run Rumi on a messenger it owns. The system hosts its own server. Teachers sign in to a branded app or web app with their phone number, and Rumi is already there as a contact. Everything teachers already use works the same way: lesson plans, coaching from a recording, reading checks, attendance and quizzes. Coaches still get their morning brief. Messages, voice notes and documents are end-to-end encrypted. In staff groups, Rumi stays quiet until someone addresses it. A deployment can run with no third-party messaging platform at all.
+
+**Where it sits in a structured-pedagogy programme:** underneath the whole chain, as **delivery infrastructure** for guide, coaching, assessment and M&E messages alike.
+
+
+
+### Honest limits
+
+- **Not merged.** Two security items are open:
+  - users from other servers could be mismatched to an existing teacher;
+  - a staff group could receive one teacher's private reports.
+- **Running cost.** No server or running cost was measured.
+- **Accounts.** A teacher's existing account on another platform is not merged automatically.
+- **Pre-existing bug.** The exam checker is broken on every channel. This bug predates the release.
+- **Messages during a restart.** Messages sent while the bot restarts are answered exactly once. A send waiting on a down bot fails after about three minutes.
+- **What it does not show.** Owning the channel does not by itself improve learning. The evidence is about the support delivered over it.
+
+### Sources
+
+- [Jordan-Mitchell20] Jordan, K., & Mitchell, J., 2020, *Messaging Apps, SMS and Social Media: A Rapid Evidence Review*, EdTech Hub. https://doi.org/10.5281/zenodo.4556938
+- [Piper-JEC18] Piper, B., DeStefano, J., Kinyanjui, E. M., & Ong'ele, S., 2018, "Scaling up successfully: Lessons from Kenya's Tusome national literacy program", *Journal of Educational Change* 19(3):293–321. https://doi.org/10.1007/s10833-018-9325-4
+
 ## Turn it on
 
 The guided way: `rumi setup` has a Matrix step after Slack and Discord. Point it at rumi-messenger's

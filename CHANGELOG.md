@@ -5,6 +5,109 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0] - 2026-10-03
+
+**Rumi Messenger — run Rumi on your own messenger.** A school system can now run Rumi on a Matrix homeserver
+it owns: teachers sign in to a Rumi-branded app with their phone number and find Rumi already there as a
+contact. Every message, voice note and PDF is end-to-end encrypted, there is no per-message fee and no
+third-party review, and it is the same Rumi. It runs alongside WhatsApp, or with `CHANNEL_DRIVER=none`
+instead of it. This release also makes a laptop a supported place to run Rumi (no Supabase account, no
+Docker).
+
+> **Upgrade notes — read before you update.**
+> - **Breaking: Node 22 is now the minimum (Node 20 is end-of-life). Upgrade Node before updating;
+>   `install.sh` now refuses older versions, and on Railway the build picks the version up from `engines`.**
+> - **Existing Supabase deployments: run `node infrastructure/scripts/migrate.js`** (migration
+>   `V2.7.0__exec_sql_service_role_only.sql`). Earlier copies of the one-time `exec_sql` helper could be
+>   called with the anon key, which runs any SQL as `postgres`. The migration revokes that and fails loudly
+>   if it cannot.
+> - Matrix: every process that sends to Matrix (bot, queue worker, crons) needs the same
+>   `MATRIX_ACCESS_TOKEN` and `MATRIX_HOMESERVER_URL`; deploy the bot and its workers together.
+
+### Added
+
+- **The Matrix channel** (`MATRIX_HOMESERVER_URL` + `MATRIX_ACCESS_TOKEN`). It is built on #104 by
+  @oyekamal: a persistent sync connection, the inbound adapter, the outbound driver and E2EE media both
+  ways. Buttons become numbered menus, WhatsApp Flows become one question per message, and in staff group
+  rooms Rumi stays quiet until it is addressed. Server and apps:
+  [rumi-messenger](https://github.com/Orenda-Project/rumi-messenger). Guide, including a feature parity
+  table from a scripted end-to-end run: `docs/channels/matrix.md`.
+- **Encryption that fails closed.** `MATRIX_E2EE=on` is the default. If the crypto module cannot load, the
+  Matrix channel refuses to start with a clear error, and `rumi doctor` says why. Only `MATRIX_E2EE=off`
+  runs it without encryption. Sends fail closed too: when the bot cannot confirm whether a room is
+  encrypted, it does not send, rather than risk plaintext. Encryption works on Node 22 or newer.
+- **Only your homeserver reaches Rumi** (`MATRIX_ALLOWED_SERVERS`, blank = the bot's own server). Invites
+  from other servers are declined and their users' messages ignored. A teacher's identity names their
+  account on your server; the number in a username is admin-asserted, so run the homeserver with
+  admin-created accounts and federation off (`docs/channels/matrix.md`, "Who can reach Rumi").
+- **One connection, many senders.** The bot owns the Matrix connection, and every other process (the queue
+  worker, the stale-session cron, the Morning Brief worker, scripts) sends through it over Redis by
+  default. Each queued send is signed with a key derived from the access token and namespaced per bot
+  account, and the bot never reads a file path from a queued send.
+- **Staff group rooms.** Rumi answers an addressed message in the group; reports, registers, reminders and
+  every later message for that teacher go to their own DM.
+- **No lost messages on restart.** Messages teachers sent while the bot was down are answered when it comes
+  back, exactly once.
+- **`CHANNEL_DRIVER=none`** — a deployment with no WhatsApp at all. It needs no WhatsApp keys, does no
+  Graph call at boot, and fails loudly on a bare phone number. `rumi doctor`, the console ("Answering on
+  Rumi Messenger (Matrix) — no WhatsApp number.") and `rumi setup` all support it.
+- **`rumi setup` Matrix step.** It reads rumi-messenger's `deploy/rumi-channel.env` or asks for the URL and
+  token and checks the connection and whether encryption can start. The console has a Matrix card and a
+  `RUMI_FEATURE_CHANNEL_MATRIX` switch.
+- **Matrix in `/health`.** `channels.matrix` is `connected`, `connecting` or `down`; a Matrix-only
+  deployment whose homeserver is unreachable reports `degraded` (still HTTP 200). A homeserver that is down
+  when the bot starts is retried with backoff.
+- **Run Rumi on a laptop** — `infrastructure/local/up.sh` / `down.sh`. They run a private Postgres,
+  PostgREST, a `/rest/v1` proxy and Redis, with a minted service key. See `docs/local-stack.md`. They add
+  `SUPABASE_DB_SSL=off` (dashboard and portal against a Postgres without SSL) and `R2_FORCE_PATH_STYLE`
+  (MinIO and other S3-compatible stores).
+- **Channel-aware Flow gates** (`channel-capabilities.js`). On a channel that cannot draw a WhatsApp Flow,
+  the following take the text path even when their Flow ids are set for Meta:
+  - registration, and Reading from the menu;
+  - exam confirmation;
+  - `/status`, homework and edit class;
+  - the quiz flows.
+### Fixed
+
+- **Identities.** Two Matrix teachers whose numbers differ only in their first digits are no longer merged
+  into one user. A Matrix teacher's phone number is recorded, so they can sign in to the portal.
+- **Registration.** A greeting is no longer taken as a teacher's name, and a name that is also a greeting
+  ("Salam") is asked about once and then accepted. "null" is never a name, and a missing name part is never
+  printed as "null" (reports, filenames, reminders).
+- **Matrix media and replies.**
+  - Spoken replies are voice messages.
+  - Captions render formatting.
+  - Spreadsheets carry their real mime type.
+  - An audio file reaches classroom coaching.
+  - Object keys are safe for Matrix ids.
+- **After a restart,** proactive Matrix sends (reminders, delivered reports) go to the DM the teacher last
+  wrote from, not the room the DM first opened in. A group room is never used for them.
+- **Feature switches for channels** (`RUMI_FEATURE_CHANNEL_MATRIX`, `_SLACK`, `_DISCORD` set to `off`) now
+  stop the channel from the next restart; before, they changed only the console.
+- **A future-stamped Matrix event** no longer makes the bot ignore messages after a restart.
+- **On Meta, a Flow that fails to open** (a passing Graph error) says "try again", not "not set up".
+- **WhatsApp-free copy.** The boot banner shows Meta webhook steps only for `CHANNEL_DRIVER=meta`; doctor
+  and the console no longer assume a WhatsApp driver.
+- **Local stack.** `up.sh` refuses to adopt a non-empty directory it did not create, and `down.sh --wipe`
+  deletes only what the stack made. The anon and authenticated keys get Supabase's table grants, so Row
+  Level Security behaves as it does on hosted Supabase.
+- **Text channels** (Matrix, Baileys) render reply-button interactives as numbered menus. The exam checker's
+  "Process now" used to have nothing to answer.
+- **Versions.** `/health`, the boot banner, the console and the dashboard report the real version;
+  `bot/VERSION` is gone, and `dashboard/package.json` now moves in lockstep with the root and bot versions.
+- **`rumi doctor`** no longer probes channels whose keys are not set.
+- **The console** no longer shows a quoted `.env` value as a pending change.
+
+### Changed
+
+- **Node 22 or newer** (`engines.node >=22` in root, bot and dashboard; `install.sh` and the local stack
+  check it; CI on Node 22 and 24).
+- **Matrix identities name the account.** `@+15550100001` on the bot's own server is `mtx:15550100001`; an
+  older `@t15550100001` username is a separate teacher (`mtx:t15550100001`, no phone number recorded), and
+  an account on any other server keeps its full id.
+- **Security notes.** `SECURITY.md` records the `request` advisories that `matrix-bot-sdk` brings in and why
+  they are accepted (its only peer is your own homeserver).
+
 ## [2.6.0] - 2026-10-02
 
 **Observe — the coach's assistant.** Most school systems already employ people whose job is to coach
