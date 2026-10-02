@@ -334,6 +334,9 @@ describe('attach', () => {
     const client = {
       on: jest.fn((event, handler) => { handlers[event] = handler; }),
       getUserId: jest.fn(getUserIdImpl || (async () => OWN_USER_ID)),
+      // A 1:1 room: an unreadable one is treated as a group (and stays quiet).
+      getAllRoomMembers: jest.fn(async () => [{ effectiveMembership: 'join' }, { effectiveMembership: 'join' }]),
+      dms: { isDm: jest.fn(() => true) },
     };
     jest.doMock('../../bot/shared/services/messaging/matrix-connection', () => ({
       getClient: jest.fn().mockResolvedValue(client),
@@ -475,6 +478,9 @@ describe('messages sent while the bot was down', () => {
       on: jest.fn((event, handler) => { handlers[event] = handler; }),
       getUserId: jest.fn(async () => OWN_USER_ID),
       storageProvider: storage.provider,
+      // A 1:1 room: an unreadable one is treated as a group (and stays quiet).
+      getAllRoomMembers: jest.fn(async () => [{ effectiveMembership: 'join' }, { effectiveMembership: 'join' }]),
+      dms: { isDm: jest.fn(() => true) },
     };
     jest.doMock('../../bot/shared/services/messaging/matrix-connection', () => ({
       getClient: jest.fn().mockResolvedValue(client),
@@ -1083,11 +1089,12 @@ describe('group rooms -- Rumi answers only when addressed (gateGroupMessage)', (
     expect(await adapter.isGroupRoom(fakeClient({ members: [...two, member(T2, 'leave')], isDm: true }), '!f:x')).toBe(false);
   });
 
-  it('falls back to DM behaviour when the room cannot be classified (a silent DM is worse than a noisy group)', async () => {
+  it('treats a room it cannot classify as a group: answered only when addressed', async () => {
     const client = { getAllRoomMembers: jest.fn(async () => { throw new Error('boom'); }) };
-    const event = textEvent('hello');
-    const gate = await adapter.gateGroupMessage(client, '!x:x', event, OWN_USER_ID, NAMES);
-    expect(gate).toEqual({ process: true, reason: 'dm', event });
+    const gate = await adapter.gateGroupMessage(client, '!x:x', textEvent('hello'), OWN_USER_ID, NAMES);
+    expect(gate).toEqual({ process: false, reason: 'group_not_addressed' });
+    const addressed = await adapter.gateGroupMessage(client, '!x:x', textEvent('Rumi, one idea'), OWN_USER_ID, NAMES);
+    expect(addressed).toEqual(expect.objectContaining({ process: true, reason: 'mention' }));
   });
 
   it('attach(): group chatter is never dispatched (no reply/reaction/typing); a mention is dispatched with the mention stripped', async () => {
@@ -1122,6 +1129,7 @@ describe('group rooms -- Rumi answers only when addressed (gateGroupMessage)', (
     expect(dispatch).toHaveBeenCalledTimes(1);
     const msg = dispatch.mock.calls[0][0].body.entry[0].changes[0].value.messages[0];
     expect(msg).toEqual(expect.objectContaining({ type: 'text', text: { body: 'one quick fractions idea' } }));
-    expect(fresh.getLastInboundRoom(T1)).toBe(GROUP);
+    // Nor does a mention: the group is never recorded as the sender's DM room.
+    expect(fresh.getLastInboundRoom(T1)).toBeNull();
   });
 });

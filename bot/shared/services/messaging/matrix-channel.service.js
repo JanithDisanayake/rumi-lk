@@ -131,42 +131,58 @@ async function createDmRoom(client, targetUserId) {
   });
 }
 
+/** Caches `roomId` as `userId`'s DM room and persists it (best-effort). Only ever called with a 1:1 room. */
+async function rememberDmRoom(client, userId, roomId) {
+  if (dmRoomCache.get(userId) === roomId) return;
+  dmRoomCache.set(userId, roomId);
+  try {
+    await client.storageProvider?.storeValue?.(`${DM_ROOM_STORAGE_PREFIX}${userId}`, roomId);
+  } catch (error) {
+    logToFile('Matrix: DM room cache write failed (non-fatal)', { error: error.message });
+  }
+}
+
+/**
+ * The room a send to `userId` goes to. In order:
+ *  1. the reply to the message being handled goes to the room that message
+ *     came from, DM or group (matrix-events.adapter.js#getReplyRoom);
+ *  2. otherwise the confirmed 1:1 room they last wrote from, while the bot is
+ *     still joined to it (getLastInboundRoom);
+ *  3. otherwise their DM room as cached in this process, or stored by an
+ *     earlier one -- a stored room is checked to be a 1:1 with them first;
+ *  4. otherwise matrix-bot-sdk's own m.direct lookup (creating the DM if none).
+ * Only (2)-(4) are cached and persisted, and only 1:1 rooms ever reach them,
+ * so a group room never becomes anyone's DM room. See matrix-events.adapter.js's
+ * "Reply-to-the-room-you-were-messaged-in" section header.
+ */
 async function resolveDmRoomId(userId) {
   const client = await getClient();
-
-  // Prefer the room the user's message ACTUALLY arrived in over anything
-  // derived/cached -- see matrix-events.adapter.js's
-  // "Reply-to-the-room-you-were-messaged-in" section header for the exact
-  // bug this exists to fix: client.dms.getOrCreateDm() (below) reads the
-  // 'm.direct' account-data map, which is asynchronous/eventually-consistent
-  // and can race a genuine inbound message, creating a SECOND room and
-  // sending the reply where the teacher never sees it (reproduced live).
-  // Checked ahead of dmRoomCache too, since that cache could itself hold a
-  // stale/duplicate room from exactly that race. Skipped when there's no
-  // recorded room (a bot-initiated first contact, e.g. the welcome DM -- the
-  // user has never sent a room.message yet) or the bot is no longer joined
-  // to the recorded room (kicked/left since) -- both fall through to the
-  // existing resolution below unchanged.
   // eslint-disable-next-line global-require -- lazy: avoids a require cycle at module load (the adapter requires this file too)
   const adapter = require('./inbound/matrix-events.adapter');
-  const lastInboundRoomId = adapter.getLastInboundRoom(userId);
-  if (lastInboundRoomId) {
-    // eslint-disable-next-line global-require -- lazy, see file header
-    const connection = require('./matrix-connection');
-    if (connection.isJoinedToRoom(client, lastInboundRoomId)) {
-      // Also persisted: the in-memory map is gone after a restart, and a
-      // proactive send then (a reminder, a delivered report) must still go to
-      // the room the teacher last used, not the one stored when the DM opened.
-      if (dmRoomCache.get(userId) !== lastInboundRoomId) {
-        try {
-          await client.storageProvider?.storeValue?.(`${DM_ROOM_STORAGE_PREFIX}${userId}`, lastInboundRoomId);
-        } catch (error) {
-          logToFile('Matrix: DM room cache write failed (non-fatal)', { error: error.message });
-        }
-      }
-      dmRoomCache.set(userId, lastInboundRoomId);
-      return lastInboundRoomId;
-    }
+  // eslint-disable-next-line global-require -- lazy, see file header
+  const connection = require('./matrix-connection');
+
+  // (2) is checked ahead of everything derived/cached: client.dms.getOrCreateDm()
+  // reads the 'm.direct' account-data map, which is asynchronous/eventually-
+  // consistent and can race a genuine inbound message, creating a SECOND room
+  // and sending the reply where the teacher never sees it (reproduced live),
+  // and dmRoomCache could itself hold a duplicate room from exactly that race.
+  // Skipped when there's no recorded room (a bot-initiated first contact,
+  // e.g. the welcome DM) or the bot is no longer joined to it (kicked/left).
+  const lastDmRoomId = adapter.getLastInboundRoom(userId);
+  const lastDmUsable = Boolean(lastDmRoomId) && connection.isJoinedToRoom(client, lastDmRoomId);
+
+  const replyRoomId = adapter.getReplyRoom(userId);
+  if (replyRoomId) {
+    // Persisted when it is their DM, so a proactive send after a restart (a
+    // reminder, a delivered report) goes where the teacher last wrote.
+    if (lastDmUsable && replyRoomId === lastDmRoomId) await rememberDmRoom(client, userId, replyRoomId);
+    return replyRoomId;
+  }
+
+  if (lastDmUsable) {
+    await rememberDmRoom(client, userId, lastDmRoomId);
+    return lastDmRoomId;
   }
 
   if (dmRoomCache.has(userId)) return dmRoomCache.get(userId);
@@ -177,23 +193,27 @@ async function resolveDmRoomId(userId) {
   // client.dms account-data round trip on a fresh process. Never fatal: a
   // provider that doesn't implement storeValue/readValue (or a read that
   // fails) just falls through to the authoritative client.dms lookup below.
+  // The stored room is checked to still be a 1:1 with this user once per
+  // process (a pass lands it in dmRoomCache; a fail is overwritten below):
+  // an earlier version stored whatever room the teacher last wrote in,
+  // a staff group included.
   try {
     const stored = await client.storageProvider?.readValue?.(storageKey);
     if (stored) {
-      dmRoomCache.set(userId, stored);
-      return stored;
+      if (await adapter.isOneToOneRoom(client, stored, userId)) {
+        dmRoomCache.set(userId, stored);
+        return stored;
+      }
+      logToFile('⚠️ Matrix: stored DM room is not a 1:1 with this user -- discarded', {
+        channel: 'matrix', userId, roomId: stored,
+      });
     }
   } catch (error) {
     logToFile('Matrix: DM room cache read failed (non-fatal)', { error: error.message });
   }
 
   const roomId = await client.dms.getOrCreateDm(userId, (targetUserId) => createDmRoom(client, targetUserId));
-  dmRoomCache.set(userId, roomId);
-  try {
-    await client.storageProvider?.storeValue?.(storageKey, roomId);
-  } catch (error) {
-    logToFile('Matrix: DM room cache write failed (non-fatal)', { error: error.message });
-  }
+  await rememberDmRoom(client, userId, roomId);
   return roomId;
 }
 

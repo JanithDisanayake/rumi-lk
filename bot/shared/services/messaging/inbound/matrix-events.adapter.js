@@ -44,6 +44,7 @@
  * pending-options text-flow convention already used by Baileys.
  */
 
+const { AsyncLocalStorage } = require('async_hooks');
 const { logToFile } = require('../../../utils/logger');
 const { prefixFor } = require('../channel-registry');
 const matrixIdentity = require('../matrix-identity');
@@ -304,13 +305,6 @@ async function mapMessageToMetaShape(roomId, event, ownUserId, cutoffTs) {
   if (ownUserId && event.sender === ownUserId) return null;
   if (typeof event.origin_server_ts === 'number' && event.origin_server_ts < cutoffTs) return null;
 
-  // Ground truth for "which room does a reply to this user go to" -- see
-  // this file's "Reply-to-the-room-you-were-messaged-in" section header for
-  // the crash/misdelivery this fixes. Recorded for every real inbound event,
-  // not just ones that end up dispatched, so it reflects the room as
-  // accurately as possible.
-  recordInboundRoom(event.sender, roomId);
-
   const from = toPrefixedIdentity(event.sender, ownUserId);
   const id = event.event_id;
   const timestamp = Math.floor((event.origin_server_ts || Date.now()) / 1000);
@@ -448,14 +442,28 @@ function isFromAllowedServer(userId, ownUserId, logFields = {}) {
 // "!ljKfozcoLYAVQKuxMM:..." got a reply in a brand-new
 // "!zskAHVYNfwWVYrUSpl:..." nobody else had joined).
 //
-// Fix: remember, per sender, the room their MOST RECENT inbound message
-// actually arrived in -- ground truth, no account-data round trip involved --
-// and let matrix-channel.service.js#resolveDmRoomId prefer it over
-// getOrCreateDm() whenever the bot is still joined to that room (see
-// matrix-connection.js#isJoinedToRoom). Falls back to the existing
-// getOrCreateDm() path when there's no recorded room at all -- the welcome-DM
-// path (a bot-initiated first contact; the user has never sent a room.message
-// yet) is exactly that case, and is therefore unaffected by this map.
+// Fix, in two parts:
+//  1. The reply to a message goes to the room that message came from: attach()
+//     handles and dispatches each message inside runWithReplyRoom(sender,
+//     room), and resolveDmRoomId reads getReplyRoom(target) first. That is a
+//     DM or a group alike -- whichever room the person used. It applies only
+//     to sends to that same sender, and only while that message is being
+//     handled: a send to someone else, a relayed worker send (the relay loop
+//     is started outside any such context), or a timer that fires after the
+//     handling finished all resolve the person's DM as below.
+//  2. Per sender, the CONFIRMED 1:1 room (members: the bot and them, nobody
+//     else, see isOneToOneRoom) their most recent DM message arrived in --
+//     ground truth, no account-data round trip involved -- which
+//     resolveDmRoomId prefers over getOrCreateDm() for sends with no message
+//     context, whenever the bot is still joined to it (see
+//     matrix-connection.js#isJoinedToRoom), and persists as their DM room.
+//     A group room, or a room whose members could not be read, is never
+//     recorded here: one message addressed to Rumi in a staff group used to
+//     become the teacher's DM room, sending their coaching reports and
+//     registers to the whole group, and (once persisted) across restarts.
+// Falls back to the existing getOrCreateDm() path when there's no recorded
+// room at all -- the welcome-DM path (a bot-initiated first contact; the user
+// has never sent a room.message yet) is exactly that case.
 //
 // Bounded so a long-running process can't grow this without limit: entries
 // older than LAST_INBOUND_ROOM_TTL_MS are pruned opportunistically on every
@@ -482,13 +490,14 @@ function pruneLastInboundRoom() {
 }
 
 /**
- * Records that `userId`'s most recent inbound message arrived in `roomId` --
- * called from mapMessageToMetaShape() for every real (non-echo, non-backlog)
- * inbound event, regardless of msgtype, since even an unsupported message
- * type is still evidence of "this is where the user is talking to us".
+ * Records that `userId`'s most recent DM message arrived in `roomId`. The
+ * caller has confirmed the room is a 1:1 with them (see recordIfDmRoom) --
+ * this is the plain store. Every DM event counts, regardless of msgtype,
+ * since even an unsupported message type is still evidence of "this is where
+ * the user is talking to us".
  *
  * @param {string} userId unprefixed matrix user id (event.sender)
- * @param {string} roomId
+ * @param {string} roomId a confirmed 1:1 room with that user
  */
 function recordInboundRoom(userId, roomId) {
   if (!userId || !roomId) return;
@@ -514,6 +523,42 @@ function getLastInboundRoom(userId) {
     return null;
   }
   return entry.roomId;
+}
+
+/**
+ * Records `roomId` as `userId`'s DM room only when the group gate classified
+ * it as a DM AND its members are exactly the bot and that user. Anything else
+ * (a group, a two-person room named as a group, a room whose members could
+ * not be read) is not recorded: see this section's header.
+ */
+async function recordIfDmRoom(client, roomId, event, gate) {
+  if (gate.reason !== 'dm' || !event?.sender) return;
+  if (await isOneToOneRoom(client, roomId, event.sender)) recordInboundRoom(event.sender, roomId);
+}
+
+// The message being handled right now, per async call chain -- see this
+// section's header, part 1.
+const replyRoomContext = new AsyncLocalStorage();
+
+/**
+ * Runs `fn` (handling one inbound message from `userId` in `roomId`) so that
+ * sends to `userId` made while it runs go to `roomId`. The context closes when
+ * `fn` settles, so work it left running (a timer, a background job) that sends
+ * later goes to the person's DM, not to a group they once addressed.
+ */
+async function runWithReplyRoom(userId, roomId, fn) {
+  const context = { userId, roomId, open: true };
+  try {
+    return await replyRoomContext.run(context, fn);
+  } finally {
+    context.open = false;
+  }
+}
+
+/** The room the message being handled came from, if a send to `userId` is its reply; otherwise null. */
+function getReplyRoom(userId) {
+  const context = replyRoomContext.getStore();
+  return context && context.open && context.userId === userId ? context.roomId : null;
 }
 
 /** Test-only: clears the last-inbound-room map between test runs. */
@@ -773,8 +818,9 @@ async function handleDmRoomJoin(client, roomId, event, ownUserId) {
 //   3. answers the numbered menu / text-flow question Rumi last put to THIS
 //      sender in THIS room (so a menu Rumi posted in the group keeps working).
 // Everything else is dropped here, before dispatch -- so no reply, reaction,
-// typing indicator or read receipt -- and before recordInboundRoom(), so
-// chatter in a group never redirects the sender's DM replies into it.
+// typing indicator or read receipt. A group room is never recorded as the
+// sender's DM room either way (recordIfDmRoom); the reply to an addressed
+// message reaches the group through its reply context instead.
 // DMs are untouched.
 //
 // "Group" = more than two joined+invited members (bot included), or a
@@ -782,21 +828,31 @@ async function handleDmRoomJoin(client, roomId, event, ownUserId) {
 // room a teacher created and NAMED before the others joined is a group by
 // intent. A nameless two-member room outside m.direct stays a DM -- the live
 // homeserver has such DMs (created without is_direct), and gating them would
-// silence 1:1 conversations. A failed lookup also falls back to DM behaviour
-// (logged): a noisy group is a smaller failure than a silent DM.
+// silence 1:1 conversations. A failed lookup is treated as a GROUP (logged,
+// not cached): Rumi then answers only when addressed, and the room is never
+// recorded as anyone's DM -- answering group chatter, or sending a teacher's
+// private messages into a room nobody checked, is the worse failure.
 // Short TTL instead of a membership listener: a DM that becomes a group (a
 // third person invited) is re-classified within half a minute.
 const ROOM_KIND_TTL_MS = 30 * 1000;
-const roomKindCache = new Map(); // roomId -> { group, ts }
+const roomKindCache = new Map(); // roomId -> { group, present: [user ids], ts }
+
+/** The user ids currently joined to or invited into a room. Throws if the homeserver lookup fails. */
+async function presentMembers(client, roomId) {
+  const members = await client.getAllRoomMembers(roomId);
+  return members
+    .filter((m) => ['join', 'invite'].includes(m.effectiveMembership || m.membership))
+    .map((m) => m.membershipFor || m.stateKey || m.state_key);
+}
 
 async function isGroupRoom(client, roomId) {
   const cached = roomKindCache.get(roomId);
   if (cached && Date.now() - cached.ts < ROOM_KIND_TTL_MS) return cached.group;
 
   let group = false;
+  let present;
   try {
-    const members = await client.getAllRoomMembers(roomId);
-    const present = members.filter((m) => ['join', 'invite'].includes(m.effectiveMembership || m.membership));
+    present = await presentMembers(client, roomId);
     if (present.length > 2) {
       group = true;
     } else if (!client.dms?.isDm?.(roomId)) {
@@ -808,13 +864,35 @@ async function isGroupRoom(client, roomId) {
       }
     }
   } catch (error) {
-    logToFile('⚠️ Matrix inbound: could not classify room as DM/group -- treating it as a DM', {
+    logToFile('⚠️ Matrix inbound: could not classify room as DM/group -- treating it as a group', {
       channel: 'matrix', roomId, error: error.message,
     });
-    return false; // not cached: retry on the next message
+    return true; // not cached: retry on the next message
   }
-  roomKindCache.set(roomId, { group, ts: Date.now() });
+  roomKindCache.set(roomId, { group, present, ts: Date.now() });
   return group;
+}
+
+/**
+ * Whether a room is a 1:1 between the bot and `userId`: exactly two people
+ * joined or invited, one of them `userId` (the other is the bot, which is
+ * reading the room). False when the members cannot be read. Uses the
+ * isGroupRoom() cache when it is fresh.
+ */
+async function isOneToOneRoom(client, roomId, userId) {
+  const cached = roomKindCache.get(roomId);
+  let present = cached && Date.now() - cached.ts < ROOM_KIND_TTL_MS ? cached.present : null;
+  if (!present) {
+    try {
+      present = await presentMembers(client, roomId);
+    } catch (error) {
+      logToFile('⚠️ Matrix: could not read a room\'s members -- not treating it as a DM', {
+        channel: 'matrix', roomId, error: error.message,
+      });
+      return false;
+    }
+  }
+  return present.length === 2 && present.includes(userId);
 }
 
 function escapeRegExp(s) {
@@ -1048,10 +1126,19 @@ async function attach(dispatch) {
           channel: 'matrix', roomId, eventId: event?.event_id, reason: gate.reason,
         });
       }
-      const metaMessage = await mapMessageToMetaShape(roomId, gate.event, ownUserId, cutoffTs);
-      if (!metaMessage) return;
+      // Ground truth for where this sender's later private messages go --
+      // only ever a confirmed 1:1 room (see "Reply-to-the-room-you-were-
+      // messaged-in"). Recorded for every DM event, not just ones that end up
+      // dispatched.
+      await recordIfDmRoom(client, roomId, gate.event, gate);
 
-      await dispatch(buildSyntheticRequest(metaMessage), buildSyntheticResponse());
+      // The message is mapped and dispatched inside its reply context, so
+      // every reply to it (text-flow steps included) goes to this room.
+      await runWithReplyRoom(event.sender, roomId, async () => {
+        const metaMessage = await mapMessageToMetaShape(roomId, gate.event, ownUserId, cutoffTs);
+        if (!metaMessage) return;
+        await dispatch(buildSyntheticRequest(metaMessage), buildSyntheticResponse());
+      });
     } catch (error) {
       logToFile('❌ Matrix inbound: error processing message', { error: error.message, stack: error.stack });
     }
@@ -1085,8 +1172,11 @@ async function attach(dispatch) {
     // `room.message` for the same "read the SDK source, don't guess" rule.
     client.on('room.event', async (roomId, event) => {
       try {
-        await handleWelcomeRoomJoin(client, welcomeRoomId, roomId, event, ownUserId);
-        await handleDmRoomJoin(client, roomId, event, ownUserId);
+        // Never a reply to some message: the welcome goes to the new DM.
+        await replyRoomContext.exit(async () => {
+          await handleWelcomeRoomJoin(client, welcomeRoomId, roomId, event, ownUserId);
+          await handleDmRoomJoin(client, roomId, event, ownUserId);
+        });
       } catch (error) {
         logToFile('❌ Matrix inbound: error handling a welcome-room join', { error: error.message, stack: error.stack });
       }
@@ -1108,8 +1198,10 @@ async function attach(dispatch) {
   // that could reach us anyway, and ordinary messaging is unaffected.
   // eslint-disable-next-line global-require -- lazy: avoids a require cycle at module load
   const matrixChannel = require('../matrix-channel.service');
+  // Started outside any message's reply context, so a relayed send is never
+  // mistaken for the reply to whatever message is being handled when it runs.
   // eslint-disable-next-line global-require -- lazy, see above
-  require('../matrix-outbound-relay').startOwner(matrixChannel._localImplementations);
+  replyRoomContext.exit(() => require('../matrix-outbound-relay').startOwner(matrixChannel._localImplementations));
 
   logToFile('✅ Matrix inbound listener attached', { welcomeRoomId });
 }
@@ -1141,6 +1233,8 @@ module.exports = {
   // "Reply-to-the-room-you-were-messaged-in" section header.
   getLastInboundRoom,
   recordInboundRoom,
+  getReplyRoom,
+  isOneToOneRoom,
   _resetLastInboundRoomForTests,
   _lastInboundRoomSizeForTests,
 };

@@ -28,6 +28,11 @@ function loadModules({ isJoinedToRoomImpl, dmRoomId = '!fallback-dm:example.org'
       storeValue: jest.fn(async () => undefined),
     },
     createRoom: jest.fn(async () => dmRoomId),
+    // Every room here is a 1:1 with the teacher (a stored DM room is checked).
+    getAllRoomMembers: jest.fn(async () => [
+      { membershipFor: '@rumi:example.org', effectiveMembership: 'join' },
+      { membershipFor: '@teacher:example.org', effectiveMembership: 'join' },
+    ]),
   };
 
   jest.doMock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn() }));

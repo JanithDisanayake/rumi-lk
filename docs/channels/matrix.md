@@ -120,6 +120,8 @@ encryption store, answers everything after it, and skips anything it already ans
 
 In a room with more than one person, Rumi stays quiet unless someone addresses it: by mention, or by starting
 the message with its name ("Rumi, …"). A numbered reply only answers the menu Rumi sent to that teacher.
+Rumi's answer goes to the group, but nothing else does: reports, registers, reminders and every later message
+for that teacher go to their own DM. If Rumi cannot read a room's members, it treats the room as a group.
 
 ## In the apps
 
