@@ -117,7 +117,7 @@ class MigrationRunner {
    * Applies a single migration file:
    * 1. Reads the SQL content
    * 2. Executes it via the exec_sql RPC endpoint
-   * 3. Records the version and SHA-256 checksum in schema_versions
+   * 3. Records the version, filename and SHA-256 checksum in schema_versions
    *
    * @param {string} filePath - Absolute path to the .sql migration file
    * @throws {Error} If SQL execution or recording fails
@@ -152,14 +152,15 @@ class MigrationRunner {
       );
     }
 
-    // Record the applied migration
+    // Record the applied migration. Only version, description and applied_at exist in every
+    // schema_versions (00_complete-schema.sql has no filename or checksum column, and the REST
+    // API rejects an unknown column), so the filename and checksum go in the description.
     const { error: insertError } = await this.supabase
       .from('schema_versions')
       .insert([
         {
           version,
-          filename,
-          checksum,
+          description: `${filename} (sha256 ${checksum})`,
           applied_at: new Date().toISOString(),
         },
       ]);

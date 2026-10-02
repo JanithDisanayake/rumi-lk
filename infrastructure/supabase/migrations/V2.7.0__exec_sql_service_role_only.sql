@@ -25,3 +25,10 @@ BEGIN
   END IF;
 END
 $$;
+
+-- V2.4.0__test_papers.sql used to record itself as version 2.8.0, which would
+-- make migrate.js skip a real 2.8.0 migration. Remove that stray row; the
+-- matching 2.4.0 row is written by migrate.js when it applies V2.4.0.
+DELETE FROM schema_versions
+WHERE version = '2.8.0'
+  AND description = 'Test papers: test_paper_requests + test_papers (versions)';

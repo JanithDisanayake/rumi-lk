@@ -95,6 +95,11 @@ Docker).
   "Process now" used to have nothing to answer.
 - **Versions.** `/health`, the boot banner, the console and the dashboard report the real version;
   `bot/VERSION` is gone, and `dashboard/package.json` now moves in lockstep with the root and bot versions.
+- **`migrate.js` records what it applies.** It wrote `filename` and `checksum` columns that
+  `schema_versions` does not have, so every migration ran but none was recorded, and each run re-applied
+  them all and reported errors. It now writes the filename and checksum into `description`. The test-paper
+  migration recorded itself as 2.8.0 (left over from a rename); it now records 2.4.0, and `V2.7.0` removes
+  the stray 2.8.0 row.
 - **`rumi doctor`** no longer probes channels whose keys are not set.
 - **The console** no longer shows a quoted `.env` value as a pending change.
 
