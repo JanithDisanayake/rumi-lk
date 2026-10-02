@@ -9,6 +9,10 @@
  * "duplicate" and the report never reached the teacher.
  */
 
+// The first test pays for a cold resetModules() load of the queue driver; under a
+// full parallel run that alone can take several seconds.
+jest.setTimeout(30000);
+
 let sendMessage;
 let redisGet;
 
