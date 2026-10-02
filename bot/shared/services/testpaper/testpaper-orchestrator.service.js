@@ -589,15 +589,18 @@ async function handleText({ user, from, text, language }) {
 }
 
 /**
- * A document while the conversation is waiting for a chapter.
+ * A document while the conversation is waiting for a chapter. Only a PDF, Word
+ * or text file is taken, judged before downloading: anything else (a classroom
+ * recording for coaching, a photo) goes on to the bot's other document routes.
  * @returns {Promise<boolean>} true when it was taken as the paper's source
  */
 async function handleDocument({ user, from, message, language }) {
   if (!user?.id || !message?.document || !_enabled()) return false;
   const state = await Session.get(user.id);
   if (!state || state.step !== 'await_upload') return false;
-  const lang = _lang(language);
   const { id, mime_type: mimeType, filename } = message.document;
+  if (!Sources.isChapterFile(mimeType, filename)) return false;
+  const lang = _lang(language);
 
   let text;
   try {

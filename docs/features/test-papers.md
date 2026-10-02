@@ -23,7 +23,7 @@ The word "assessment" is deliberately not used: in Rumi it means the reading ass
 |---|---|---|
 | **Textbooks** | Chapters of books loaded into `textbooks` / `textbook_toc` / `textbook_pages` | `node bot/scripts/testpaper/import-curriculum-corpus.js <corpus-dir>` loads the [curriculum pipeline](../../curriculum/README.md)'s page-truth output (`01_page_truth/<book>/`). Idempotent; `--dry-run` shows what it would write. |
 | **The teacher's own lesson plans** | Their recent `lesson_plans` | The plan's saved content (a plan Rumi made keeps its PDF's text as `content.plan_text`), or the text of its PDF. |
-| **An uploaded chapter** | A PDF (with a text layer), a Word file or a text file — or pasted text | Sent in the chat when Rumi asks for it. |
+| **An uploaded chapter** | A PDF (with a text layer), a Word file or a text file — or pasted text | Sent in the chat when Rumi asks for it. Only a PDF, Word or text file is taken; anything else sent meanwhile (a classroom recording, a photo) goes to its usual handler. |
 
 A scanned PDF with no text layer, or a lesson plan saved with only its topic, is refused honestly.
 

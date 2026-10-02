@@ -325,6 +325,22 @@ describe('from an uploaded chapter', () => {
     expect(await O.handleDocument({ user: TEACHER, from: FROM, language: 'en', message: { document: { id: 'm1', mime_type: 'application/pdf' } } })).toBe(false);
   });
 
+  it.each([
+    ['a classroom recording (audio/mpeg)', 'audio/mpeg', 'class-recording.mp3'],
+    ['an m4a sent with no type', '', 'lesson.m4a'],
+    ['a video', 'video/mp4', 'lesson.mp4'],
+    ['a photo of a page', 'image/png', 'page.png'],
+  ])('while a chapter is awaited, %s is left to the other handlers, never downloaded', async (_label, mimeType, filename) => {
+    load({ users: [{ id: TEACHER.id }] });
+    await start(); // no material → waiting for a chapter
+    const taken = await O.handleDocument({ user: TEACHER, from: FROM, language: 'en', message: { document: { id: 'm1', mime_type: mimeType, filename } } });
+    expect(taken).toBe(false);
+    expect(WA.downloadMedia).not.toHaveBeenCalled();
+    // Still waiting: the chapter sent next is taken.
+    WA.downloadMedia.mockResolvedValue(Buffer.from('chapter'));
+    expect(await O.handleDocument({ user: TEACHER, from: FROM, language: 'en', message: { document: { id: 'm2', mime_type: 'text/plain', filename: 'ch.txt' } } })).toBe(true);
+  });
+
   it('a scan with no text says so instead of making a paper', async () => {
     load();
     await start();

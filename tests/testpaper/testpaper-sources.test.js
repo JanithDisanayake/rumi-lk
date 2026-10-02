@@ -191,6 +191,15 @@ describe('extractUploadText', () => {
   it('reads plain text', async () => {
     expect(await Sources.extractUploadText(Buffer.from('Evaporation and rain'), 'text/plain', 'notes.txt')).toBe('Evaporation and rain');
   });
+  it('isChapterFile: PDF, Word and text by type or name; nothing else', () => {
+    expect(Sources.isChapterFile('application/pdf', '')).toBe(true);
+    expect(Sources.isChapterFile('', 'Chapter 3.DOCX')).toBe(true);
+    expect(Sources.isChapterFile('text/plain', null)).toBe(true);
+    expect(Sources.isChapterFile('audio/mpeg', 'class.mp3')).toBe(false);
+    expect(Sources.isChapterFile('image/jpeg', 'page.jpg')).toBe(false);
+    expect(Sources.isChapterFile('application/octet-stream', 'recording.m4a')).toBe(false);
+  });
+
   it('an unsupported file type is UNSUPPORTED_FILE', async () => {
     await expect(Sources.extractUploadText(Buffer.from('x'), 'image/png', 'page.png')).rejects.toMatchObject({ code: 'UNSUPPORTED_FILE' });
   });

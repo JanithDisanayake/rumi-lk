@@ -328,28 +328,45 @@ const DOCX_TYPES = [
   'application/msword',
 ];
 
+function _fileKind(mimeType, filename) {
+  const type = String(mimeType || '').toLowerCase();
+  const name = String(filename || '').toLowerCase();
+  // A recording or a photo is never a chapter, whatever it is named.
+  if (/^(audio|video|image)\//.test(type)) return null;
+  if (type.includes('pdf') || name.endsWith('.pdf')) return 'pdf';
+  if (DOCX_TYPES.includes(type) || name.endsWith('.docx') || name.endsWith('.doc')) return 'word';
+  if (type.startsWith('text/') || name.endsWith('.txt') || name.endsWith('.md')) return 'text';
+  return null;
+}
+
+/**
+ * Could this document be a chapter (PDF, Word, plain text)? Decided from its
+ * type and name alone, before anything is downloaded, so a classroom recording
+ * or a photo sent while a chapter is awaited goes on to its own handler.
+ */
+function isChapterFile(mimeType, filename) {
+  return _fileKind(mimeType, filename) !== null;
+}
+
 /**
  * The text of an uploaded chapter. PDF via pdf-parse, Word via mammoth, plain
  * text as is. A scanned PDF with no text layer comes back short and is caught
  * as INSUFFICIENT_SOURCE by the caller, with a hint to send the text instead.
  */
 async function extractUploadText(buffer, mimeType = '', filename = '') {
-  const type = String(mimeType || '').toLowerCase();
-  const name = String(filename || '').toLowerCase();
-  if (type.includes('pdf') || name.endsWith('.pdf')) return _pdfText(buffer);
-  if (DOCX_TYPES.includes(type) || name.endsWith('.docx') || name.endsWith('.doc')) {
+  const kind = _fileKind(mimeType, filename);
+  if (kind === 'pdf') return _pdfText(buffer);
+  if (kind === 'word') {
     // eslint-disable-next-line global-require -- bot-only dependency, loaded on use
     const mammoth = require('mammoth');
     const out = await mammoth.extractRawText({ buffer });
     return String(out?.value || '').trim();
   }
-  if (type.startsWith('text/') || name.endsWith('.txt') || name.endsWith('.md')) {
-    return buffer.toString('utf8').trim();
-  }
-  throw fail('UNSUPPORTED_FILE', 'Send the chapter as a PDF, a Word document or plain text.', { mimeType: type });
+  if (kind === 'text') return buffer.toString('utf8').trim();
+  throw fail('UNSUPPORTED_FILE', 'Send the chapter as a PDF, a Word document or plain text.', { mimeType: String(mimeType || '').toLowerCase() });
 }
 
 module.exports = {
   listSources, isEmpty, listChapters, getTextbook, loadTextbookContent, loadLessonPlanContent,
-  extractUploadText, flattenContent, sameSubject, MIN_LESSON_CHARS,
+  extractUploadText, isChapterFile, flattenContent, sameSubject, MIN_LESSON_CHARS,
 };
