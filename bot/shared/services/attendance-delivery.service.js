@@ -19,19 +19,14 @@
  * `new Date(...)` they slid a day either side of UTC.
  */
 
-const path = require('path');
-const fs = require('fs');
 const AttendanceGeneratorService = require('./attendance-generator.service');
 const AttendanceRegister = require('./attendance-register.service');
 const AttendanceDates = require('./attendance-dates');
 const WhatsAppService = require('./whatsapp.service');
 const AttendanceConversationService = require('./attendance-conversation.service');
 const { logToFile } = require('../utils/logger');
-const { uploadBuffer, getSignedUrl, isR2Configured } = require('../storage/r2');
+const { deliverRegisterFile } = require('./attendance-register-delivery.service');
 const supabase = require('../config/supabase');
-const { TEMP_DIR } = require('../utils/constants');
-
-const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 class AttendanceDeliveryService {
   /**
@@ -46,7 +41,9 @@ class AttendanceDeliveryService {
   static async processAndDeliver(userId, phoneNumber, sessionData) {
     if (sessionData && sessionData.subject === 'staff') {
       const StaffAttendanceService = require('./staff-attendance.service');
-      return StaffAttendanceService.saveAndDeliver(userId, phoneNumber, sessionData);
+      const result = await StaffAttendanceService.saveAndDeliver(userId, phoneNumber, sessionData);
+      await AttendanceConversationService.clearSessionState(userId);
+      return result;
     }
 
     const startTime = Date.now();
@@ -104,7 +101,7 @@ class AttendanceDeliveryService {
       );
 
       // Steps 4-5: archive (best effort) and send
-      const delivery = await this.deliverRegisterFile({
+      const delivery = await deliverRegisterFile({
         to: phoneNumber,
         buffer: excelBuffer,
         fileName,
@@ -166,44 +163,6 @@ class AttendanceDeliveryService {
         error: error.message
       };
     }
-  }
-
-  /**
-   * Archive a register to R2 when storage is configured, then send it.
-   *
-   * R2 is the archive, not the delivery: a deployment with no bucket, or a storage
-   * outage, must not stop the file reaching the person who just made it. The send
-   * result is returned as it came back from the channel — a refused document is not
-   * reported as delivered.
-   *
-   * @returns {Promise<{sent: boolean, url: string|null}>}
-   */
-  static async deliverRegisterFile({ to, buffer, fileName, caption, r2Key }) {
-    let url = null;
-    if (isR2Configured()) {
-      try {
-        url = await uploadBuffer(buffer, r2Key, XLSX_MIME);
-      } catch (error) {
-        logToFile('⚠️ Register upload to R2 failed — sending anyway', { error: error.message });
-      }
-    }
-
-    // whatsapp-bot.js creates TEMP_DIR at boot, but this also runs on a fresh
-    // container (and from tests) where that boot has not happened; without it the
-    // register is generated and then lost to ENOENT.
-    if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
-    const tempFilePath = path.join(TEMP_DIR, fileName);
-    fs.writeFileSync(tempFilePath, buffer);
-
-    let sent = false;
-    try {
-      sent = Boolean(await WhatsAppService.sendDocument(to, tempFilePath, fileName, caption));
-    } catch (error) {
-      logToFile('❌ Register send failed', { fileName, error: error.message });
-    } finally {
-      try { if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath); } catch { /* a temp file is not worth an error */ }
-    }
-    return { sent, url };
   }
 
   /**
