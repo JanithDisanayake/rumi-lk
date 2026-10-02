@@ -35,8 +35,8 @@ const PortalLogin = () => {
     try {
       const result = await login(phoneNumber, password);
       if (result.success) {
+        // login() sets `user`, and the effect above does the redirect (once).
         toast({ title: "Welcome back!", description: "Redirecting to dashboard..." });
-        setTimeout(() => navigate('/portal/dashboard'), 1000);
       } else {
         toast({ title: "Login Failed", description: result.error, variant: "destructive" });
       }

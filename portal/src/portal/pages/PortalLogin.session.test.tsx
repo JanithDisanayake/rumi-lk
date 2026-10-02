@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { MemoryRouter } from "react-router-dom";
 
 // An over-the-air app boots to /portal/login on every launch (src/lib/app-target.cjs,
@@ -57,5 +58,45 @@ describe("PortalLogin — an existing session skips the form", () => {
   it("uses a fictional example number as the placeholder", () => {
     renderLogin({ user: null, loading: false });
     expect(screen.getByLabelText("Phone Number")).toHaveAttribute("placeholder", "15551234567");
+  });
+});
+
+describe("PortalLogin — a successful login navigates once", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  // login() awaits the session check, which sets `user`, and the effect above
+  // redirects. A second navigate from the submit handler would push the
+  // dashboard twice, so browser Back from the dashboard lands on the dashboard.
+  it("replaces /portal/login with the dashboard exactly once", async () => {
+    vi.useFakeTimers();
+    try {
+      (useAuth as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => {
+        const [user, setUser] = useState<unknown>(null);
+        return {
+          user,
+          loading: false,
+          login: async () => {
+            setUser({ id: "t-1" });
+            return { success: true };
+          },
+        };
+      });
+      render(
+        <MemoryRouter>
+          <PortalLogin />
+        </MemoryRouter>
+      );
+      fireEvent.change(screen.getByLabelText("Phone Number"), { target: { value: "15551234567" } });
+      fireEvent.change(screen.getByLabelText("Password"), { target: { value: "pw" } });
+      await act(async () => {
+        fireEvent.submit(screen.getByRole("button", { name: /log in/i }).closest("form")!);
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(1500);
+      });
+      expect(navigateSpy.mock.calls).toEqual([["/portal/dashboard", { replace: true }]]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
