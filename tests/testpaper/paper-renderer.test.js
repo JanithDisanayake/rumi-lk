@@ -154,3 +154,13 @@ describe('answer lines', () => {
     expect(R.answerLinesFor('Essay Writing', {})).toBe(10);
   });
 });
+
+describe('printing', () => {
+  // Found printing real papers: a border drawn on the right edge of the printable
+  // area (the marks table, the instructions box) is cropped by Chrome's PDF
+  // printer. A 2px inner gutter keeps every border on the page.
+  it.each(['renderPaper', 'renderAnswerKey'])('%s keeps an inner gutter so right-hand borders print', (fn) => {
+    const html = R[fn]({ examJson: EXAM, grade: 2, subject: 'Math', language: 'en' });
+    expect(html).toMatch(/body \{[^}]*padding: 0 2px;/);
+  });
+});

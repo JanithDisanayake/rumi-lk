@@ -418,7 +418,9 @@ function renderPaper({ examJson, grade, subject, language = 'en', schoolName, pa
   body { font-family: ${rtl
     ? "'PaperScript','PaperLatin',serif"
     : "'PaperLatin',Arial,sans-serif"}; font-size: ${rtl ? '13.5pt' : '12pt'};
-    color: #000; line-height: ${rtl ? 2.0 : 1.5}; margin: 0; }
+    color: #000; line-height: ${rtl ? 2.0 : 1.5}; margin: 0; padding: 0 2px; }
+  /* The 2px body gutter: Chrome's PDF printer crops a border that sits exactly
+     on the right edge of the printable area (the marks table, the instructions). */
   /* Latin runs inside an RTL paper need BOTH halves: isolation stops the run
      reordering its Urdu neighbours, and an explicit ltr direction stops the run
      itself laying out right-to-left. Isolation alone was an earlier defect:
@@ -538,7 +540,7 @@ function renderAnswerKey({ examJson, grade, subject, language = 'en', schoolName
   body { font-family: ${rtl
     ? "'PaperScript','PaperLatin',serif"
     : "'PaperLatin',Arial,sans-serif"}; font-size: ${rtl ? '13pt' : '11.5pt'};
-    color: #000; line-height: ${rtl ? 1.9 : 1.45}; margin: 0; }
+    color: #000; line-height: ${rtl ? 1.9 : 1.45}; margin: 0; padding: 0 2px; }
   .num, .marks { direction: ltr; unicode-bidi: isolate; }
   .title, .teacher { direction: ltr; unicode-bidi: isolate; }
   .school { text-align: center; font-weight: 700; font-size: 13pt; }
