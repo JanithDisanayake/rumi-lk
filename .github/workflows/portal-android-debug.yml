@@ -61,8 +61,11 @@ jobs:
           "$SDKM" "platforms;android-36" "build-tools;36.0.0" "platform-tools" > /dev/null
 
       - name: Portal app guard tests
+        # dashboard deps: portal-app-session-runtime.test.js boots the
+        # dashboard's real express-session, cors and portal router.
         run: |
           npm ci
+          (cd dashboard && npm ci)
           node tests/run.js tests/portal
 
       - name: Install portal dependencies
