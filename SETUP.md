@@ -460,7 +460,7 @@ Class attendance needs nothing. For a head teacher's **staff** attendance and re
 ### Add Observe — the coach's assistant
 
 1. Make sure voice transcription is on (`SONIOX_API_KEY`, above) and the background worker runs (Step 11).
-2. Existing database: apply `infrastructure/supabase/migrations/V2.6.0__observe_coach_assistant.sql`
+2. Existing database: apply `infrastructure/supabase/migrations/V2.8.0__observe_coach_assistant.sql`
    (fresh installs already have it from `00_complete-schema.sql`).
 3. Add to your environment: `OBSERVE_ENABLED=true` (optionally `OBSERVE_FRAMEWORK`, default `teach`).
    Set `OBSERVE_ENABLED=true` on the dashboard service as well: the portal's coach view ("My observations") reads its own environment and stays off without it.

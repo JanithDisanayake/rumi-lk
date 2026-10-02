@@ -1,5 +1,5 @@
 -- =============================================================================
--- V2.6.0 - Observe: the coach's assistant
+-- V2.8.0 - Observe: the coach's assistant
 --
 -- Adds what /observe needs on an existing deployment. A fresh install gets the
 -- same shape from 00_complete-schema.sql + 01_rls-policies.sql. Additive only:
