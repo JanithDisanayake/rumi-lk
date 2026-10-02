@@ -142,6 +142,7 @@ function mockBoundary() {
       handleTypedLanguageChoice: jest.fn().mockResolvedValue(false),
     },
     text: { handleTextMessage: jest.fn().mockResolvedValue(undefined) },
+    orchestrator: { continueWithClass: jest.fn().mockResolvedValue(undefined) },
     list: {
       MENU_CLASSIC: 'tq_pick_menu_classic',
       isQuizCommand: jest.fn(() => false),
@@ -165,6 +166,7 @@ function mockBoundary() {
   jest.doMock('../../bot/shared/services/quiz/video-quiz-invite.service', () => mocks.invite);
   jest.doMock('../../bot/shared/services/quiz/video-quiz-binge.service', () => mocks.binge);
   jest.doMock('../../bot/shared/handlers/text-message.handler', () => mocks.text);
+  jest.doMock('../../bot/shared/services/quiz/quiz-orchestrator.service', () => mocks.orchestrator);
 }
 
 let app;
@@ -298,5 +300,37 @@ describe('webhook → small teacher-side routes (review F-N8)', () => {
     } finally {
       mocks.offer.enabled.mockReturnValue(true);
     }
+  });
+});
+
+describe('webhook → the classic quiz class picker (review F-N12)', () => {
+  /** POST and return the HTTP status, or 'hung' when nothing answers in time. */
+  async function statusOf(body, ms = 1500) {
+    const server = http.createServer(app);
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    const { port } = server.address();
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/webhook`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body), signal: AbortSignal.timeout(ms),
+      });
+      return res.status;
+    } catch (err) {
+      return 'hung';
+    } finally {
+      server.closeAllConnections();
+      await new Promise((r) => server.close(r));
+    }
+  }
+
+  test('a quiz_class_ row continues the classic quiz AND acknowledges the webhook (no hung request, no redelivery)', async () => {
+    const status = await statusOf(listBody('quiz_class_list-1'));
+    expect(mocks.orchestrator.continueWithClass).toHaveBeenCalledWith(expect.objectContaining({ id: 'u-1' }), PHONE, 'list-1', expect.any(String));
+    expect(status).toBe(200);
+  });
+
+  test('…and when continuing fails, still acknowledged', async () => {
+    mocks.orchestrator.continueWithClass.mockRejectedValueOnce(new Error('redis down'));
+    expect(await statusOf(listBody('quiz_class_list-2'))).toBe(200);
   });
 });
