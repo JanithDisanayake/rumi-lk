@@ -210,6 +210,7 @@ key(s) that switch it on.
 | 👋 **[Teacher Nudges](docs/features/teacher-nudges.md)** | A teacher who has gone quiet for about a day gets one short, friendly check-in — once per quiet spell, on whichever channel they last used | `TEACHER_NUDGES_ENABLED` |
 | 🧮 **[Exam Checker](docs/features/exam-checker.md)** | Photograph answer sheets → vision OCR + AI grading | `MISTRAL_API_KEY` |
 | 🌅 **[Morning Brief](docs/features/morning-brief.md)** | Every morning, one thread that tells your team how the programme is doing — registration, lesson plans, coaching, scores, reading, every school worst-first — on WhatsApp, Slack or Discord, with a live page | `BRIEF_RECIPIENTS` + a read-only `BRIEF_DATABASE_URL` |
+| 🔭 **[Observe — the coach's assistant](docs/features/observe.md)** | For the people who visit classrooms: a lesson recording becomes pre-filled ratings the coach edits, a guide for the feedback conversation, coaching on how that conversation went (never a score, and no praise for a belittling one), and a warm report for the teacher — with a schedule, a pending list and a portal view | `OBSERVE_ENABLED=true` + a roster (`node bot/scripts/observe-roster.js`); recordings need `SONIOX_API_KEY` |
 
 > **No tiers, no toggles to hunt for.** Rumi gates features by **presence**: set a feature's API key and it
 > switches on; leave it blank and it stays off cleanly — the bot never crashes over a missing key. Run

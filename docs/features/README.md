@@ -23,6 +23,7 @@ Run **`npm run doctor`** at any time to see which features are live for your cur
 | 👋 [Teacher Nudges](teacher-nudges.md) | A teacher who went quiet gets one short, friendly check-in on the channel they last used | `TEACHER_NUDGES_ENABLED` |
 | 🧮 [Exam Checker](exam-checker.md) | Photograph answer sheets → vision OCR + AI grading | `MISTRAL_API_KEY` |
 | 🌅 [Morning Brief](morning-brief.md) | Every morning, one thread of programme-health panels to your team on WhatsApp/Slack/Discord, plus a live dashboard page | `BRIEF_RECIPIENTS` + a read-only `BRIEF_DATABASE_URL` |
+| 🔭 [Observe](observe.md) | A coach records a lesson → pre-filled ratings they edit in chat → a debrief guide → coaching on their own feedback conversation → a warm, scoreless report for the teacher; plus my schedule, the pending list and a portal view | `OBSERVE_ENABLED=true` + a roster (`bot/scripts/observe-roster.js`); recordings need `SONIOX_API_KEY` |
 
 **How lesson plans get routed** (pre-generated vs Gamma vs photo): see [LP_PATHS.md](../LP_PATHS.md).
 
