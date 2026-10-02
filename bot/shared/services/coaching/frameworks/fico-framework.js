@@ -385,13 +385,25 @@ function computeScores(analysis) {
  * Optional framework hook (see fidelity/fidelity-session.js). When lesson-plan fidelity MEASURED the lesson move by
  * move, indicator 1.2 "Fidelity to LP Steps" takes that measurement instead of the analysis model's overall guess,
  * on the same 1-4 scale: at or above the high band → 4, the partial band → 3, half of it → 2, below → 1. Not
- * measured (no plan, no timings, a failed grading) → the indicator is left as the analysis scored it.
+ * measured (no plan, no timings, a failed grading) → the indicator is left as the analysis scored it, or given back
+ * to it when a recompute replaces a measured result with one that is not.
  */
 function applyLpFidelity(analysis, lpFidelity) {
-  if (!analysis || !lpFidelity || lpFidelity.status !== 'ok' || lpFidelity.fidelity_pct == null) return analysis;
-  const domain = analysis.domains && analysis.domains.lesson_structure;
+  const domain = analysis && analysis.domains && analysis.domains.lesson_structure;
   const indicator = domain && Array.isArray(domain.indicators) && domain.indicators.find((i) => i && i.id === '1.2');
   if (!indicator) return analysis;
+
+  const measured = !!lpFidelity && lpFidelity.status === 'ok' && lpFidelity.fidelity_pct != null;
+  if (!measured) {
+    // A recompute that is not measured (no timings, a failed check) gives the indicator back to the analysis.
+    if (!indicator.fidelity_derived) return analysis;
+    indicator.score = indicator.score_before_fidelity;
+    indicator.evidence = indicator.evidence_before_fidelity;
+    delete indicator.score_before_fidelity;
+    delete indicator.evidence_before_fidelity;
+    delete indicator.fidelity_derived;
+    return computeScores(analysis);
+  }
 
   const { bandCutoffs } = require('../fidelity/fidelity-scorer');
   const { high, partial } = bandCutoffs();
@@ -400,7 +412,12 @@ function applyLpFidelity(analysis, lpFidelity) {
   const counted = (lpFidelity.moves || []).filter((m) => m.counted);
   const delivered = counted.filter((m) => m.credit === 1).length;
 
-  indicator.score_before_fidelity = indicator.score;
+  // The analysis model's own score and evidence are kept once — a recompute never overwrites them with a previous
+  // measurement.
+  if (!indicator.fidelity_derived) {
+    indicator.score_before_fidelity = indicator.score;
+    indicator.evidence_before_fidelity = indicator.evidence;
+  }
   indicator.score = score;
   indicator.fidelity_derived = true;
   indicator.evidence = `Measured move by move: ${delivered} of ${counted.length} planned moves delivered (${lpFidelity.band}).`;
