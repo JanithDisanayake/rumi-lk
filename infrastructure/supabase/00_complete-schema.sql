@@ -4215,6 +4215,50 @@ BEGIN
 END;
 $function$;
 
+-- =============================================================================
+-- Teacher nudges — scheduled, proactive messages to teachers
+-- One row per (teacher, local day, kind). The sweeper books rows, claims the
+-- due ones (pending -> sending, single-flight via a conditional UPDATE) and
+-- records sent / skipped / failed. Only bot/shared/services/nudges/
+-- teacher-nudges.store.js touches this table. Placed after the column
+-- reconcile because the users(last_message_at) index needs that column.
+-- See docs/features/teacher-nudges.md.
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS teacher_nudges (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    -- A code registry, not a CHECK: a new kind needs no migration.
+    kind TEXT NOT NULL,
+    -- The local calendar day (TEACHER_NUDGES_TZ) the nudge belongs to.
+    nudge_date DATE NOT NULL,
+    scheduled_at TIMESTAMPTZ NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'sending', 'sent', 'skipped', 'failed')),
+    -- Why a nudge was deliberately not sent (window_closed, quiet_hours, ...).
+    skip_reason TEXT,
+    -- What the nudge was about, plus an error message on failure. Merged, never replaced.
+    context JSONB NOT NULL DEFAULT '{}'::jsonb,
+    -- How many times the row has been claimed.
+    attempts INTEGER NOT NULL DEFAULT 0,
+    claimed_at TIMESTAMPTZ,
+    sent_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- One nudge per teacher per local day per kind. Booking relies on this.
+    CONSTRAINT teacher_nudges_one_per_day UNIQUE (user_id, nudge_date, kind)
+);
+
+-- The sweeper's claim: due, pending rows, oldest first.
+CREATE INDEX IF NOT EXISTS idx_teacher_nudges_due
+    ON teacher_nudges (scheduled_at) WHERE status = 'pending';
+-- A teacher's recent nudges (the "same quiet spell" check).
+CREATE INDEX IF NOT EXISTS idx_teacher_nudges_user_recent
+    ON teacher_nudges (user_id, nudge_date DESC);
+-- The re-engage cohort reads users by how long ago they last wrote in.
+CREATE INDEX IF NOT EXISTS idx_users_last_message_at
+    ON users (last_message_at);
+
 -- Reload PostgREST's schema cache last, so the reconciled columns + functions
 -- above are immediately visible to the REST API (the earlier NOTIFY predates these DDLs).
 NOTIFY pgrst, 'reload schema';
