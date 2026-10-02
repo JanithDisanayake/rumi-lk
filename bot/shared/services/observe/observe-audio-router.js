@@ -80,11 +80,19 @@ async function _chatConversationState(sessionId) {
 }
 
 /**
- * What to do with a classroom-length recording nobody armed for: tell the
- * coach to start from /observe. Handled either way — never self-coaching.
+ * A classroom-length recording nobody armed for: park it and ask the coach
+ * whose it is (observe-binding). Handled either way — never self-coaching. If
+ * the park itself fails (Redis down), fall back to telling the coach to start
+ * from /observe: the recording is never silently lost into another feature.
  */
 async function _unbound(user, from, media) {
-  logToFile('🔭 observe: unbound classroom recording held back from self-coaching', { userId: user.id, audioId: media.audioId });
+  try {
+    const Binding = require('./observe-binding.service');
+    await Binding.parkAndAsk(user, from, media);
+    return;
+  } catch (err) {
+    logToFile('⚠️ observe: park failed — telling the coach to start from /observe', { userId: user.id, error: err.message });
+  }
   await WhatsAppService.sendMessage(from, t(observeLang(user), 'long_audio_no_state'));
 }
 
@@ -130,7 +138,14 @@ async function routeLeaderAudio({
       const ObserveCapture = require('./observe-capture.service');
       // Pass the resolved duration through — dropping it stores NULL
       // ("your 0-minute recording").
-      await ObserveCapture.startFromAudio(user, from, audioId, sessionId, dur || null);
+      const session = await ObserveCapture.startFromAudio(user, from, audioId, sessionId, dur || null);
+      // Remember it, so an identical re-send is answered "already got this one".
+      if (session) {
+        try {
+          await require('./observe-binding.service').rememberCaptured(user.id, media, session,
+            (state.boundTeacher && state.boundTeacher.name) || null);
+        } catch (_) { /* best-effort */ }
+      }
       logToFile('🔭 observe: classroom recording captured', { userId: user.id, audioId });
       return true;
     }

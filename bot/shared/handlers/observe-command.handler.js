@@ -2,11 +2,13 @@
  * /observe — the coach's entry point, and the coach's typed replies.
  *
  * handleObserveCommand: gates (feature, account, role) → one-time onboarding →
- * the capture prompt with awaiting_audio armed.
+ * the menu (pending work oldest first, New observation, My schedule, Plan a
+ * visit — observe-menu.service). A coach with no pending work and no roster
+ * gets the bare capture prompt with awaiting_audio armed, exactly as before.
  * handleObserveText: the text-handler hook. /observe itself, plus any reply a
  * pending observe step is waiting for (the stepwise rating form, the teacher's
- * details for the report). Returns false for everything else so normal chat is
- * untouched.
+ * details for the report, a typed visit date). Returns false for everything
+ * else so normal chat is untouched.
  *
  * Both return true when the message was handled (caller stops processing).
  */
@@ -33,9 +35,18 @@ async function markOnboarded(user) {
 
 /** Ask for the recording and arm the slot the audio router reads. */
 async function sendCapturePrompt(user, from) {
-  await WhatsAppService.sendMessage(from, t(observeLang(user), 'capture_prompt'));
-  await ObserveState.setState(user.id, 'awaiting_audio');
-  return true;
+  return require('../services/observe/observe-visit.service').sendBareCapture(user, from);
+}
+
+/** After the gates: the menu, or the bare capture prompt when there is nothing to list. */
+async function openObserve(user, from) {
+  try {
+    return await require('../services/observe/observe-menu.service').openMenu(user, from);
+  } catch (err) {
+    // The menu is a convenience; the recording is the product. Never dead-end.
+    logToFile('⚠️ observe: menu failed, falling back to capture', { userId: user.id, error: err.message });
+    return sendCapturePrompt(user, from);
+  }
 }
 
 /**
@@ -65,11 +76,11 @@ async function handleObserveCommand(user, from, messageBody) {
       // one-time onboarding.
       await markOnboarded(user);
       await WhatsAppService.sendMessage(from, t(lang, 'onboard'));
-      return sendCapturePrompt(user, from);
+      return openObserve(user, from);
 
     case 'capture':
     default:
-      return sendCapturePrompt(user, from);
+      return openObserve(user, from);
   }
 }
 
@@ -81,6 +92,10 @@ async function handleObserveText(user, from, text) {
   const trimmed = String(text || '').trim();
   if (OBSERVE_TRIGGER_RX.test(trimmed)) return handleObserveCommand(user, from, trimmed);
   if (!isObserveEnabled() || !isSchoolLeader(user)) return false;
+  const state = await ObserveState.getState(user.id);
+  if (state && state.state === 'awaiting_visit_date') {
+    return require('../services/observe/observe-visit.service').handleTypedDate(user, from, trimmed, state);
+  }
   return false;
 }
 

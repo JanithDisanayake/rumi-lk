@@ -126,6 +126,7 @@ const EN = {
   bind_dupe_ack: "I already have this recording ({name}) — it's in progress, no need to send it again.",
   bind_dupe_fallback_name: 'the same observation',
   bind_park_full: 'Answer the question above first — then send the next recording, so nothing gets lost.',
+  bind_queued: "Got this recording too. Answer the question above first, then I'll ask about this one.",
   bind_debrief_pick_body: 'Which observation is this debrief for?',
   bind_debrief_pick_button: 'Pick one',
   bind_debrief_pick_section: 'Waiting for a debrief',

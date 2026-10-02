@@ -79,4 +79,25 @@ async function hasAssignment(leaderUserId) {
   }
 }
 
-module.exports = { listSchools, listTeachers, hasAssignment };
+/** The schedule key for a teacher's school: its register id, else its own id. */
+function schoolKeyOf(teacher) {
+  return (teacher && (teacher.school_ext_id || teacher.school_id)) || null;
+}
+
+/**
+ * The boundTeacher shape capture reads from observe state, from a roster
+ * teacher. schoolExtId overrides the key (a scheduled visit's own key, so
+ * markDone retires exactly that row).
+ */
+function boundTeacherOf(teacher, schoolExtId = null) {
+  return {
+    user_id: teacher.user_id || null,
+    teacher_ext_id: teacher.teacher_ext_id,
+    school_ext_id: schoolExtId || schoolKeyOf(teacher),
+    school_id: teacher.school_id || null,
+    name: teacher.name || null,
+    phone: teacher.phone || null,
+  };
+}
+
+module.exports = { listSchools, listTeachers, hasAssignment, schoolKeyOf, boundTeacherOf };
