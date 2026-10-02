@@ -55,10 +55,11 @@ without it the audio is not archived, and the reports are kept on local disk.
 **Existing deployments:** apply `infrastructure/supabase/migrations/V2.8.0__observe_coach_assistant.sql`
 (additive: four columns on `coaching_sessions`, `users.role` and `users.school_id`, and the `schools`,
 `leader_schools`, `observation_schedules` and `coach_directory` tables). Fresh installs get it from
-`00_complete-schema.sql`. Apply it before deploying the bot and the dashboard, even with Observe off: a
-teacher's own coaching (their score trend, prior feedback, chat context, `/status`, the teacher portal) now
-filters coaches' observations out, and reads the new column to do it. The Morning Brief checks for the
-column and works either way.
+`00_complete-schema.sql`. Apply it before deploying the dashboard, even with Observe off: the teacher
+portal filters coaches' observations out of a teacher's own pages and reads the new column to do it. The bot
+and the Morning Brief check for the column and work either way: a teacher's own coaching (score trend, prior
+feedback, chat context, `/status`) leaves observations out when the column exists, and without it the bot
+logs an error at start-up asking for the migration and computes teachers' coaching exactly as before.
 
 ### Set up your coaches
 
@@ -139,7 +140,8 @@ captured, the visit is marked done and leaves the schedule.
 
 ### "Whose observation is this?" (several recordings in flight)
 
-A classroom-length recording from a coach with nothing armed is **parked**:
+A classroom-length recording (the line the self-coaching path draws, `COACHING_MIN_AUDIO_SECONDS`,
+default 15 minutes) from a coach with nothing armed is **parked**:
 the oldest is first in line, up to 5, kept for 6 hours. Rumi then asks the
 coach:
 
