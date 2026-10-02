@@ -10,8 +10,11 @@
  * a thousand (quiz, child) pairs carried more than one completed attempt, and
  * one child had forty.
  *
- * The attempt that counts is the LATEST COMPLETED one (the child's current
- * standing), else the latest row (so a child mid-quiz still shows as started).
+ * The attempt that counts is the FIRST COMPLETED one. Every answer's feedback
+ * shows the right option and re-joining is never blocked, so a retake after
+ * reading the reasons is not the child's standing — counting the latest would
+ * let any child score full marks on a second go. With nothing completed it is
+ * the latest row (so a child mid-quiz still shows as started).
  * Rows without a student_id cannot be grouped and pass through untouched.
  * Pure, so it can be asserted directly.
  *
@@ -23,18 +26,15 @@
  * without student_id is counted as its own child.
  */
 function oneAttemptPerChild(sessions) {
-  const rank = (s) => [
-    s.status === 'completed' ? 1 : 0,
-    String(s.completed_at || ''),
-    String(s.created_at || ''),
-  ];
+  const done = (s) => s.status === 'completed';
+  // ISO timestamps compare as strings. A completed row without a completed_at
+  // sorts by when it was started.
+  const finishedAt = (s) => String(s.completed_at || s.created_at || '');
   const better = (a, b) => {
-    const ra = rank(a); const rb = rank(b);
-    for (let i = 0; i < ra.length; i += 1) {
-      if (ra[i] > rb[i]) return true;
-      if (ra[i] < rb[i]) return false;
-    }
-    return false;
+    if (done(a) !== done(b)) return done(a);
+    // Two completed: the earlier finish counts. Neither: the later start shows.
+    if (done(a)) return finishedAt(a) < finishedAt(b);
+    return String(a.created_at || '') > String(b.created_at || '');
   };
   const byChild = new Map();
   const loose = [];
