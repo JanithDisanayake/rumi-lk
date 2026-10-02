@@ -266,8 +266,29 @@ function buildCompanionText(notes, { coachName = '', lang = 'en', material = [] 
   return text;
 }
 
+/**
+ * The text report, for when no image can be rendered (no headless browser on
+ * this host, say). Built only from the analysis' strengths — the warm half —
+ * each one through the firewall; a strength that fails is left out, and with
+ * none left a warm generic line stands in.
+ */
+function buildTextReport(analysis, { lang = 'en', material = [] } = {}) {
+  const S = observeStrings(lang);
+  const strengths = ((analysis && analysis.strengths) || [])
+    .map((s) => (typeof s === 'string' ? s : (s && (s.title || s.name)) || ''))
+    .map((s) => String(s).trim())
+    .filter((s) => s && !firewallViolations(s, { material }).length)
+    .slice(0, 3);
+  const text = strengths.length
+    ? [`🌱 *${S.report_text_strengths_label}*`, ...strengths.map((s) => `• ${s}`)].join('\n')
+    : S.report_text_fallback;
+  assertTeacherSafe([text], { material });
+  return text;
+}
+
 module.exports = {
   SCORE_PATTERNS,
+  buildTextReport,
   findScoreLeak,
   findAccusation,
   coachOnlyMaterial,

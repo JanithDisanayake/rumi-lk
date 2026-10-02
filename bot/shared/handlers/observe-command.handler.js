@@ -81,6 +81,16 @@ async function handleObserveText(user, from, text) {
   const trimmed = String(text || '').trim();
   if (OBSERVE_TRIGGER_RX.test(trimmed)) return handleObserveCommand(user, from, trimmed);
   if (!isObserveEnabled() || !isSchoolLeader(user)) return false;
+
+  const observeState = await ObserveState.getState(user.id).catch(() => null);
+  if (!observeState) return false;
+
+  // The report's recipient, typed as "Name, +1 555 010 0123". The original-case
+  // text goes through so the teacher's name keeps its capitals.
+  const ObserveSend = require('../services/observe/observe-send.service');
+  if (ObserveSend.DETAILS_TEXT_STATES.includes(observeState.state)) {
+    return ObserveSend.handleTeacherDetailsText(user, from, trimmed, observeState);
+  }
   return false;
 }
 

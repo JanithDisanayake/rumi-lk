@@ -198,6 +198,18 @@ const EN = {
     "📨 {name}'s report is ready but has not been sent yet. Open /observe, pick that observation, and tap Send — it is one tap.",
   send_undelivered_gave_up_fo:
     "{name}'s report still has not been sent, so I will stop reminding you about it. You can still send it any time from /observe.",
+  send_not_yours: "Sorry — that observation isn't yours, so I can't send its report.",
+  send_session_closed: 'That observation was cancelled, so its report can no longer be sent.',
+  send_pick_stale: 'That list has expired. Type /observe and pick the observation again to send its report.',
+  // Meta only: the teacher is outside the 24-hour window and no invite template is set up.
+  send_window_closed_fo:
+    "⚠️ The teacher hasn't messaged me recently, so I can't send the report to them directly yet. Ask them to send any message to this number, then send it again from /observe (📨).",
+  send_preview_failed_fo:
+    "⚠️ Sorry — I couldn't prepare the report preview just now. Nothing was sent to the teacher. Type /observe, pick that observation, and try again (📨).",
+  send_undelivered_unnamed_teacher: 'The teacher',
+  report_review_header: '🔎 For review — to: {name} ({phone}) · from: {fo}',
+  report_text_strengths_label: 'What went well',
+  report_text_fallback: 'Thank you for opening your classroom. Your coach will follow up with you about the lesson.',
   report_caption_teacher: "Your lesson report 🌱 Prepared from {fo}'s visit — with notes from your conversation together.",
   companion_from_label: 'From',
   companion_commitment_label: 'Your commitment',

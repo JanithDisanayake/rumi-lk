@@ -11,6 +11,8 @@
  *   observe_cancel_yes_<id>  cancel confirmed
  *   observe_cancel_<id>      "Cancel observation" — ask first
  *   observe_who_<id>_<n>     who was observed (bare capture)
+ *   observe_send_<action>_<id>  send report / later / send now / someone else / cancel
+ *   observe_pickt_<n|new|more_n> the report recipient pick list
  *
  * @returns {Promise<boolean>} true when the id was ours and has been handled
  */
@@ -21,6 +23,8 @@ const ROUTES = [
   ['observe_ok_', async () => true],
   ['observe_cancel_yes_', (user, from, rest) => require('../services/observe/observe-capture.service').cancelObservation(user, from, rest)],
   ['observe_cancel_', (user, from, rest) => require('../services/observe/observe-capture.service').askCancel(user, from, rest)],
+  ['observe_send_', (user, from, rest, id) => require('../services/observe/observe-send.service').handleSendButton(user, from, id)],
+  ['observe_pickt_', (user, from, rest, id) => require('../services/observe/observe-send.service').handleTeacherPick(user, from, id)],
   ['observe_who_', (user, from, rest, id) => require('../services/observe/observe-who.service').handleObservedTeacherPick(user, from, id)],
 ];
 

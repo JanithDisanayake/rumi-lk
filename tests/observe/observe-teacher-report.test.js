@@ -185,3 +185,20 @@ describe('buildCompanionText', () => {
       .toThrow(TR.TrustFirewallError);
   });
 });
+
+describe('buildTextReport — the fallback when no image can be rendered', () => {
+  test('lists strengths that pass the firewall, never the scored one or any coach material', () => {
+    const text = TR.buildTextReport(ADVERSARIAL, { lang: 'en', material });
+    expect(text).toContain('What went well');
+    expect(text).toContain('Warm, clear explanations');
+    expect(text).not.toMatch(/34\/50/);
+    expect(text).not.toMatch(/pacing was poor|Too much teacher talk|wait longer/);
+    expect(() => TR.assertTeacherSafe([text], { material })).not.toThrow();
+  });
+
+  test('no usable strengths → a warm generic line, still number-free', () => {
+    const text = TR.buildTextReport({ strengths: [{ title: '3 of 5 met' }] }, { lang: 'en', material: [] });
+    expect(text).toMatch(/Thank you for opening your classroom/);
+    expect(TR.findScoreLeak(text)).toBeNull();
+  });
+});
