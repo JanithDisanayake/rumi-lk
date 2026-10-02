@@ -16,7 +16,7 @@ function load() {
     SQS: jest.fn(() => ({ sendMessage: sendMessageMock })),
   }), { virtual: true });
   jest.doMock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn() }));
-  jest.doMock('../../bot/shared/services/cache/railway-redis.service', () => ({}), { virtual: true });
+  jest.doMock('../../bot/shared/services/cache/railway-redis.service', () => ({}));
   jest.doMock('../../bot/shared/utils/structured-logger', () => ({ getCurrentCorrelationId: () => 'c1', logEvent: jest.fn() }));
 
   process.env.SQS_QUEUE_URL = MAIN;
@@ -59,7 +59,7 @@ describe('queueJob routing', () => {
     jest.resetModules();
     jest.doMock('aws-sdk', () => ({ config: { update: jest.fn() }, SQS: jest.fn(() => ({ sendMessage: sendMessageMock })) }), { virtual: true });
     jest.doMock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn() }));
-    jest.doMock('../../bot/shared/services/cache/railway-redis.service', () => ({}), { virtual: true });
+    jest.doMock('../../bot/shared/services/cache/railway-redis.service', () => ({}));
     jest.doMock('../../bot/shared/utils/structured-logger', () => ({ getCurrentCorrelationId: () => 'c1', logEvent: jest.fn() }));
     process.env.SQS_QUEUE_URL = MAIN;
     const q2 = require('../../bot/shared/services/queue/sqs-queue.service');
