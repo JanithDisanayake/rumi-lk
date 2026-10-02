@@ -790,6 +790,12 @@ async function walkDiscordAppConfig(io) {
 
 async function stepMessagingChannels(io, env, save, opts = {}) {
   beginStep(6, 'Other places teachers can reach Rumi');
+  const slackAndDiscord = await stepSlackAndDiscord(io, env, save, opts);
+  return { ...slackAndDiscord, ...(await stepMatrixChannel(io, env, save, opts)) };
+}
+
+/** Slack, then Discord — Step 6 up to Matrix. */
+async function stepSlackAndDiscord(io, env, save, opts = {}) {
 
   const slackConfigured = hasAll(env, ['SLACK_BOT_TOKEN', 'SLACK_SIGNING_SECRET']);
   if (slackConfigured && !opts.reconfigure) {
@@ -891,6 +897,145 @@ async function stepDiscordChannel(io, env, save, opts = {}) {
   }
 }
 
+const RUMI_MESSENGER_REPO = 'https://github.com/Orenda-Project/rumi-messenger';
+
+/** True when this Node can run Matrix end-to-end encryption (24 or newer). */
+function nodeSupportsMatrixE2ee(nodeVersion) {
+  return Number(String(nodeVersion || '').replace(/^v/, '').split('.')[0]) >= 24;
+}
+
+/**
+ * Reads the three lines rumi-messenger's scripts/setup.sh writes to
+ * `deploy/rumi-channel.env`. Returns `{ok:false, reason}` rather than throwing,
+ * so it can sit directly behind an `ask` validator.
+ */
+function readRumiChannelEnv(filePath) {
+  const fs = require('fs');
+  const resolved = path.resolve(String(filePath || '').trim().replace(/^~(?=\/)/, require('os').homedir()));
+  if (!filePath || !fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
+    return { ok: false, reason: 'No file there. In rumi-messenger it is deploy/rumi-channel.env, written by scripts/setup.sh.' };
+  }
+  const vars = readEnvFile(resolved);
+  const missing = ['MATRIX_HOMESERVER_URL', 'MATRIX_ACCESS_TOKEN'].filter((key) => !vars[key]);
+  if (missing.length) return { ok: false, reason: `That file has no ${missing.join(' or ')} line.` };
+  return {
+    ok: true,
+    vars: {
+      MATRIX_HOMESERVER_URL: vars.MATRIX_HOMESERVER_URL.replace(/\/+$/, ''),
+      MATRIX_ACCESS_TOKEN: vars.MATRIX_ACCESS_TOKEN,
+      MATRIX_USER_ID: vars.MATRIX_USER_ID,
+    },
+  };
+}
+
+/**
+ * On Node older than 24 the encryption module can't load, and the channel
+ * fails closed. Says so, and lets the person choose: keep encryption required
+ * (the default — the channel waits for Node 24), or turn it off, which needs a
+ * second, explicit yes.
+ *
+ * @returns {Promise<'on'|'off'>}
+ */
+async function chooseMatrixE2ee(io, nodeVersion) {
+  if (nodeSupportsMatrixE2ee(nodeVersion)) return 'on';
+
+  console.log('');
+  console.log(ui.say(`This machine runs Node ${String(nodeVersion).replace(/^v/, '')}. End-to-end encryption on Matrix needs Node 24 or newer.`));
+  console.log(ui.aside('Without it, the Matrix channel refuses to start, unless you set MATRIX_E2EE=off. Off means messages between teachers and Rumi are not end-to-end encrypted.'));
+  const choice = await io.select('How should Matrix handle encryption?', [
+    { label: 'Keep encryption required', value: 'on', hint: 'Matrix starts once Rumi runs on Node 24 or newer' },
+    { label: 'Turn encryption off', value: 'off', hint: 'sets MATRIX_E2EE=off — Matrix starts now, unencrypted' },
+  ], 'on');
+  if (choice !== 'off') return 'on';
+  const sure = await io.confirm('Send Matrix messages without end-to-end encryption?', false);
+  return sure ? 'off' : 'on';
+}
+
+/**
+ * Matrix's own confirm-then-configure-then-live-check block, the same shape
+ * as stepDiscordChannel. Matrix runs on a homeserver the deployment owns, so
+ * there is no app console to walk through: the bot account's access token
+ * comes either from rumi-messenger's `deploy/rumi-channel.env` or from
+ * whoever runs the homeserver.
+ *
+ * @param {{reconfigure?: boolean, nodeVersion?: string}} [opts]
+ *   `nodeVersion` defaults to this process's Node.
+ */
+async function stepMatrixChannel(io, env, save, opts = {}) {
+  const nodeVersion = opts.nodeVersion || process.versions.node;
+
+  const matrixConfigured = hasAll(env, ['MATRIX_HOMESERVER_URL', 'MATRIX_ACCESS_TOKEN']);
+  if (matrixConfigured && !opts.reconfigure) {
+    const check = await checkLive('Checking the Matrix connection you already have…', 'matrix', env, (d) => `Matrix already connected ${ui.dim(d)}`);
+    if (check.ok) return { matrix: true };
+    console.log(ui.say('That connection is not working. Let\'s set Matrix up again.'));
+  }
+
+  console.log('');
+  console.log(ui.say('A teacher can also reach Rumi on a Matrix messenger you run yourself, at the same time as WhatsApp, Slack and Discord — nobody has to choose.'));
+  console.log(ui.aside(`No homeserver yet? ${RUMI_MESSENGER_REPO} runs one, with a Rumi-branded app, and writes the connection details for you. Full guide: docs/channels/matrix.md`));
+  console.log('');
+
+  const wantsMatrix = await io.confirm('Do you want teachers to reach Rumi on your own Matrix messenger?', false);
+  if (!wantsMatrix) return { matrix: false };
+
+  const e2ee = await chooseMatrixE2ee(io, nodeVersion);
+
+  for (;;) {
+    let vars;
+    const fromFile = await io.confirm('Read the connection details from rumi-messenger\'s deploy/rumi-channel.env?', false);
+    if (fromFile) {
+      const filePath = await io.ask('Path to rumi-channel.env', {
+        hint: 'In your rumi-messenger checkout: deploy/rumi-channel.env. Press Enter with nothing typed to enter the values by hand instead.',
+        validate: (input) => {
+          if (!String(input || '').trim()) return { ok: true, value: '' };
+          const read = readRumiChannelEnv(input);
+          return read.ok ? { ok: true } : read;
+        },
+      });
+      const read = filePath ? readRumiChannelEnv(filePath) : { ok: false };
+      if (read.ok) vars = read.vars;
+    }
+    if (!vars) {
+      const homeserverUrl = await io.ask('Homeserver URL', {
+        fallback: prefill(env, 'MATRIX_HOMESERVER_URL'),
+        hint: 'Your homeserver\'s address, e.g. https://matrix.example.org.',
+        validate: (input) => {
+          const value = String(input || '').trim().replace(/\/+$/, '');
+          if (!value) return { ok: false, reason: 'This can\'t be empty.' };
+          if (!/^https?:\/\//.test(value)) return { ok: false, reason: 'Start it with https:// (or http:// for a homeserver on this machine).' };
+          return { ok: true, value };
+        },
+      });
+      const accessToken = await io.ask('Bot access token', {
+        secret: true,
+        fallback: prefill(env, 'MATRIX_ACCESS_TOKEN'),
+        hint: 'The Rumi bot account\'s access token, from whoever runs the homeserver.',
+      });
+      vars = { MATRIX_HOMESERVER_URL: homeserverUrl, MATRIX_ACCESS_TOKEN: accessToken };
+    }
+
+    save({ ...vars, MATRIX_E2EE: e2ee });
+    const check = await checkLive('Checking the access token…', 'matrix', env, (d) => `Matrix connected ${ui.dim(d)}`);
+    if (check.ok) {
+      console.log(ui.aside('Keep MATRIX_STORAGE_DIR (default .matrix-storage) on storage that survives restarts and redeploys: its encryption keys belong to this token\'s device.'));
+      console.log(ui.aside('Rumi also needs REDIS_URL for Matrix, so lesson plans and reports from the worker reach teachers.'));
+      return { matrix: true };
+    }
+    // The doctor probe reports a good login that only encryption is holding
+    // back as "connected as …, but the channel will refuse to start". New
+    // credentials would not change that, so don't ask for them again.
+    if (/^connected as /.test(check.detail)) {
+      console.log(ui.aside(check.detail));
+      console.log(ui.say('The login works and is saved. Matrix will start once encryption can load (Node 24 or newer), or with MATRIX_E2EE=off.'));
+      return { matrix: false };
+    }
+    console.log(ui.aside(check.detail));
+    const retry = await io.confirm('Try those values again?', true);
+    if (!retry) return { matrix: false };
+  }
+}
+
 // ── Screens ──────────────────────────────────────────────────────────────────
 
 function welcome(env) {
@@ -914,7 +1059,7 @@ function welcome(env) {
 }
 
 async function finish(env, channelResult) {
-  const { channel, number, linked, slack, discord } = channelResult;
+  const { channel, number, linked, slack, discord, matrix } = channelResult;
   console.log('');
   console.log(ui.rule());
   const spin = ui.spinner('One last check of everything…');
@@ -932,7 +1077,7 @@ async function finish(env, channelResult) {
   console.log('');
   console.log(ui.rule());
   console.log('');
-  console.log(summary.renderNextSteps({ channel, number, slack, discord }));
+  console.log(summary.renderNextSteps({ channel, number, slack, discord, matrix }));
   console.log('');
   if (!doctor.ok) {
     console.log(ui.aside('Run `rumi doctor` for the detail on what is not working yet.'));
@@ -1013,7 +1158,7 @@ if (require.main === module) {
 
 module.exports = {
   main, welcome, finish,
-  stepDatabase, stepBrain, stepMemory, stepExtras, stepChannel, stepMessagingChannels, stepDiscordChannel,
+  stepDatabase, stepBrain, stepMemory, stepExtras, stepChannel, stepMessagingChannels, stepDiscordChannel, stepMatrixChannel,
   stepTelemetry,
   ensureTables, chooseChannelDriver, collectMetaCredentials, linkSandbox, channelAlreadyWorking,
   createSaver, hasAll, isProvided, prefill, isTemplateSuggestion, startLocalRedis, dockerAvailable, probe,
