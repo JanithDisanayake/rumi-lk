@@ -213,4 +213,18 @@ describe('flattenContent', () => {
     expect(text).toContain('Leaf walk');
     expect(text).toContain('Collect leaves.');
   });
+
+  it('leaves out the fidelity feature\'s cached move list, which is derived from the plan, not plan text', async () => {
+    const cache = {
+      plan_hash: 'a3f1c9e0b2d4a3f1c9e0b2d4a3f1c9e0b2d4a3f1c9e0b2d4a3f1c9e0b2d4abcd',
+      goal: 'Learners can add fractions with like denominators',
+      model: 'example/model', extracted_at: '2026-10-02T10:00:00.000Z',
+      moves: [{ id: 'm1', move: 'Teacher reviews halves with a paper strip' }, { id: 'm2', move: 'Pairs fold strips into quarters and compare' }],
+    };
+    expect(Sources.flattenContent({ fidelity_moves: cache })).toBe('');
+    expect(Sources.flattenContent({ objectives: 'Add fractions', fidelity_moves: cache })).not.toMatch(/plan.hash|extracted.at|paper strip/i);
+    // A plan row whose content is only that cache has no text to build a paper from.
+    db.tables.lesson_plans.push({ id: 'lp-5', user_id: TEACHER, topic: 'Adding fractions', content: { fidelity_moves: cache }, pdf_url: null, created_at: '2026-09-25T10:00:00Z' });
+    await expect(Sources.loadLessonPlanContent(['lp-5'], TEACHER)).rejects.toMatchObject({ code: 'INSUFFICIENT_SOURCE' });
+  });
 });

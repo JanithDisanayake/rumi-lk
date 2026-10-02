@@ -222,6 +222,12 @@ async function loadTextbookContent(textbookId, chapterNumbers) {
 }
 
 /**
+ * Keys on a lesson_plans row's content that are derived from the plan, not
+ * part of it: lesson-plan fidelity caches the plan's extracted moves there.
+ */
+const NOT_PLAN_TEXT = new Set(['fidelity_moves']);
+
+/**
  * A structured lesson plan as readable text. Keys become headings and every
  * string value is kept, so whatever shape a plan was saved in (a `text` field,
  * a sectioned object, a list of activities) the generator reads all of it.
@@ -236,6 +242,7 @@ function flattenContent(content, depth = 0) {
   if (typeof content === 'object') {
     if (typeof content.text === 'string' && Object.keys(content).length === 1) return content.text.trim();
     return Object.entries(content)
+      .filter(([k]) => !(depth === 0 && NOT_PLAN_TEXT.has(k)))
       .map(([k, v]) => {
         const body = flattenContent(v, depth + 1);
         if (!body) return '';
