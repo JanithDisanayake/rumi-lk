@@ -3695,6 +3695,12 @@ CREATE TABLE IF NOT EXISTS quizzes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_quizzes_teacher_id ON quizzes(teacher_id);
+-- The lesson-quiz columns again, for a database whose quizzes table predates
+-- them (CREATE TABLE IF NOT EXISTS above leaves it as it was): the indexes
+-- below need coaching_session_id. Same columns as V2.9.0.
+ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS coaching_session_id UUID REFERENCES coaching_sessions(id) ON DELETE SET NULL;
+ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS language TEXT;
+ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS meta JSONB NOT NULL DEFAULT '{}'::jsonb;
 -- /quiz lists a teacher's recent quizzes newest-first.
 CREATE INDEX IF NOT EXISTS quizzes_teacher_recent ON quizzes(teacher_id, created_at DESC);
 -- One transcript quiz per coaching session, one lesson-plan quiz per plan: the
