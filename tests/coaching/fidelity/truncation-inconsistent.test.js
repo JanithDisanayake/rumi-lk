@@ -88,6 +88,8 @@ describe('claimsTruncation — reading the grader\'s own note', () => {
 // Verdict MIX is what these fixtures reproduce: the discriminator is whether the grader used not_adjudicable for the moves its own note
 // says it could not judge.
 const must = (id) => ({ move_id: id, phase: 'body', bucket: 'must_happen', text: `move ${id}` });
+// Real gradings quote a [MM:SS] moment for every credited verdict.
+const quoted = (vs) => vs.map((v) => (['executed', 'partial'].includes(v.verdict) ? { evidence: '[00:10] quoted', ...v } : v));
 const opt = (id) => ({ move_id: id, phase: 'close', bucket: 'optional_extension', text: `opt ${id}` });
 
 // Note says "later-phase moves should not be treated as misses", and the
@@ -95,14 +97,14 @@ const opt = (id) => ({ move_id: id, phase: 'close', bucket: 'optional_extension'
 // denominator. Self-consistent. coverage 0.71, fidelity 50%.
 const CONSISTENT = {
   moves: [...['m1', 'm2', 'm3', 'm4', 'm5'].map(must), must('m6'), must('m7'), opt('o1'), opt('o2'), opt('o3')],
-  verdicts: [
+  verdicts: quoted([
     { move_id: 'm1', verdict: 'partial' }, { move_id: 'm2', verdict: 'partial' },
     { move_id: 'm3', verdict: 'partial' }, { move_id: 'm4', verdict: 'partial' },
     { move_id: 'm5', verdict: 'partial' },
     { move_id: 'm6', verdict: 'not_adjudicable' }, { move_id: 'm7', verdict: 'not_adjudicable' },
     { move_id: 'o1', verdict: 'not_adjudicable' }, { move_id: 'o2', verdict: 'not_adjudicable' },
     { move_id: 'o3', verdict: 'not_adjudicable' },
-  ],
+  ]),
   note: NOTE_READABLE_BUT_INCOMPLETE,
 };
 
@@ -110,10 +112,10 @@ const CONSISTENT = {
 // sixteen moves marked not_done and COUNTED. coverage 1.00, fidelity 20%.
 const INCONSISTENT = {
   moves: Array.from({ length: 16 }, (_, i) => must(`m${i + 1}`)),
-  verdicts: Array.from({ length: 16 }, (_, i) => ({
+  verdicts: quoted(Array.from({ length: 16 }, (_, i) => ({
     move_id: `m${i + 1}`,
     verdict: i < 12 ? 'not_done' : (i < 14 ? 'partial' : 'executed'),
-  })),
+  }))),
   note: NOTE_ENDS_BEFORE_LATER_PHASES,
 };
 

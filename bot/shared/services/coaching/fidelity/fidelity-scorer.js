@@ -21,6 +21,8 @@
  *   not_done → 0.0 · not_adjudicable → excluded.
  */
 
+const { STAMP_RE } = require('./fidelity-preflight');
+
 const FULL_CREDIT = new Set(['executed', 'substituted_equivalent', 'substituted_better']);
 const CREDIT = {
   executed: 1.0, substituted_equivalent: 1.0, substituted_better: 1.0,
@@ -117,6 +119,7 @@ function scoreFidelity(moves, verdicts, opts = {}) {
   const notAssessed = []; // not_adjudicable move_ids (reported, not scored)
   const enrichment = [];  // optional moves the teacher attempted (strengths / uptake side-number)
   const strengths = [];   // substituted_better moves
+  const unquoted = [];    // credited moves whose evidence quotes no [MM:SS] moment
   let timeOnTask = null;
 
   for (const m of moves || []) {
@@ -154,6 +157,13 @@ function scoreFidelity(moves, verdicts, opts = {}) {
       notAssessed.push(mid);
       rows.push(row);
       continue;
+    }
+
+    // Every credit must rest on a quoted moment. One that does not is kept (the scores are calibrated on the grader's
+    // verdicts) but flagged on the row and lowers confidence, so no reader mistakes it for evidenced credit.
+    if (CREDIT[verdict] > 0 && !STAMP_RE.test(v.evidence || '')) {
+      row.unquoted = true;
+      unquoted.push(mid);
     }
 
     if (bucket === 'optional_extension') {
@@ -198,7 +208,7 @@ function scoreFidelity(moves, verdicts, opts = {}) {
   const countedMiss = rows.some((r) => r.counted && r.verdict === 'not_done');
   const truncationInconsistent = !!(moderators && claimsTruncation(moderators.note) && countedMiss);
 
-  const lowConfidence = recordingUnusable || coverage < 0.5 || truncationInconsistent;
+  const lowConfidence = recordingUnusable || coverage < 0.5 || truncationInconsistent || unquoted.length > 0;
 
   return {
     truncation_inconsistent: truncationInconsistent,
@@ -216,6 +226,7 @@ function scoreFidelity(moves, verdicts, opts = {}) {
     not_assessed: notAssessed,
     enrichment_uptake: enrichment,
     strengths,
+    unquoted_credit: unquoted,
     time_on_task: timeOnTask,
     moves: rows,
   };

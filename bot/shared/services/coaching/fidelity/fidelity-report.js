@@ -129,6 +129,7 @@ function buildFidelityReportSection(lp, language = 'en') {
       verdictLabel: VERDICT_LABEL[m.verdict] || m.verdict,
       evidence: m.evidence || '',
       evidenceTranslation: usefulGloss(m.evidence, m.evidence_translation),
+      unquoted: !!m.unquoted,
     }));
 
   return {

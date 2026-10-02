@@ -59,6 +59,15 @@ describe('PDF · measured fidelity block', () => {
     expect(end).toBeGreaterThan(100);
   });
 
+  test('a credited move with no quoted moment says so (never "no moment found" beside a "Done")', () => {
+    const doc = fakeDoc();
+    const lp = { ...LP, moves: [{ ...LP.moves[0], evidence: '', unquoted: true }] };
+    PDFReportService._drawFidelitySection(doc, buildFidelityReportSection(lp), 100);
+    const all = doc.texts.join('\n');
+    expect(all).toContain('Credited, but no moment was quoted');
+    expect(all).not.toContain('No moment found in the recording');
+  });
+
   test('a long plan paginates instead of running off the page', () => {
     const many = { ...LP, moves: Array.from({ length: 30 }, (_, i) => mv(`m${i + 1}`, 'guided', 'executed', `Planned move number ${i + 1} with a reasonably long description of the step`, `[${String(i).padStart(2, '0')}:10] the teacher says the step out loud to the class`)) };
     const doc = fakeDoc();

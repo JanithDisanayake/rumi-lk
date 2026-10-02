@@ -91,6 +91,13 @@ describe('buildFidelityReportSection', () => {
   });
 });
 
+describe('a credit without a quoted moment', () => {
+  test('the table says so instead of showing a blank or "not found"', () => {
+    const s = buildFidelityReportSection({ ...MEASURED, moves: [row('m1', 'explain', 'executed', { evidence: '', unquoted: true })] });
+    expect(s.perAction[0].unquoted).toBe(true);
+  });
+});
+
 describe('the evidence gloss', () => {
   const withGloss = (evidence, gloss) => buildFidelityReportSection({ ...MEASURED, moves: [row('m1', 'explain', 'executed', { evidence, evidence_translation: gloss })] }).perAction[0];
 

@@ -163,6 +163,28 @@ describe('fidelity-scorer', () => {
     });
   });
 
+  test('a credited verdict with no quoted [MM:SS] moment is flagged, lowers confidence, and changes no score (review S4)', () => {
+    const moves = [mv('m1'), mv('m2'), mv('m3')];
+    const r = scoreFidelity(moves, [
+      { move_id: 'm1', verdict: 'executed', evidence: '[01:10] fold the strip' },
+      { move_id: 'm2', verdict: 'executed', evidence: 'the teacher folded strips' },
+      { move_id: 'm3', verdict: 'partial', evidence: '' },
+    ]);
+    expect(r.fidelity_pct).toBe(83.3);
+    expect(r.unquoted_credit).toEqual(['m2', 'm3']);
+    expect(r.moves.find((m) => m.move_id === 'm2').unquoted).toBe(true);
+    expect(r.moves.find((m) => m.move_id === 'm1').unquoted).toBeUndefined();
+    expect(r.low_confidence).toBe(true);
+  });
+
+  test('every credit quoted → nothing flagged', () => {
+    const r = scoreFidelity([mv('m1'), mv('m2')], [
+      { move_id: 'm1', verdict: 'executed', evidence: '[01:10] a' }, { move_id: 'm2', verdict: 'not_done', evidence: '' },
+    ]);
+    expect(r.unquoted_credit).toEqual([]);
+    expect(r.low_confidence).toBe(false);
+  });
+
   test('phase breakdown data present per move; a missing verdict defaults to not_done', () => {
     const moves = [mv('m1', { phase: 'warm_up' }), mv('m2', { phase: 'exit' })];
     const r = scoreFidelity(moves, [{ move_id: 'm1', verdict: 'executed' }]); // m2 has no verdict

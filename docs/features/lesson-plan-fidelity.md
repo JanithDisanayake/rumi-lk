@@ -33,8 +33,9 @@ timestamped transcript (Soniox, diarized) ──────┘
 2. **Verdicts.** `fidelity/fidelity-analyzer.js` gives each move one verdict: `executed`, `substituted_equivalent`
    (a different activity serving the same purpose — full credit), `substituted_better`, `partial`, `not_done`, or
    `not_adjudicable` (the recording cannot show it — left out, never counted as a miss). Every verdict above
-   `not_done` quotes a `[MM:SS]` line. It matches on what a move achieves, not on words, so the transcript and the
-   plan may be in different languages.
+   `not_done` is asked to quote a `[MM:SS]` line; a credit that comes back without one is kept but marked
+   ("credited, but no moment was quoted" in the report, `unquoted_credit` in the data) and lowers confidence. It
+   matches on what a move achieves, not on words, so the transcript and the plan may be in different languages.
 3. **Score.** `fidelity/fidelity-scorer.js` is plain arithmetic: executed/substituted = 1, partial = ½, not done = 0;
    not-adjudicable moves and untried optional moves are left out. Band ≥ 80 high, 50-79 partial, < 50 low
    (configurable).
@@ -69,8 +70,8 @@ On any channel (WhatsApp, Matrix, Slack, Discord — lists become numbered repli
 | No speech timings | "…the recording came back without speech timings… That's a recording problem, not a teaching one." |
 | Too unclear | "…the recording was too unclear to judge the planned moves…" |
 | No plan linked | "No lesson plan was linked, so this lesson wasn't compared with a plan." |
-| Plan unreadable | "I couldn't read your lesson plan… send it as a Word file or paste the text (photos and scanned pages can't be read yet)." |
-| Grader failed | "The lesson-plan check couldn't run this time because of a problem on our side. The rest of your report is complete." |
+| Plan unreadable (no text, or no teaching moves in it) | "I couldn't read your lesson plan… send it as a Word file or paste the text (photos and scanned pages can't be read yet)." |
+| The check failed (a provider error, or a bad answer from the extractor or the grader) | "The lesson-plan check couldn't run this time because of a problem on our side. The rest of your report is complete." |
 
 None of the not-assessed outcomes is ever shown as 0%.
 
@@ -106,6 +107,7 @@ Optional (see `.env.template`):
 | `LP_FIDELITY_EXTRACT_MODEL` | `LP_FIDELITY_MODEL` | Plan → moves model |
 | `LP_FIDELITY_RUNS` | `1` | Gradings per lesson (odd, max 5); the median is kept |
 | `LP_FIDELITY_MAX_TOKENS` | `16000` | Grader completion cap (max 32000) |
+| `LP_FIDELITY_EXTRACT_MAX_TOKENS` | `8000` | Plan → moves completion cap (max 32000) |
 | `LP_FIDELITY_REASONING_EFFORT` / `LP_FIDELITY_EMPTY_RETRY_EFFORT` | unset | For reasoning models that answer empty without a thinking budget |
 | `LP_FIDELITY_BAND_HIGH` / `LP_FIDELITY_BAND_PARTIAL` | `80` / `50` | Band cut-offs |
 | `LP_FIDELITY_LIST_LIMIT` | `8` | Recent Rumi plans listed in the picker (max 8) |

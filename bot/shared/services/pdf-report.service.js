@@ -879,9 +879,13 @@ class PDFReportService {
 
     let y = drawHeader(yPos);
     for (const r of f.perAction) {
-      const shows = r.evidence
-        ? [r.evidence, r.evidenceTranslation ? `(${r.evidenceTranslation})` : ''].filter(Boolean).join('\n')
-        : 'No moment found in the recording';
+      let shows;
+      if (r.evidence) {
+        shows = [r.evidence, r.evidenceTranslation ? `(${r.evidenceTranslation})` : '', r.unquoted ? '(no moment quoted)' : '']
+          .filter(Boolean).join('\n');
+      } else {
+        shows = r.unquoted ? 'Credited, but no moment was quoted' : 'No moment found in the recording';
+      }
       const quoteFont = this._quoteFont(doc, r.evidence);
       doc.fontSize(7).font('Helvetica');
       const hPhase = doc.heightOfString(r.phaseLabel || '', { width: cols[0].w - 6, lineGap: 2 });
