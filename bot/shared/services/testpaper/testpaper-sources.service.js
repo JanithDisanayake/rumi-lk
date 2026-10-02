@@ -77,12 +77,13 @@ function _curricula() {
 
 /**
  * Everything this teacher could build a paper from, optionally narrowed to a
- * subject they named. Fails soft: a lookup error lists nothing for that source
+ * subject and/or a grade they named. A plan saved without a grade is kept
+ * under any grade. Fails soft: a lookup error lists nothing for that source
  * rather than stopping the conversation.
  *
  * @returns {Promise<{lessonPlans: Array, textbooks: Array}>}
  */
-async function listSources(userId, { subject = null } = {}) {
+async function listSources(userId, { subject = null, grade = null } = {}) {
   let lessonPlans = [];
   let textbooks = [];
 
@@ -123,6 +124,11 @@ async function listSources(userId, { subject = null } = {}) {
   if (subject) {
     lessonPlans = lessonPlans.filter((lp) => lessonMatches(lp, subject));
     textbooks = textbooks.filter((tb) => sameSubject(tb.subject, subject));
+  }
+  if (grade != null) {
+    const g = String(grade);
+    lessonPlans = lessonPlans.filter((lp) => !lp.grade || String(lp.grade) === g);
+    textbooks = textbooks.filter((tb) => String(tb.grade) === g);
   }
   return { lessonPlans, textbooks };
 }

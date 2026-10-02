@@ -38,7 +38,11 @@ const ID_PREFIX = 'tp_';
 const MAX_ROWS = 10;
 const TITLE_MAX = 24;
 const DESC_MAX = 72;
-/** The most books the first menu shows; a named subject narrows the rest. */
+/**
+ * The most books the first menu shows one row each. Past that, one
+ * "Textbooks (N)" row opens a numbered list of every book, so no book is ever
+ * out of reach; a subject and grade in the command narrow it.
+ */
 const MAX_BOOK_ROWS = 6;
 /** Pasted text shorter than this is a message, not a chapter. */
 const MIN_PASTE_CHARS = 300;
@@ -97,6 +101,18 @@ function _bookLabel(book) {
   return `${book.grade ? `Grade ${book.grade} · ` : ''}${subjectName(book.subject)}`;
 }
 
+/**
+ * "science 8", "science grade 8", "grade 8 science", "class 8" or "8" →
+ * { subject, grade }. A grade is a bare number of one or two digits.
+ */
+function parseArgs(arg) {
+  const s = String(arg || '').trim();
+  const m = s.match(/(?:^|\s)(?:grade|class)?\s*(\d{1,2})(?=\s|$)/i);
+  if (!m) return { subject: s || null, grade: null };
+  const subject = `${s.slice(0, m.index)} ${s.slice(m.index + m[0].length)}`.replace(/\s+/g, ' ').trim();
+  return { subject: subject || null, grade: Number(m[1]) };
+}
+
 // ── Entry ───────────────────────────────────────────────────────────────────
 
 /**
@@ -120,29 +136,35 @@ async function start({ user, from, args = '', language }) {
     return;
   }
 
-  const subject = arg || null;
-  const sources = await Sources.listSources(user.id, { subject });
+  const { subject, grade } = parseArgs(arg);
+  const sources = await Sources.listSources(user.id, { subject, grade });
 
   if (Sources.isEmpty(sources)) {
     // Nothing to build from. Say so, and accept a chapter sent next.
+    const named = [subject, grade != null ? `grade ${grade}` : null].filter(Boolean).join(', ') || null;
     await Session.save(user.id, { step: 'await_upload', subject, from });
-    await WhatsAppService.sendMessage(from, t('noSource', lang, { subject }));
-    logToFile('📝 test paper: no source material', { userId: user.id, subject });
+    await WhatsAppService.sendMessage(from, t('noSource', lang, { subject: named }));
+    logToFile('📝 test paper: no source material', { userId: user.id, subject, grade });
     return;
   }
 
-  const books = sources.textbooks.slice(0, MAX_BOOK_ROWS).map((b) => ({
-    id: b.id, grade: b.grade, subject: b.subject, chapterCount: b.chapterCount,
+  const books = sources.textbooks.map((b) => ({
+    id: b.id, grade: b.grade, subject: b.subject, curriculum: b.curriculum, chapterCount: b.chapterCount,
   }));
   const lessonPlans = sources.lessonPlans.map((lp) => ({ id: lp.id, topic: lp.topic, subject: lp.subject, grade: lp.grade }));
   await Session.save(user.id, { step: 'pick_source', subject, from, books, lessonPlans });
 
-  const rows = [
-    ...books.map((b, i) => ({
+  const rows = books.length <= MAX_BOOK_ROWS
+    ? books.map((b, i) => ({
       id: `${ID_PREFIX}src_tb_${i}`,
-      title: fit(t('sourceTextbook', lang, { grade: b.grade, subject: subjectName(b.subject), chapters: b.chapterCount })),
-    })),
-  ];
+      title: fit(t('sourceTextbook', lang, { grade: b.grade, subject: subjectName(b.subject) })),
+      description: fit(t('sourceTextbookHint', lang, { chapters: b.chapterCount, curriculum: b.curriculum }), DESC_MAX),
+    }))
+    : [{
+      id: `${ID_PREFIX}src_books`,
+      title: fit(t('sourceAllBooks', lang, { count: books.length })),
+      description: fit(t('sourceAllBooksHint', lang), DESC_MAX),
+    }];
   if (lessonPlans.length) {
     rows.push({ id: `${ID_PREFIX}src_lp`, title: fit(t('sourceLessonPlans', lang, { count: lessonPlans.length })) });
   }
@@ -177,6 +199,19 @@ async function _offerChapters(user, from, lang, state, bookIndex) {
     const list = chapters.map((c, i) => `${i + 1}. ${c.title}`).join('\n');
     await WhatsAppService.sendMessage(from, t('pickChaptersText', lang, { book: label, list }));
   }
+  return true;
+}
+
+/** Every book as a numbered message, answered in text (see handleText). */
+async function _offerBooks(user, from, lang, state) {
+  const books = state.books || [];
+  await Session.save(user.id, { ...state, step: 'pick_book' });
+  const list = books
+    .map((b, i) => `${i + 1}. ${_bookLabel(b)} — ${t('sourceTextbookHint', lang, { chapters: b.chapterCount, curriculum: b.curriculum })}`)
+    .join('\n');
+  const last = books[books.length - 1];
+  const example = [String(last?.subject || 'science').replace(/_/g, ' '), last?.grade].filter((x) => x != null).join(' ');
+  await WhatsAppService.sendMessage(from, t('pickBookText', lang, { list, example }));
   return true;
 }
 
@@ -409,6 +444,7 @@ async function handleSelection({ user, from, id, language }) {
   }
 
   if (rest.startsWith('src_tb_')) return _offerChapters(user, from, lang, state, Number(rest.slice(7)));
+  if (rest === 'src_books') return _offerBooks(user, from, lang, state);
   if (rest === 'src_lp') return _offerLessonPlans(user, from, lang, state);
   if (rest === 'src_up') {
     await Session.save(user.id, { ...state, step: 'await_upload' });
@@ -467,6 +503,15 @@ async function handleText({ user, from, text, language }) {
   }
 
   switch (state.step) {
+    case 'pick_book': {
+      const picks = parsePicks(trimmed, state.books.length);
+      if (!picks || picks.length !== 1) {
+        if (trimmed.length > 40) return false; // talking, not answering
+        await WhatsAppService.sendMessage(from, t('pickAgain', lang));
+        return true;
+      }
+      return _offerChapters(user, from, lang, state, picks[0] - 1);
+    }
     case 'pick_chapters': {
       const picks = parsePicks(trimmed, state.chapters.length);
       if (!picks) {
@@ -554,5 +599,5 @@ async function handleDocument({ user, from, message, language }) {
 }
 
 module.exports = {
-  start, handleSelection, handleText, handleDocument, showMyPapers, isTestPaperId, parsePicks,
+  start, handleSelection, handleText, handleDocument, showMyPapers, isTestPaperId, parsePicks, parseArgs,
 };

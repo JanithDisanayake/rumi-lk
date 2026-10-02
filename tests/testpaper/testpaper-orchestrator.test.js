@@ -93,7 +93,9 @@ describe('start', () => {
     await start();
     const rows = rowsOf(lastList());
     expect(rows.map((r) => r.id)).toEqual(['tp_src_tb_0', 'tp_src_lp', 'tp_src_up', 'tp_mine']);
-    expect(rows[0].title).toBe('Grade 2 · Math (2 ch.)');
+    expect(rows[0].title).toBe('Grade 2 · Math');
+    // The count and the edition sit in the description, which a long subject cannot push out.
+    expect(rows[0].description).toBe('2 chapters · corpus');
     expect(rows[1].title).toBe('My lesson plans (3)');
     // Meta's list limits: titles ≤ 24 characters, ≤ 10 rows.
     for (const r of rows) expect(r.title.length).toBeLessThanOrEqual(24);
@@ -121,6 +123,16 @@ describe('start', () => {
     expect(rowsOf(lastList()).map((r) => r.id)).toEqual(['tp_src_lp', 'tp_src_up', 'tp_mine']);
   });
 
+  it('two editions of the same grade and subject are told apart', async () => {
+    load(seed({
+      textbooks: [{ id: 'tb-1', grade: 2, subject: 'math', curriculum: 'corpus' }, { id: 'tb-9', grade: 2, subject: 'math', curriculum: 'national-2024' }],
+      textbook_toc: [...seed().textbook_toc, { id: 't9', textbook_id: 'tb-9', chapter_number: 1, chapter_title: 'Counting', page_start: 1, page_end: 1 }],
+    }));
+    await start('math');
+    const books = rowsOf(lastList()).filter((r) => r.id.startsWith('tp_src_tb_'));
+    expect(books.map((r) => r.description)).toEqual(['2 chapters · corpus', '1 chapter · national-2024']);
+  });
+
   it('"my papers" as the argument goes straight to the list', async () => {
     load();
     await start('my papers');
@@ -132,6 +144,60 @@ describe('start', () => {
     await start();
     expect(lastText()).toMatch(/not switched on/);
     expect(WA.sendInteractiveMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe('many loaded books', () => {
+  // A K-8 set: one science book per grade, more than one list can show.
+  function k8() {
+    const textbooks = [];
+    const toc = [];
+    const pages = [];
+    for (let g = 1; g <= 8; g += 1) {
+      textbooks.push({ id: `sci-${g}`, grade: g, subject: 'science', curriculum: 'corpus' });
+      toc.push({ id: `sci-t-${g}`, textbook_id: `sci-${g}`, chapter_number: 1, chapter_title: `Science ${g} chapter one`, page_start: 1, page_end: 1 });
+      pages.push({ id: `sci-p-${g}`, textbook_id: `sci-${g}`, textbook_page_number: 1, page_content: TEXT(`Grade ${g} science text.`) });
+    }
+    return seed({ lesson_plans: [], textbooks, textbook_toc: toc, textbook_pages: pages });
+  }
+
+  it('every book stays reachable: a "Textbooks" row opens a numbered list of all of them', async () => {
+    load(k8());
+    await start('science');
+    const rows = rowsOf(lastList());
+    expect(rows.length).toBeLessThanOrEqual(10);
+    const all = rows.find((r) => r.id === 'tp_src_books');
+    expect(all).toMatchObject({ title: 'Textbooks (8)' });
+    await pick('tp_src_books');
+    expect(lastText()).toMatch(/8\. Grade 8 · Science/);
+    expect(lastText()).toMatch(/\/testpaper science 8/);
+    await say('8');
+    expect(lastList().header).toMatch(/Grade 8 · Science/);
+    expect(rowsOf(lastList())[0].id).toBe('tp_ch_1');
+  });
+
+  it('a number outside the book list asks again', async () => {
+    load(k8());
+    await start('science');
+    await pick('tp_src_books');
+    await say('12');
+    expect(lastText()).toMatch(/Reply with the numbers from the list/);
+  });
+
+  it('a grade in the command narrows to that grade\'s books', async () => {
+    load(k8());
+    for (const args of ['science 8', 'science grade 8', 'grade 8 science', 'Science class 8']) {
+      WA.sendInteractiveMessage.mockClear();
+      await start(args);
+      const books = rowsOf(lastList()).filter((r) => r.id.startsWith('tp_src_tb_'));
+      expect(books.map((r) => r.title)).toEqual(['Grade 8 · Science']);
+    }
+  });
+
+  it('a grade alone narrows every subject to that grade', async () => {
+    load(k8());
+    await start('7');
+    expect(rowsOf(lastList()).filter((r) => r.id.startsWith('tp_src_tb_')).map((r) => r.title)).toEqual(['Grade 7 · Science']);
   });
 });
 

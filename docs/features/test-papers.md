@@ -44,9 +44,11 @@ A scanned PDF with no text layer, or a lesson plan saved with only its topic, is
                       → ✏️ Making version 2 …  → the version-2 paper + key (version 1 stays as it was)
 ```
 
-- **`/testpaper`** or **`/paper`** starts it; **`/testpaper science`** narrows the menu to one subject (and
-  says honestly when there is no material for it). **`/mypapers`** lists the teacher's papers, latest
-  version first.
+- **`/testpaper`** or **`/paper`** starts it; **`/testpaper science`** narrows the menu to one subject and
+  **`/testpaper science 8`** (or `science grade 8`, or just `8`) to one grade. It says honestly when there is no
+  material for that. Up to six books get a row each; past that, one **Textbooks (N)** row opens a numbered
+  list of every book, so a large set (K-12, several editions) is always reachable. **`/mypapers`** lists the
+  teacher's papers, latest version first.
 - **Every channel.** Each pick is an interactive list or reply buttons: native on WhatsApp, a numbered menu
   on Baileys, Matrix, Slack and Discord (reply with the number or the name). Multi-picks and typed mixes are
   plain text. No WhatsApp Flow is needed.
