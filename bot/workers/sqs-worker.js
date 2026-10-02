@@ -1103,6 +1103,8 @@ function armTeacherNudges() {
 function startWorker() {
   startHealthEndpoint();
   return Promise.all([
+    // Teachers' own coaching reads depend on coaching_sessions.observation_type (own-coaching.js).
+    require('../shared/services/coaching/own-coaching').probe(),
     recoverStaleLessonPlanRequests(),
     recoverStaleVideoRequests(),
     ExamGradingWorker.recoverStaleExamSessions(),

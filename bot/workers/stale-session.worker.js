@@ -27,6 +27,7 @@ const supabase = require('../shared/config/supabase');
 const { logToFile } = require('../shared/utils/logger');
 const WhatsAppService = require('../shared/services/whatsapp.service');
 const CoachingJobQueueService = require('../shared/services/coaching/coaching-job-queue.service');
+const { ownCoaching } = require('../shared/services/coaching/own-coaching');
 
 // Coaching thresholds (in milliseconds)
 const COACHING_REMINDER_THRESHOLD_MS = 2 * 60 * 60 * 1000;  // 2 hours
@@ -47,6 +48,9 @@ async function main() {
   console.log('============================================');
 
   try {
+    // The teacher-activity check reads coaching_sessions.observation_type when it exists (own-coaching.js).
+    await require('../shared/services/coaching/own-coaching').probe();
+
     // Process coaching sessions
     const coachingResults = await processStaleCoachingSessions();
     console.log('📊 Coaching results:', coachingResults);
@@ -192,11 +196,10 @@ async function checkUserActivity(userId) {
   }
 
   // Check 3: Another coaching session in active state
-  const { data: activeCoaching } = await supabase
+  const { data: activeCoaching } = await ownCoaching(supabase
     .from('coaching_sessions')
     .select('id, status')
-    .eq('user_id', userId)
-    .is('observation_type', null) // never a coach's observation of this teacher: it is not their own session
+    .eq('user_id', userId)) // never a coach's observation of this teacher: it is not their own session
     .in('status', ['transcribing', 'analyzing', 'awaiting_lesson_plan', 'generating_report'])
     .limit(1)
     .single();

@@ -18,6 +18,7 @@ const { logToFile } = require('../utils/logger');
 const WhatsAppService = require('./whatsapp.service');
 const AudioService = require('./audio.service');
 const { TEMP_DIR } = require('../utils/constants');
+const { ownCoaching } = require('./coaching/own-coaching');
 
 class FeatureRegistrationService {
   /**
@@ -100,11 +101,10 @@ class FeatureRegistrationService {
         .eq('user_id', userId);
 
       // Count coaching sessions
-      const { count: coachingSessions } = await supabase
+      const { count: coachingSessions } = await ownCoaching(supabase
         .from('coaching_sessions')
         .select('*', { count: 'exact', head: true })
-        .eq('user_id', userId)
-        .is('observation_type', null); // never a coach's observation of this teacher: it is not their own session
+        .eq('user_id', userId)); // never a coach's observation of this teacher: it is not their own session
 
       // Count reading assessments
       const { count: readingAssessments } = await supabase

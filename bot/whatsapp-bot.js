@@ -2041,6 +2041,9 @@ function registerChannelShutdownHandlers() {
  * Express `app` without its listener) does NOT bind to a port.
  */
 function startServer() {
+  // Does coaching_sessions have observation_type yet? Teachers' own coaching
+  // reads depend on it (see own-coaching.js); a missing migration is logged.
+  require('./shared/services/coaching/own-coaching').probe();
   wireBaileysInboundIfSelected();
   registerChannelShutdownHandlers();
   exitOnChannelLogout();

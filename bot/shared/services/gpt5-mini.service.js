@@ -3,6 +3,7 @@ const { jsonrepair } = require('jsonrepair');
 const { OPENAI_API_KEY } = require('../utils/constants');
 const { logToFile } = require('../utils/logger');
 const supabase = require('../config/supabase');
+const { ownCoaching } = require('./coaching/own-coaching');
 const {
   CLASSROOM_MARKS_BASE,
   CLASSROOM_MARKS_WITH_LP,
@@ -1275,12 +1276,11 @@ GUIDELINES:
 
           if (userId && currentSessionId) {
             try {
-              const { count, error: countError } = await supabase
+              const { count, error: countError } = await ownCoaching(supabase
                 .from('coaching_sessions')
                 .select('id', { count: 'exact', head: true })
                 .eq('user_id', userId)
-                .eq('status', 'completed')
-                .is('observation_type', null) // never a coach's observation of this teacher: it is not their own session
+                .eq('status', 'completed')) // never a coach's observation of this teacher: it is not their own session
                 .neq('id', currentSessionId);
 
               if (countError) {

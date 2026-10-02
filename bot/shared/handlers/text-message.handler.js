@@ -94,6 +94,7 @@ async function tryCurriculumLessonPlanServe(from, topic, user, language) {
 const { evaluateHomeworkTrigger } = require('./homework-trigger');
 const { detectEditClassIntent } = require('./edit-class-trigger');
 const { routeTestPaperText } = require('./testpaper-trigger');
+const { ownCoaching } = require('../services/coaching/own-coaching');
 
 async function handleTextMessage(message, from, messageBody, user = null) {
   logToFile(`Processing TEXT message: ${messageBody}`);
@@ -1069,11 +1070,10 @@ async function handleTextMessage(message, from, messageBody, user = null) {
   // Detect stuck sessions but DON'T block user - store reminder for later
   if (user) {
     try {
-      const { data: stuckSession } = await supabase
+      const { data: stuckSession } = await ownCoaching(supabase
         .from('coaching_sessions')
         .select('id, status, updated_at, conversation_state')
-        .eq('user_id', user.id)
-        .is('observation_type', null) // a coach's observation of this teacher is not their unfinished session
+        .eq('user_id', user.id)) // a coach's observation of this teacher is not their unfinished session
         .in('status', ['conducting_conversation', 'analyzing'])
         .order('updated_at', { ascending: false })
         .limit(1)
@@ -1125,11 +1125,10 @@ async function handleTextMessage(message, from, messageBody, user = null) {
         });
 
         // Fetch the stuck session
-        const { data: stuckSession } = await supabase
+        const { data: stuckSession } = await ownCoaching(supabase
           .from('coaching_sessions')
           .select('*')
-          .eq('id', stuckSessionId)
-          .is('observation_type', null) // the reply below can fail or re-run it: never a coach's observation
+          .eq('id', stuckSessionId)) // the reply below can fail or re-run it: never a coach's observation
           .single();
 
         if (stuckSession) {
