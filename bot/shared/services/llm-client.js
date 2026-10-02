@@ -77,6 +77,55 @@ function getDefaultModel() {
   return DEFAULT_MODEL;
 }
 
+// Request fields only OpenRouter understands; direct OpenAI rejects them.
+const OPENROUTER_ONLY_PARAMS = ['usage', 'reasoning'];
+
+let _openaiDirectClient = null;
+
+/**
+ * The client and model id for one call of a model-registry job.
+ *
+ * Same client as getClient(); this only settles WHICH model and, on the direct
+ * OpenAI provider, turns an OpenRouter-style request into one OpenAI accepts
+ * (`openai/gpt-x` → `gpt-x`, OpenRouter-only fields dropped). A job's default
+ * comes from config/model-registry.js when no model is named.
+ *
+ * @param {string|null} model an OpenRouter model id, or null for the job's default
+ * @param {{job?: string}} [opts]
+ * @returns {{client: object, model: string, job: string|null}}
+ */
+function getClientForModel(model, { job = null } = {}) {
+  let id = String(model || '').trim();
+  if (!id && job) {
+    const { resolveModelForJob } = require('../config/model-registry');
+    id = resolveModelForJob(job).model;
+  }
+  if (!id) id = DEFAULT_MODEL;
+
+  const provider = (process.env.LLM_PROVIDER || PROVIDER).toLowerCase();
+  if (provider !== 'openai') return { client: getClient(), model: id, job };
+
+  if (!_openaiDirectClient) {
+    const base = getClient();
+    const create = base.chat.completions.create.bind(base.chat.completions);
+    _openaiDirectClient = {
+      ...base,
+      chat: {
+        ...base.chat,
+        completions: {
+          ...base.chat.completions,
+          create: (params, options) => {
+            const clean = { ...params };
+            for (const k of OPENROUTER_ONLY_PARAMS) delete clean[k];
+            return create(clean, options);
+          },
+        },
+      },
+    };
+  }
+  return { client: _openaiDirectClient, model: id.replace(/^openai\//, ''), job };
+}
+
 /**
  * Get current provider info (for diagnostics/health checks).
  */
@@ -91,6 +140,7 @@ function getProviderInfo() {
 module.exports = {
   createLLMClient,
   getClient,
+  getClientForModel,
   getDefaultModel,
   getProviderInfo,
 };

@@ -33,6 +33,18 @@ const MODEL_ID = /^[a-z0-9]+(?:[/.:-][a-z0-9]+)*$/i;
 const JOBS = {
   'testpaper.generate': { env: 'TESTPAPER_MODEL', default: 'google/gemini-2.5-pro', openaiDefault: 'gpt-4.1' },
   'testpaper.revise': { env: 'TESTPAPER_MODEL', default: 'google/gemini-2.5-pro', openaiDefault: 'gpt-4.1' },
+  // The lesson quiz's digest, author, validate-retry, rewrites and plan key
+  // check: the cheapest model that kept the JSON contract on long,
+  // mixed-language lessons in an offline eval of flash-tier models.
+  'quiz.transcript': { env: 'TRANSCRIPT_QUIZ_MODEL', default: 'google/gemini-2.5-flash', openaiDefault: 'gpt-4.1-mini' },
+  // The blind solve: every lesson quiz is answered once by a model that is NOT
+  // shown the keys. It checks the author, so it runs on a different, stronger
+  // model — a solver that shares the author's blind spots agrees with its
+  // mistakes. It fails open (meta.key_verify.status 'error').
+  'quiz.keyVerify': { env: 'TRANSCRIPT_QUIZ_VERIFY_MODEL', default: 'anthropic/claude-sonnet-5', openaiDefault: 'gpt-4.1' },
+  // The class report's "For tomorrow" reteach box; the report arrives without
+  // it if the call fails.
+  'quiz.videoReport': { env: 'QUIZ_REPORT_MODEL', default: 'openai/gpt-5.4-mini', openaiDefault: 'gpt-5.4-mini' },
 };
 
 const PLATFORM_DEFAULT = 'openai/gpt-4o';
