@@ -28,10 +28,13 @@ const { t, observeLang } = require('./observe-strings');
 const { row, pageOf, listPayload, fmtDay } = require('./observe-list');
 const { logToFile } = require('../../utils/logger');
 
+const { step } = require('./observe-siblings');
+
 function _debrief() {
   try {
-    return require('./observe-debrief.service');
+    return step('observe-debrief.service');
   } catch (err) {
+    logToFile('⚠️ observe-menu: debrief step failed to load (pending hidden)', { error: err.message });
     return null;
   }
 }
@@ -155,11 +158,10 @@ async function onPendingTap(user, from, rest) {
   const [, kind, sessionId] = m;
   if (kind === 'resume') return require('./observe-resume.service').resume(sessionId, from, user);
   try {
-    if (kind === 'debrief') {
-      await require('./observe-debrief.service').offerDebriefChoice(user, from, sessionId);
-    } else {
-      await require('./observe-send.service').offerSendReport(user, from, sessionId);
-    }
+    const mod = step(kind === 'debrief' ? 'observe-debrief.service' : 'observe-send.service');
+    const fn = kind === 'debrief' ? 'offerDebriefChoice' : 'offerSendReport';
+    if (!mod || typeof mod[fn] !== 'function') throw new Error(`${fn} not available`);
+    await mod[fn](user, from, sessionId);
   } catch (err) {
     logToFile('⚠️ observe-menu: pending step unavailable', { userId: user.id, kind, sessionId, error: err.message });
     await WhatsAppService.sendMessage(from, t(observeLang(user), 'pend_unavailable'));

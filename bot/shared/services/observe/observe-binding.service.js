@@ -39,6 +39,10 @@ const { t, observeLang } = require('./observe-strings');
 const { canSelfCoach } = require('./observe-gate');
 const { row, listPayload, fmtDay } = require('./observe-list');
 const { logToFile } = require('../../utils/logger');
+const { step } = require('./observe-siblings');
+
+/** The debrief step, or null when it is not installed. */
+const _debriefStep = () => step('observe-debrief.service');
 
 const PARK_TTL_S = 6 * 3600;
 const RECENT_TTL_S = 24 * 3600;
@@ -156,8 +160,8 @@ async function buildBindingList(user, head) {
 
   const fixed = [row(id('o'), t(lang, 'bind_row_other'), t(lang, 'bind_row_other_desc'))];
   try {
-    const Debrief = require('./observe-debrief.service');
-    const pendings = await Debrief.listPendingDebriefs(user.id, { limit: 1 });
+    const Debrief = _debriefStep();
+    const pendings = Debrief ? await Debrief.listPendingDebriefs(user.id, { limit: 1 }) : [];
     if (pendings && pendings.length) fixed.push(row(id('d'), t(lang, 'bind_row_debrief'), t(lang, 'bind_row_debrief_desc')));
   } catch (_) { /* no debrief step available — the row is simply absent */ }
   // A leader who also teaches can say "this one is mine"; a full-time coach
@@ -289,7 +293,8 @@ async function _onDebriefRow(user, from, token) {
   if (!(await _claimHead(user, from, token))) return true;
   let pendings = [];
   try {
-    pendings = await require('./observe-debrief.service').listPendingDebriefs(user.id);
+    const Debrief = _debriefStep();
+    pendings = Debrief ? await Debrief.listPendingDebriefs(user.id) : [];
   } catch (_) { pendings = []; }
   if (!pendings || !pendings.length) {
     await WhatsAppService.sendMessage(from, t(lang, 'pend_unavailable'));
@@ -311,9 +316,9 @@ async function _onDebriefRow(user, from, token) {
 async function _onDebriefPick(user, from, token, sessionId) {
   const claim = await _claimHead(user, from, token);
   if (!claim) return true;
-  const Debrief = require('./observe-debrief.service');
-  const pendings = await Debrief.listPendingDebriefs(user.id, { limit: 50 }).catch(() => []);
-  if (!(pendings || []).some((p) => p.id === sessionId)) {
+  const Debrief = _debriefStep();
+  const pendings = Debrief ? await Debrief.listPendingDebriefs(user.id, { limit: 50 }).catch(() => []) : [];
+  if (!Debrief || !(pendings || []).some((p) => p.id === sessionId)) {
     await WhatsAppService.sendMessage(from, t(observeLang(user), 'debrief_not_yours'));
     return true;
   }

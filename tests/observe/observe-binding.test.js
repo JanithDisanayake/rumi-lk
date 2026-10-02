@@ -47,13 +47,14 @@ jest.mock('../../bot/shared/services/coaching/coaching-job-queue.service', () =>
 const mockCoaching = { initiateCoachingSession: jest.fn(async () => true) };
 jest.mock('../../bot/shared/services/coaching-orchestrator.service', () => mockCoaching);
 const mockPending = { debriefs: [] };
-jest.mock('../../bot/shared/services/observe/observe-debrief.service', () => ({
+const mockDebrief = {
   listPendingDebriefs: jest.fn(async () => mockPending.debriefs),
   startDebriefFromAudio: jest.fn(async () => true),
-}), { virtual: true });
+};
+jest.mock('../../bot/shared/services/observe/observe-debrief.service', () => mockDebrief, { virtual: true });
 
 const WhatsAppService = require('../../bot/shared/services/whatsapp.service');
-const Debrief = require('../../bot/shared/services/observe/observe-debrief.service');
+const Debrief = mockDebrief;
 const { routeLeaderAudio } = require('../../bot/shared/services/observe/observe-audio-router');
 const { handleObserveInteractive } = require('../../bot/shared/handlers/observe-interactive.handler');
 

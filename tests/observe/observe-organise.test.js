@@ -63,25 +63,26 @@ jest.mock('../../bot/shared/services/coaching/coaching-job-queue.service', () =>
   queueAnalysis: jest.fn(async () => true),
 }));
 const mockPending = { debriefs: [], unsent: [], unfinished: [] };
-jest.mock('../../bot/shared/services/observe/observe-debrief.service', () => ({
+// The sibling steps (debrief, send, ratings form) are their own slices; their
+// hand-off contract is what is faked here.
+const mockDebrief = {
   listPendingDebriefs: jest.fn(async () => mockPending.debriefs),
   listUnsentReports: jest.fn(async () => mockPending.unsent),
   listUnfinished: jest.fn(async () => mockPending.unfinished),
   offerDebriefChoice: jest.fn(async () => true),
   startDebriefFromAudio: jest.fn(async () => true),
-}), { virtual: true });
-jest.mock('../../bot/shared/services/observe/observe-send.service', () => ({
-  offerSendReport: jest.fn(async () => true),
-}), { virtual: true });
-jest.mock('../../bot/shared/services/observe/observe-form.service', () => ({
-  resumeForm: jest.fn(async () => true),
-}), { virtual: true });
+};
+const mockSend = { offerSendReport: jest.fn(async () => true) };
+const mockForm = { resumeForm: jest.fn(async () => true) };
+jest.mock('../../bot/shared/services/observe/observe-debrief.service', () => mockDebrief, { virtual: true });
+jest.mock('../../bot/shared/services/observe/observe-send.service', () => mockSend, { virtual: true });
+jest.mock('../../bot/shared/services/observe/observe-form.service', () => mockForm, { virtual: true });
 
 const WhatsAppService = require('../../bot/shared/services/whatsapp.service');
 const Queue = require('../../bot/shared/services/coaching/coaching-job-queue.service');
-const Debrief = require('../../bot/shared/services/observe/observe-debrief.service');
-const Send = require('../../bot/shared/services/observe/observe-send.service');
-const Form = require('../../bot/shared/services/observe/observe-form.service');
+const Debrief = mockDebrief;
+const Send = mockSend;
+const Form = mockForm;
 const ObserveState = require('../../bot/shared/services/observe/observe-state.service');
 const { handleObserveCommand, handleObserveText } = require('../../bot/shared/handlers/observe-command.handler');
 const { handleObserveInteractive } = require('../../bot/shared/handlers/observe-interactive.handler');

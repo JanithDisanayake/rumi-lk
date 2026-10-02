@@ -75,8 +75,8 @@ async function _refuseRetry(s, from, user, plan) {
  */
 async function _resumeForm(s, from, user) {
   try {
-    const Form = require('./observe-form.service');
-    if (typeof Form.resumeForm === 'function') {
+    const Form = require('./observe-siblings').step('observe-form.service');
+    if (Form && typeof Form.resumeForm === 'function') {
       await Form.resumeForm(user, from, s.id);
       return true;
     }
