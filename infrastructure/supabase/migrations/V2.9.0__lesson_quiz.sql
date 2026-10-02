@@ -12,7 +12,7 @@
 -- ALL OR NOTHING. The whole change is one DO block, so it is one statement: if
 -- any part fails, nothing is left applied, whether this file is run by psql,
 -- the SQL editor or infrastructure/scripts/migrate.js. (A BEGIN/COMMIT pair
--- would not do: migrate.js runs the file inside its exec_sql function, where
+-- would not do: migrate.js runs the file inside a database function, where
 -- transaction commands are refused.) Safe to run again.
 -- =============================================================================
 

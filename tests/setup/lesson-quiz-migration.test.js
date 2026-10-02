@@ -4,10 +4,10 @@
  *
  * Proved against a throwaway Postgres (fresh 00+01 == main 00+01 + V2.9.0;
  * a re-run is a no-op; dirty data leaves nothing half-applied; the same file
- * through migrate.js's exec_sql). This test pins the shape that proof relied
+ * through migrate.js, inside its SQL function). This test pins the shape that proof relied
  * on, so an edit that breaks it is caught without a database:
  *   - the change is one DO block: one statement, atomic under psql too;
- *   - no BEGIN/COMMIT: migrate.js runs the file inside exec_sql, where
+ *   - no BEGIN/COMMIT: migrate.js runs the file inside a SQL function, where
  *     transaction commands are refused;
  *   - the lesson-plan unique index is built only when no plan has two
  *     lp_generated quizzes (else a NOTICE);
