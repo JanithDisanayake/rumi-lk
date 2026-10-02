@@ -145,7 +145,11 @@ class SQSCoachingWorker {
     try {
       // Poll main + (optional) video + (optional) quiz queues in parallel.
       const hasVideoQueue = !!process.env.SQS_VIDEO_QUEUE_URL;
-      const hasQuizQueue = !!process.env.SQS_QUIZ_QUEUE_URL;
+      // BullMQ always routes quiz_* jobs to its own quiz queue (see
+      // bullmq-queue.service queueJob), so it is polled with or without
+      // SQS_QUIZ_QUEUE_URL; on SQS they ride the main queue unless it is set.
+      const hasQuizQueue = !!process.env.SQS_QUIZ_QUEUE_URL
+        || String(process.env.QUEUE_DRIVER || '').toLowerCase() === 'bullmq';
 
       // Reserve 1 slot for each dedicated queue that's configured.
       const dedicated = (hasVideoQueue ? 1 : 0) + (hasQuizQueue ? 1 : 0);
