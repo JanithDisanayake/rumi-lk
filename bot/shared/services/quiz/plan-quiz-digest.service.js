@@ -32,7 +32,7 @@
  */
 
 const { completeJson } = require('./transcript-quiz-llm');
-const { normaliseDigest } = require('./transcript-quiz-digest.service');
+const { normaliseDigest, fenceUntrusted, dataOnlyLine } = require('./transcript-quiz-digest.service');
 const { peopleDigestRule } = require('./transcript-quiz-people');
 const { canonicalSubject, LANG_NAME, statementFieldsRule } = require('./transcript-quiz-language');
 const { logEvent } = require('../../utils/structured-logger');
@@ -138,10 +138,12 @@ function buildPlanDigestPrompt({ source, language, grade, subject }) {
   const text = planText(source).slice(0, PLAN_TEXT_MAX);
   return `You are reading the LESSON PLAN a teacher prepared for their class. Your job is to write a faithful DIGEST of what that lesson sets out to teach — nothing more, nothing less. This digest will be used to write a short quiz for the children of that class, so anything you invent will be tested on children who never met it.
 
+${dataOnlyLine('lesson_plan')} ${dataOnlyLine('teacher_topic')}
+
 WHAT YOU KNOW ABOUT THIS LESSON:
 - grade (from the teacher's request, trust it over your own reading): ${grade || 'unknown'}
 - subject (from the teacher's request): ${subject || 'unknown'}
-- the topic the teacher asked the plan for: ${topicOf(source) || 'unknown'}
+- the topic the teacher asked the plan for: ${topicOf(source) ? fenceUntrusted('teacher_topic', topicOf(source), { inline: true }) : 'unknown'}
 - the quiz will be written in: ${LANG_NAME[language] || 'the lesson’s own language'}
 
 RULES
@@ -158,14 +160,16 @@ ${SHARED_RULES(language)}
 ${JSON_SHAPE}
 
 THE LESSON PLAN:
-${text}`;
+${fenceUntrusted('lesson_plan', text)}`;
 }
 
 function buildTopicDigestPrompt({ source, language, grade, subject }) {
   return `A teacher asked for a short quiz for their class on ONE topic. There is NO lesson plan and NO recording of the lesson — only the topic below. Your job is to write the DIGEST a well-made lesson on this topic, for this grade and subject, would have: what such a lesson sets out to teach, its key terms, ordinary examples for that grade, and the mistakes children usually make with it. A quiz for the children is written from this digest.
 
+${dataOnlyLine('teacher_topic')}
+
 WHAT YOU KNOW:
-- the topic, as the teacher typed it: ${topicOf(source)}
+- the topic, as the teacher typed it: ${fenceUntrusted('teacher_topic', topicOf(source), { inline: true })}
 - grade (from the teacher's profile; may be unknown): ${grade || 'unknown — pitch it at the grade the topic is usually taught in'}
 - subject (from the teacher's profile; may be unknown): ${subject || 'unknown — infer it from the topic'}
 - the quiz will be written in: ${LANG_NAME[language] || 'English'}
