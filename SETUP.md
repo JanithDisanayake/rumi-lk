@@ -196,6 +196,18 @@ Required if you want voice message support (Urdu, English, Arabic, Spanish).
 SONIOX_API_KEY=your-soniox-key
 ```
 
+### Lesson-plan fidelity (optional, off by default)
+
+With Soniox set, classroom coaching can also check whether a lesson followed the teacher's plan, move by move. It
+needs no new key — it uses `OPENROUTER_API_KEY` and Soniox's timestamped transcripts:
+
+```env
+LP_FIDELITY_ENABLED=true
+```
+
+`rumi doctor` then shows how many recent classroom recordings came back with speech timings. See
+[docs/features/lesson-plan-fidelity.md](docs/features/lesson-plan-fidelity.md).
+
 ### ElevenLabs (Tier 3 — Full, for Voice Responses)
 
 Required if you want the bot to respond with voice messages.
