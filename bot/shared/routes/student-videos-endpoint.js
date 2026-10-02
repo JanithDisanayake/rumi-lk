@@ -22,6 +22,7 @@ const { logToFile } = require('../utils/logger');
 const { logEvent } = require('../utils/structured-logger');
 const WhatsAppService = require('../services/whatsapp.service');
 const StudentVideoFeedbackService = require('../services/student-video-feedback.service');
+const ChildFlowToken = require('../services/quiz/child-flow-token');
 
 const GRADE_ORDER = ['NURSERY', 'KG', '1', '2', '3', '4', '5', '6'];
 const gradeRank = (g) => {
@@ -71,9 +72,33 @@ function recipientFromToken(flowToken) {
   return parts.slice(3).join(':') || null;
 }
 
+/**
+ * A child's "watch more videos" picker (video-quiz-binge) carries
+ * `childpick:<phone>:<shareCodeId>:<studentId>:<language>:<ts>` (child-flow-token):
+ * a child has no users row, so the video goes to the phone on the token.
+ */
+function childFromToken(flowToken) {
+  return ChildFlowToken.parse(flowToken);
+}
+
 async function recipientFor(flowToken) {
+  const child = childFromToken(flowToken);
+  if (child) return child.phone;
   const userId = (flowToken || '').split(':')[0];
   return recipientFromToken(flowToken) || getPhoneForUser(userId);
+}
+
+/**
+ * The token as it may appear in a log line: a teacher token ends with the chat
+ * the picker was opened from and a child's carries the child's phone, so
+ * neither is logged whole. The user id / share code / student id identify the
+ * picker without them.
+ */
+function tokenForLog(flowToken) {
+  const child = childFromToken(flowToken);
+  if (child) return { kind: 'child', shareCodeId: child.shareCodeId, studentId: child.studentId };
+  const parts = String(flowToken || '').split(':');
+  return { kind: 'teacher', userId: parts[0] || null };
 }
 
 async function getPhoneForUser(userId) {
@@ -88,7 +113,7 @@ async function getPhoneForUser(userId) {
 
 // ---------- INIT ----------
 async function handleStudentVideosInit(flowToken) {
-  logToFile('Student Videos Flow INIT', { flowToken });
+  logToFile('Student Videos Flow INIT', { flowToken: tokenForLog(flowToken) });
   const rows = await fetchDone();
   const grades = distinct(rows, 'grade')
     .sort((a, b) => gradeRank(a) - gradeRank(b))
@@ -101,7 +126,7 @@ async function handleStudentVideosInit(flowToken) {
 
 // ---------- DATA EXCHANGE ----------
 async function handleStudentVideosDataExchange(flowToken, screen, screenData) {
-  logToFile('Student Videos data_exchange', { flowToken, screen, screenData });
+  logToFile('Student Videos data_exchange', { flowToken: tokenForLog(flowToken), screen, screenData });
   if (screen === 'SELECT_GRADE') return selectGrade(screenData);
   if (screen === 'SELECT_SUBJECT') return selectSubject(screenData);
   if (screen === 'SELECT_TOPIC') return selectTopic(flowToken, screenData);
@@ -226,6 +251,11 @@ async function sendPreDeliveryAck(flowToken, row) {
 // upload succeeds — a failed upload should not produce a feedback prompt
 // asking the teacher to rate a video they never received.
 function deliverVideoAsync(flowToken, row) {
+  const child = childFromToken(flowToken);
+  if (child) {
+    deliverToChildAsync(child, row);
+    return;
+  }
   const userId = (flowToken || '').split(':')[0];
   (async () => {
     let phone;
@@ -324,6 +354,42 @@ function deliverVideoAsync(flowToken, row) {
       }
     } catch (err) {
       logToFile('Student Videos: post-delivery hook threw', { userId, videoId: row.id, error: err.message });
+    }
+  })();
+}
+
+// A child's pick: the video only. The teacher-side follow-ups below (the
+// delivery row keyed on a users row, the "share a quiz with your class" offer,
+// the teacher's feedback survey) do not apply to a child.
+function deliverToChildAsync(child, row) {
+  (async () => {
+    try {
+      const caption = `📚 ${gradeTitle(row.grade)} · ${row.subject}\n${row.clean_title}`;
+      const delivered = await WhatsAppService.sendVideoFromUrl(child.phone, row.r2_url, caption);
+      if (!delivered) {
+        logToFile('Student Videos: video upload to a child failed', {
+          shareCodeId: child.shareCodeId, studentId: child.studentId, videoId: row.id,
+        });
+        await WhatsAppService.sendMessage(
+          child.phone,
+          `Sorry — I couldn't send "${row.clean_title}" just now. Please try /video again in a moment.`
+        );
+        return;
+      }
+      logEvent('student_videos.delivered', {
+        userId: null,
+        shareCodeId: child.shareCodeId,
+        studentId: child.studentId,
+        videoId: row.id,
+        grade: row.grade,
+        subject: row.subject,
+        chapter: row.clean_chapter,
+        title: row.clean_title,
+      });
+    } catch (err) {
+      logToFile('Student Videos: delivery to a child failed', {
+        shareCodeId: child.shareCodeId, studentId: child.studentId, videoId: row.id, error: err.message,
+      });
     }
   })();
 }
