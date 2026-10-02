@@ -205,8 +205,10 @@ async function listUnsentReports(observerUserId, opts = {}) {
     ? ['sent', 'operator_review']
     : ['sent', 'awaiting_teacher_tap', 'operator_review'];
   const dOf = (r) => (r.analysis_data && r.analysis_data.teacher_delivery) || {};
+  // An invite the untapped sweep gave up on is back with the coach to send again.
+  const givenUp = (d) => d.status === 'awaiting_teacher_tap' && !!d.gave_up_at;
   const open = (data || [])
-    .filter((r) => !DONE.includes(dOf(r).status))
+    .filter((r) => !DONE.includes(dOf(r).status) || givenUp(dOf(r)))
     .map((r) => ({ ...r, delivery_status: dOf(r).status || null, template_sent_at: dOf(r).template_sent_at || null }));
   return _withObservedTeacher(open);
 }
@@ -217,6 +219,7 @@ const _MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 
 function sendReportRowMeta(sess) {
   const d = (sess && sess.analysis_data && sess.analysis_data.teacher_delivery) || {};
   const status = (sess && sess.delivery_status) || d.status || null;
+  if (status === 'awaiting_teacher_tap' && d.gave_up_at) return 'invite not opened - send it again';
   if (status === 'awaiting_teacher_tap') {
     const ts = (sess && sess.template_sent_at) || d.template_sent_at;
     const when = ts ? new Date(ts) : null;

@@ -333,7 +333,9 @@ async function _replyIfOnItsWay(delivery, lang, from) {
     await wa().sendMessage(from, t(lang, 'send_operator_review_fo'));
     return true;
   }
-  if (delivery.status === 'awaiting_teacher_tap') {
+  // An invite still in its life waits for the tap. One the untapped sweep gave
+  // up on is the coach's to send again (send_gave_up_fo says so): not on its way.
+  if (delivery.status === 'awaiting_teacher_tap' && !delivery.gave_up_at) {
     const day = delivery.template_sent_at ? String(delivery.template_sent_at).slice(0, 10) : '';
     await wa().sendMessage(from, t(lang, 'send_waiting_tap_info', { name: delivery.teacher_name || '', date: day }));
     return true;
