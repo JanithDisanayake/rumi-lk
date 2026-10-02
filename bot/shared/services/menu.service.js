@@ -5,6 +5,7 @@ const { getClient } = require('./llm-client');
 const { OPENAI_API_KEY } = require('../utils/constants');
 const { storeConversation } = require('../database/bot-helpers');
 const redisService = require('./cache/railway-redis.service');
+const { nativeFlowIdFor } = require('./messaging/channel-capabilities');
 // CoachingService not used in this file - removed legacy import
 // MediaLibraryService removed - Issue #28: AI Video Generation replaces Media Library
 const LessonPlanningService = require('./lesson-planning.service');
@@ -133,6 +134,12 @@ class MenuService {
           if (flowSent) {
             logToFile('✅ Reading assessment flow sent from menu', { userId: user.id });
             await FeatureIntroService.markFeatureUsed(user.id, 'reading');
+          } else if (nativeFlowIdFor(from, process.env.READING_ASSESSMENT_FLOW_ID)) {
+            // A native Flow IS configured here, so false means the send itself
+            // failed (a passing Graph error): the assessment exists, try again.
+            logToFile('⚠️ Reading assessment flow send failed (menu)', { userId: user.id });
+            await WhatsAppService.sendMessage(from,
+              "I couldn't open the reading assessment right now. Please try again in a moment, or type /menu.");
           } else {
             // Not an exception: this channel simply cannot offer the assessment.
             logToFile('⚠️ Reading assessment unavailable on this channel (menu)', { userId: user.id });

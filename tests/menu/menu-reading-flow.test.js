@@ -44,4 +44,31 @@ describe('menu → Reading', () => {
     expect(sendMessage).toHaveBeenCalledWith('mtx:15550100001', expect.stringMatching(/not set up/));
     expect(sendMessage).not.toHaveBeenCalledWith('mtx:15550100001', expect.stringMatching(/Something went wrong/));
   });
+
+  // On Meta, sendFlow also returns false for a passing Graph error. With a
+  // Flow id configured, "not set up on this deployment" is wrong and sends the
+  // teacher away from something that works on the next try.
+  describe('on Meta', () => {
+    const META = '15550100001';
+    afterEach(() => {
+      delete process.env.CHANNEL_DRIVER;
+      delete process.env.READING_ASSESSMENT_FLOW_ID;
+    });
+
+    it('a Flow id that is configured but failed to send says try again, not "not set up"', async () => {
+      process.env.CHANNEL_DRIVER = 'meta';
+      process.env.READING_ASSESSMENT_FLOW_ID = '1234567890';
+      const { MenuService, sendMessage } = load({ flowSent: false });
+      await MenuService.handleMenuButtonResponse({ id: 'u1' }, META, 'menu_reading', 'en');
+      expect(sendMessage).toHaveBeenCalledWith(META, expect.stringMatching(/couldn't open .* right now.*try again/i));
+      expect(sendMessage).not.toHaveBeenCalledWith(META, expect.stringMatching(/not set up/));
+    });
+
+    it('with no Flow id configured, it is still "not set up"', async () => {
+      process.env.CHANNEL_DRIVER = 'meta';
+      const { MenuService, sendMessage } = load({ flowSent: false });
+      await MenuService.handleMenuButtonResponse({ id: 'u1' }, META, 'menu_reading', 'en');
+      expect(sendMessage).toHaveBeenCalledWith(META, expect.stringMatching(/not set up/));
+    });
+  });
 });
