@@ -91,6 +91,19 @@ describe('buildFidelityReportSection', () => {
   });
 });
 
+describe('the evidence gloss', () => {
+  const withGloss = (evidence, gloss) => buildFidelityReportSection({ ...MEASURED, moves: [row('m1', 'explain', 'executed', { evidence, evidence_translation: gloss })] }).perAction[0];
+
+  test('a gloss that only repeats the quote (same language) is not printed twice', () => {
+    expect(withGloss('[00:50] Everyone take 1 paper strip.', 'Everyone take one paper strip').evidenceTranslation).toBe('');
+    expect(withGloss('[00:50] Fold it into 5 parts', '(Fold it into 5 parts.)').evidenceTranslation).toBe('');
+  });
+
+  test('a real translation is kept', () => {
+    expect(withGloss('[00:50] Har bacha ek patti le', 'Every child takes one strip').evidenceTranslation).toBe('Every child takes one strip');
+  });
+});
+
 describe('extractFidelity (every report transformer)', () => {
   test('prefers the measured lp_fidelity blob', () => {
     expect(extractFidelity({ lp_fidelity: MEASURED, fidelity_analysis: { score: 85 } })).toMatchObject({ measured: true, score: 66.7 });

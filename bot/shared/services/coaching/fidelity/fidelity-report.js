@@ -51,6 +51,23 @@ function fidelityState(lp) {
   return 'measured';
 }
 
+function words(text) {
+  return String(text || '').replace(/\[\d{1,3}:\d{2}\]/g, ' ').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+}
+
+/**
+ * The grader glosses each quote in the plan's language. When the lesson was taught in that language the gloss only
+ * repeats the quote, so it is dropped when most of its words are the quote's own.
+ */
+function usefulGloss(evidence, gloss) {
+  if (!gloss) return '';
+  const g = words(gloss);
+  if (!g.length) return '';
+  const q = new Set(words(evidence));
+  const shared = g.filter((w) => q.has(w)).length;
+  return shared / g.length >= 0.8 ? '' : gloss;
+}
+
 function counts(lp) {
   const counted = ((lp && lp.moves) || []).filter((m) => m && m.counted);
   return { counted, delivered: counted.filter((m) => DONE.has(m.verdict)).length, total: counted.length };
@@ -111,7 +128,7 @@ function buildFidelityReportSection(lp, language = 'en') {
       verdict: m.verdict,
       verdictLabel: VERDICT_LABEL[m.verdict] || m.verdict,
       evidence: m.evidence || '',
-      evidenceTranslation: m.evidence_translation && m.evidence_translation !== m.evidence ? m.evidence_translation : '',
+      evidenceTranslation: usefulGloss(m.evidence, m.evidence_translation),
     }));
 
   return {
