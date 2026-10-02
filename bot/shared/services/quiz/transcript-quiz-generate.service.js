@@ -844,7 +844,7 @@ async function runKeyCheck(api, {
     first = await api.checkKeys({ questions, source, language, quizId });
   } catch (err) {
     record.status = 'error';
-    record.error = failOpen('call', err);
+    record.error = failOpen(err && err.code === 'NO_ANSWERS' ? 'reply' : 'call', err);
     return finish({ changed: false });
   }
   if (first.skipped) {
@@ -1317,7 +1317,7 @@ async function runKeyVerify(api, {
     first = await solve(questions);
   } catch (err) {
     record.status = 'error';
-    record.error = failOpen('call', err);
+    record.error = failOpen(err && err.code === 'NO_ANSWERS' ? 'reply' : 'call', err);
     return finish({ changed: false });
   }
   if (first.skipped) {

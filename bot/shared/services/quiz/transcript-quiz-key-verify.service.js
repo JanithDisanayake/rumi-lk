@@ -218,10 +218,13 @@ function judge(item, a) {
   const base = { index: item.index, keyed: item.keyed };
   if (!a) return { ...base, verdict: 'unclear', blind: null, note: '', missing: true };
   const note = cut(line(a.note), NOTE_MAX);
-  if (a.unsure === true || !Array.isArray(a.correct)) return { ...base, verdict: 'unclear', blind: null, note };
+  if (a.unsure === true) return { ...base, verdict: 'unclear', blind: null, note };
+  // Not an answer at all (no list, or an option number the item does not have):
+  // unclear, and marked so a reply made only of these counts as no reply.
+  if (!Array.isArray(a.correct)) return { ...base, verdict: 'unclear', blind: null, note, invalid: true };
   const shown = a.correct.map(Number);
   if (shown.some((k) => !Number.isInteger(k) || k < 0 || k >= item.order.length)) {
-    return { ...base, verdict: 'unclear', blind: null, note };
+    return { ...base, verdict: 'unclear', blind: null, note, invalid: true };
   }
   const blind = [...new Set(shown.map((k) => item.order[k]))].sort((x, y) => x - y);
   let verdict;
@@ -233,9 +236,12 @@ function judge(item, a) {
 }
 
 /**
- * The reply, held to its contract. Throws when there is no `answers` array —
- * the caller treats that as a failed solve, never as "all agree". One verdict
- * per REQUESTED item, in order; a skipped item is `unclear` with `missing: true`.
+ * The reply, held to its contract. Throws when there is no `answers` array, and
+ * when not one requested item got a usable answer (`{"answers": []}`, or every
+ * index or option number out of range) — the caller treats both as a failed
+ * solve (`err.code = 'NO_ANSWERS'` for the second), never as "all agree". One
+ * verdict per REQUESTED item, in order; a skipped item is `unclear` with
+ * `missing: true`. An item answered "unsure" is an answer.
  *
  * @returns {{index:number, verdict:string, keyed:number[], blind:number[]|null, note:string, missing?:boolean}[]}
  */
@@ -248,7 +254,13 @@ function parseAnswers(json, items) {
     if (!Number.isInteger(i) || !wanted.has(i) || byIndex.has(i)) return;
     byIndex.set(i, a);
   });
-  return arr(items).map((it) => judge(it, byIndex.get(it.index)));
+  const verdicts = arr(items).map((it) => judge(it, byIndex.get(it.index)));
+  if (verdicts.length && verdicts.every((v) => v.missing || v.invalid)) {
+    const err = new Error(`${LABEL}: the reply has no usable answer for any of the ${verdicts.length} questions`);
+    err.code = 'NO_ANSWERS';
+    throw err;
+  }
+  return verdicts;
 }
 
 /**

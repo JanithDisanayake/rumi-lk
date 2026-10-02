@@ -158,7 +158,8 @@ function squash(s) {
 }
 
 /**
- * The reply, held to its contract. Throws when there is no `verdicts` array —
+ * The reply, held to its contract. Throws when there is no `verdicts` array, or
+ * when it answers none of the requested indices (`err.code = 'NO_ANSWERS'`) —
  * the caller treats that as a failed check, never as "all consistent". One
  * verdict per REQUESTED index, in order: a verdict outside the three values is
  * `unclear`, and so is an index the reply skipped (`missing: true`). A
@@ -175,6 +176,13 @@ function parseVerdicts(json, indices, sourceBlock) {
     if (!Number.isInteger(i) || !indices.includes(i) || byIndex.has(i)) return;
     byIndex.set(i, v);
   });
+  // Not one requested item answered (`{"verdicts": []}`, or every index out of
+  // range): a failed check, never "all unclear".
+  if (indices.length && !indices.some((i) => byIndex.has(i))) {
+    const err = new Error(`${LABEL}: the reply has no usable verdict for any of the ${indices.length} questions`);
+    err.code = 'NO_ANSWERS';
+    throw err;
+  }
   const haystack = squash(sourceBlock);
   return indices.map((index) => {
     const v = byIndex.get(index);
