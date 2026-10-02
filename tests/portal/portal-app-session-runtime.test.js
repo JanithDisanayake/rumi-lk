@@ -14,6 +14,7 @@
  * (dashboard/routes/portal.routes.js). Only the database is faked.
  */
 
+const fs = require('fs');
 const http = require('http');
 const { createRequire } = require('module');
 const path = require('path');
@@ -35,12 +36,19 @@ jest.mock('../../dashboard/config/supabase', () => {
   return { from: () => query() };
 });
 
-// The dashboard's own dependencies, resolved the way dashboard/index.js resolves them.
+// The dashboard's own dependencies, resolved the way dashboard/index.js resolves
+// them. CI installs them (ci.yml, portal-android-debug.yml, fresh-clone-smoke.yml)
+// and must run this suite, so a missing install fails there. A local `npm test`
+// without `cd dashboard && npm ci` skips it with a message instead.
+const HAVE_DASHBOARD_DEPS = fs.existsSync(path.join(DASHBOARD, 'node_modules', 'express-session'));
+const RUN = HAVE_DASHBOARD_DEPS || Boolean(process.env.CI);
+if (!RUN) {
+  console.warn('portal-app-session-runtime: skipped — run `cd dashboard && npm ci` to boot the real session stack.');
+}
 const dashboardRequire = createRequire(path.join(DASHBOARD, 'package.json'));
-const express = dashboardRequire('express');
-const session = dashboardRequire('express-session');
-const cors = dashboardRequire('cors');
-const bcrypt = dashboardRequire('bcryptjs');
+const [express, session, cors, bcrypt] = RUN
+  ? ['express', 'express-session', 'cors', 'bcryptjs'].map((m) => dashboardRequire(m))
+  : [];
 
 const {
   buildPortalCorsOrigins,
@@ -122,7 +130,7 @@ const portalLogin = (server, origin, extraHeaders = {}) => request(server, {
   body: { phoneNumber: '15551234567', password: PASSWORD },
 });
 
-describe('portal app session wiring (real express-session + portal router)', () => {
+(RUN ? describe : describe.skip)('portal app session wiring (real express-session + portal router)', () => {
   let server;
   const savedEnv = process.env.PORTAL_APP_ENABLED;
 
