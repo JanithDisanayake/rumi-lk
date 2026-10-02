@@ -52,7 +52,14 @@ jobs:
           cache: npm
           cache-dependency-path: portal/package-lock.json
 
-      - uses: android-actions/setup-android@v3
+      # ubuntu-latest ships an Android SDK at $ANDROID_HOME; install only what
+      # this build needs (android-actions/setup-android@v3 asks for the obsolete
+      # `tools` package, which current cmdline-tools refuse).
+      - name: Android SDK packages
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "platforms;android-36" "build-tools;36.0.0" "platform-tools" > /dev/null
 
       - name: Portal app guard tests
         run: |
