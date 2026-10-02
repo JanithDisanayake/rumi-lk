@@ -94,7 +94,7 @@ it goes — so Ctrl+C is safe and running it again picks up where you stopped.
 
 | | Where to get it | What it's for | Cost |
 |---|---|---|---|
-| **Node.js 20+** and **git** | [nodejs.org](https://nodejs.org) | Running Rumi | free |
+| **Node.js 22+** and **git** | [nodejs.org](https://nodejs.org) | Running Rumi | free |
 | **A Supabase project** | [supabase.com](https://supabase.com) | Where Rumi remembers teachers, lessons and assessments | free tier is plenty |
 | **An OpenRouter key** | [openrouter.ai/keys](https://openrouter.ai/keys) | How Rumi thinks — one key, 500+ models | a few dollars goes a long way |
 | **A Redis address** | [Upstash](https://upstash.com) · [Railway](https://railway.app) · or local Docker | Conversations in progress, and background jobs | free tier is plenty |
@@ -383,7 +383,7 @@ Guide](docs/agent-customization.md) maps each goal to exact files:
 
 | Layer | Technology | Purpose |
 |---|---|---|
-| Runtime | Node.js 20+ | Server-side JavaScript |
+| Runtime | Node.js 22+ | Server-side JavaScript |
 | Web | Express.js | Webhook + API routes |
 | Messaging | WhatsApp (official API or a linked-device QR code), plus Slack and Discord | Messages, media, interactive forms |
 | AI / LLM | OpenRouter (500+ models) | Chat, analysis, content |

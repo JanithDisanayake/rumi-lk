@@ -46,7 +46,7 @@
     "url": "https://github.com/Orenda-Project/rumi-platform.git"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   },
   "devDependencies": {
     "@types/jest": "^29.5.12",

@@ -18,7 +18,7 @@ database trusts every local connection, and only part of Supabase is emulated (s
 
 | Tool | macOS (Homebrew) | Debian / Ubuntu |
 |---|---|---|
-| Node.js 20+ | `brew install node` | [nodejs.org](https://nodejs.org) |
+| Node.js 22+ | `brew install node` | [nodejs.org](https://nodejs.org) |
 | Postgres 17 (server, not only the client) | `brew install postgresql@17` | `sudo apt install postgresql-17` |
 | PostgREST 12 or newer | `brew install postgrest` | a release binary, see below |
 | Redis | `brew install redis` | `sudo apt install redis-server` |
