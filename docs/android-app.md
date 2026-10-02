@@ -12,7 +12,7 @@ There are **two different apps** here. They are not two versions of one thing. P
 |---|---|---|
 | What the teacher opens | A chat app, like WhatsApp: colleagues, groups, calls — and **Rumi is one of the contacts** | The teacher portal (dashboard, lesson plans, coaching reports, reading assessments) in an app shell |
 | Talks to Rumi? | Yes — this *is* the channel. Teachers message Rumi exactly as on WhatsApp | No — it shows what Rumi already produced |
-| Needs | A Matrix chat server ([Run Rumi on your own messenger](channels/matrix.md)) | Your deployed portal (the `dashboard/` service) |
+| Needs | A Matrix chat server ([Connecting Rumi](https://github.com/Orenda-Project/rumi-messenger/blob/main/docs/RUMI-INTEGRATION.md)) | Your deployed portal (the `dashboard/` service) |
 | Source | Its own repo: [`Orenda-Project/element-x-android`](https://github.com/Orenda-Project/element-x-android), branch `rumi-brand` | This repo, [`portal/android/`](../portal/ANDROID.md) |
 | Licence | **AGPL-3.0** (a fork of Element X) — see [your obligations](#agpl-30-what-you-must-do) | Apache-2.0, like the rest of this repo |
 | Feature page | this page | [Portal app](features/android-portal-app.md) |
@@ -41,7 +41,8 @@ server — otherwise teachers sign in to a server where Rumi is not there. Set b
 
 1. Run a homeserver: [`Orenda-Project/rumi-messenger`](https://github.com/Orenda-Project/rumi-messenger)
    (Synapse + Element Web + calls + push, with scripts to create teacher accounts).
-2. Connect this repo's bot to it: **[Run Rumi on your own messenger](channels/matrix.md)**.
+2. Connect this repo's bot to it: **[Connecting Rumi](https://github.com/Orenda-Project/rumi-messenger/blob/main/docs/RUMI-INTEGRATION.md)** (set `MATRIX_HOMESERVER_URL` and
+   `MATRIX_ACCESS_TOKEN`; Matrix runs next to your WhatsApp channel, not instead of it).
 3. Check it from a browser first: sign in to your Element Web as a test teacher and message Rumi. If that
    works, the app will.
 
