@@ -11,11 +11,12 @@
  *   node bot/scripts/observe-roster.js list        <coach-phone>
  *   node bot/scripts/observe-roster.js set-email   <coach-phone> <email> [full name…]   (calendar invites)
  *
- * A "phone" is the person's channel identity as Rumi stores it in
- * users.phone_number: digits for WhatsApp (spaces, dashes and "+" are
- * stripped), or a prefixed identity kept as-is (mtx:…, slack:…, discord:…).
- * Someone who has never messaged the bot gets a users row now; registration
- * still runs when they first write.
+ * A "phone" is the person's channel identity: digits for WhatsApp (spaces,
+ * dashes and "+" are stripped), or a prefixed identity kept as-is (mtx:…,
+ * slack:…, discord:…). Someone who has never messaged the bot gets a users row
+ * now, stored the way the bot stores that channel (a phone number for
+ * WhatsApp, a user_channels row otherwise); registration still runs when they
+ * first write.
  *
  * The roster is DERIVED: a coach holds schools (leader_schools); a teacher is
  * at a school through users.school_id. School ids are namespaced with
@@ -63,20 +64,41 @@ async function _one(q) {
   return Array.isArray(data) ? data[0] || null : data || null;
 }
 
-async function findUser(identity) {
-  return _one(db().from('users').select('id, phone_number, name, role, school_id').eq('phone_number', identity).limit(1));
-}
-
-async function ensureUser(identity, { name = null } = {}) {
-  const existing = await findUser(identity);
-  if (existing) return existing;
-  return _one(db().from('users').insert({ phone_number: identity, name: name || null, source: 'observe_roster', created_at: now() }).select().single());
-}
-
 async function _update(table, id, patch) {
   const { error } = await db().from(table).update({ ...patch, updated_at: now() }).eq('id', id);
   if (error) throw new Error(error.message);
 }
+
+async function findUser(identity) {
+  // Through the observe identity resolver: a person who reached Rumi on
+  // Matrix, Slack or Discord has no phone_number, only a user_channels row.
+  const { userIdForIdentity } = require('../shared/services/observe/observe-identity');
+  const id = await userIdForIdentity(identity);
+  if (!id) return null;
+  return _one(db().from('users').select('id, phone_number, name, role, school_id').eq('id', id).limit(1));
+}
+
+/**
+ * Find, or create the way the bot itself would: a WhatsApp number on
+ * users.phone_number; any other channel as a users row with no phone number
+ * plus its user_channels row, so the person's first message lands on THIS row.
+ */
+async function ensureUser(identity, { name = null } = {}) {
+  const existing = await findUser(identity);
+  if (existing) return existing;
+  const { parseIdentity } = require('../shared/services/observe/observe-identity');
+  const parsed = parseIdentity(identity);
+  const isWhatsApp = parsed.channel === 'whatsapp';
+  const user = await _one(db().from('users').insert({
+    phone_number: isWhatsApp ? identity : null, name: name || null, source: 'observe_roster', created_at: now(),
+  }).select().single());
+  const { error } = await db().from('user_channels').insert({
+    user_id: user.id, channel: parsed.channel, channel_user_id: parsed.id, is_primary: true, created_at: now(),
+  });
+  if (error) throw new Error(error.message);
+  return user;
+}
+
 
 /** The schools row for an ext id, created when missing; a real name replaces a placeholder. */
 async function ensureSchool(extId, name = null) {

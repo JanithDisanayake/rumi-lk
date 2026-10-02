@@ -18,7 +18,7 @@ const os = require('os');
 const path = require('path');
 const { createFakeSupabase } = require('./_helpers/fake-supabase');
 
-const mockDb = createFakeSupabase({ users: [], schools: [], leader_schools: [], coach_directory: [] });
+const mockDb = createFakeSupabase({ users: [], user_channels: [], schools: [], leader_schools: [], coach_directory: [] });
 jest.mock('../../bot/shared/config/supabase', () => mockDb.client);
 jest.mock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn() }));
 
@@ -42,10 +42,22 @@ describe('observe roster CLI', () => {
     expect(await Cli.main(['grant-coach', '+1 555 010 0001'], out())).toBe(0);
     expect(mockDb.tables.users[0].role).toBe('coach');
     expect(await Cli.main(['grant-coach', 'mtx:15550100002', 'principal'], out())).toBe(0);
-    expect(mockDb.tables.users.find((u) => u.phone_number === 'mtx:15550100002')).toMatchObject({ role: 'principal' });
+    // A Matrix person is stored the way the bot stores them: no phone number,
+    // a user_channels row — so their first message finds THIS row, not a new one.
+    const link = mockDb.tables.user_channels.find((c) => c.channel === 'matrix' && c.channel_user_id === '15550100002');
+    expect(link).toBeTruthy();
+    expect(mockDb.tables.users.find((u) => u.id === link.user_id)).toMatchObject({ role: 'principal', phone_number: null });
     const o = out();
     expect(await Cli.main(['grant-coach', '15550100003', 'janitor'], o)).toBe(1);
     expect(o.lines.join('\n')).toMatch(/not a coach role/);
+  });
+
+  test('someone who already messaged the bot on Matrix (user_channels only) is found, not duplicated', async () => {
+    mockDb.tables.users.push({ id: 'mx-1', phone_number: null, role: null });
+    mockDb.tables.user_channels.push({ user_id: 'mx-1', channel: 'matrix', channel_user_id: '1555400011' });
+    expect(await Cli.main(['grant-coach', 'mtx:1555400011'], out())).toBe(0);
+    expect(mockDb.tables.users).toHaveLength(1);
+    expect(mockDb.tables.users[0].role).toBe('coach');
   });
 
   test('add-school links a coach to a school (prefixed), creating the school; re-running is a no-op', async () => {
@@ -97,7 +109,8 @@ describe('observe roster CLI', () => {
     expect(mockDb.tables.leader_schools).toHaveLength(1);
     expect(mockDb.tables.schools.find((s) => s.ext_id === 'SCH-1').name).toBe('Hill School, East');
     expect((await Roster.listTeachers(coach.id)).map((t) => t.name)).toEqual(['Avery Stone', 'Blake Reed']);
-    expect(mockDb.tables.users.find((u) => u.phone_number === 'mtx:15550100203').school_id)
+    const mx = mockDb.tables.user_channels.find((c) => c.channel === 'matrix' && c.channel_user_id === '15550100203');
+    expect(mockDb.tables.users.find((u) => u.id === mx.user_id).school_id)
       .toBe(mockDb.tables.schools.find((s) => s.ext_id === 'SCH-2').id);
     fs.unlinkSync(file);
   });
