@@ -36,6 +36,10 @@ function getCurrentAcademicYear() {
 const ATTENDANCE_SETUP_FLOW_ID = process.env.ATTENDANCE_SETUP_FLOW_ID || '';
 const ATTENDANCE_MARKING_FLOW_ID = process.env.ATTENDANCE_MARKING_FLOW_ID || '';
 
+// The marking token's second segment is a class's list id, or this word for a head
+// teacher's staff attendance (userId:staff:date:sessionType:encodedSchoolName).
+const STAFF_TARGET = 'staff';
+
 class AttendanceFlowHandler {
   /**
    * Parse setup flow response into structured data
@@ -90,16 +94,19 @@ class AttendanceFlowHandler {
 
     try {
       const absentStudentIds = responseJson.absent_students || [];
+      // Optional: older Flow versions and surfaces without a leave field send none.
+      const leaveStudentIds = responseJson.leave_students || [];
       const className = responseJson.class_name;
       const dateDisplay = responseJson.date_display;
       const sessionType = responseJson.session_type || 'Full Day';
 
       return {
         absentStudentIds,
+        leaveStudentIds,
         className,
         dateDisplay,
         sessionType,
-        everyonePresent: absentStudentIds.length === 0
+        everyonePresent: absentStudentIds.length === 0 && leaveStudentIds.length === 0
       };
     } catch (error) {
       logToFile('Error parsing marking flow response', { error: error.message });
@@ -138,21 +145,25 @@ class AttendanceFlowHandler {
   }
 
   /**
-   * Build attendance records from student list and absent IDs
+   * Build attendance records by exception: the absent and the on-leave are named,
+   * everyone else is present. Someone in both lists is on leave — the more specific
+   * statement, and counting them twice would corrupt the tallies.
    *
-   * @param {Array} allStudents - All students in the class
-   * @param {Array} absentIds - IDs of absent students
+   * @param {Array} allStudents - Everyone on the roster (students, or staff)
+   * @param {Array} absentIds - IDs of absent people
+   * @param {Array} [leaveIds] - IDs of people on approved leave
    * @returns {Array} Attendance records with status
    */
-  static buildAttendanceRecords(allStudents, absentIds) {
-    const absentSet = new Set(absentIds);
+  static buildAttendanceRecords(allStudents, absentIds, leaveIds = []) {
+    const leaveSet = new Set(leaveIds || []);
+    const absentSet = new Set((absentIds || []).filter(id => !leaveSet.has(id)));
 
     return allStudents.map(student => ({
       studentId: student.id,
       studentName: student.student_name,
       fatherName: student.father_name,
       rollNumber: student.roll_number,
-      status: absentSet.has(student.id) ? 'absent' : 'present',
+      status: leaveSet.has(student.id) ? 'leave' : absentSet.has(student.id) ? 'absent' : 'present',
       confidence: 1.0 // Manual marking = 100% confidence
     }));
   }
@@ -169,9 +180,10 @@ class AttendanceFlowHandler {
       `*Attendance Recorded*`,
       ``,
       `Class: ${className}`,
-      `Total Students: ${stats.total}`,
+      `Total: ${stats.total}`,
       `Present: ${stats.present}`,
       `Absent: ${stats.absent}`,
+      `On leave: ${stats.leave || 0}`,
       `Attendance Rate: ${stats.attendanceRate}`,
       ``,
       `Your Excel file is being generated...`
@@ -285,14 +297,26 @@ class AttendanceFlowHandler {
         return { success: false, error: 'Invalid flow response' };
       }
 
-      // Get all students in the list
-      const { data: allStudents, error: studentsError } = await StudentListService.getStudentsByList(listId);
-      if (studentsError || !allStudents) {
-        return { success: false, error: 'Failed to fetch students' };
+      // Get everyone on the roster: the school's staff, or the class's students
+      let allStudents;
+      if (listId === STAFF_TARGET) {
+        const StaffAttendanceService = require('../services/staff-attendance.service');
+        const marker = await StaffAttendanceService.loadUser(userId);
+        if (!StaffAttendanceService.isHeadTeacher(marker) || !marker.school_id) {
+          return { success: false, error: 'Staff attendance is marked by a head teacher linked to a school.' };
+        }
+        const staff = await StaffAttendanceService.loadStaffRoster(marker.school_id, userId);
+        allStudents = staff.map(s => ({ id: s.id, student_name: StaffAttendanceService.personName(s) }));
+      } else {
+        const { data: students, error: studentsError } = await StudentListService.getStudentsByList(listId);
+        if (studentsError || !students) {
+          return { success: false, error: 'Failed to fetch students' };
+        }
+        allStudents = students;
       }
 
       // Build attendance records
-      const records = this.buildAttendanceRecords(allStudents, data.absentStudentIds);
+      const records = this.buildAttendanceRecords(allStudents, data.absentStudentIds, data.leaveStudentIds);
 
       // Calculate stats
       const stats = AttendanceGeneratorService.calculateSummaryStats(records);
@@ -302,7 +326,8 @@ class AttendanceFlowHandler {
         listId,
         total: stats.total,
         present: stats.present,
-        absent: stats.absent
+        absent: stats.absent,
+        leave: stats.leave
       });
 
       return {
@@ -333,5 +358,7 @@ class AttendanceFlowHandler {
     return null;
   }
 }
+
+AttendanceFlowHandler.STAFF_TARGET = STAFF_TARGET;
 
 module.exports = AttendanceFlowHandler;

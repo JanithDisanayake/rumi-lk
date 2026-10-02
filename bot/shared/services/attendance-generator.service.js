@@ -109,6 +109,7 @@ class AttendanceGeneratorService {
     const total = records.length;
     const present = records.filter(r => r.status === 'present').length;
     const absent = records.filter(r => r.status === 'absent').length;
+    const leave = records.filter(r => r.status === 'leave').length;
 
     const rate = total > 0 ? ((present / total) * 100) : 0;
     const attendanceRate = rate === 100 || rate === 0
@@ -119,6 +120,7 @@ class AttendanceGeneratorService {
       total,
       present,
       absent,
+      leave,
       attendanceRate
     };
   }
