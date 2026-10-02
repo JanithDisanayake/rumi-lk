@@ -1073,6 +1073,7 @@ async function handleTextMessage(message, from, messageBody, user = null) {
         .from('coaching_sessions')
         .select('id, status, updated_at, conversation_state')
         .eq('user_id', user.id)
+        .is('observation_type', null) // a coach's observation of this teacher is not their unfinished session
         .in('status', ['conducting_conversation', 'analyzing'])
         .order('updated_at', { ascending: false })
         .limit(1)
@@ -1128,6 +1129,7 @@ async function handleTextMessage(message, from, messageBody, user = null) {
           .from('coaching_sessions')
           .select('*')
           .eq('id', stuckSessionId)
+          .is('observation_type', null) // the reply below can fail or re-run it: never a coach's observation
           .single();
 
         if (stuckSession) {
