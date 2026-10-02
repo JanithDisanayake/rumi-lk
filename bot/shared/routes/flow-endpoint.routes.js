@@ -7,6 +7,7 @@
  * - POST /api/flows/attendance-marking - Handle attendance marking flow data requests
  * - POST /api/flows/attendance-setup - Handle attendance setup flow with student entry loops
  * - POST /api/flows/registration - Handle registration flow data requests
+ * - POST /api/flows/observe-form - The coach's editable observation form (/observe, Meta only)
  *
  * Created: January 25, 2026
  * Updated: February 17, 2026 (Registration Flow v3 added)
@@ -69,6 +70,7 @@ const {
   handleExamConfirmDataExchange,
   handleExamConfirmBack
 } = require('./exam-confirm-endpoint');
+const { handleObserveFormRequest } = require('./observe-form-endpoint');
 
 /**
  * Handle attendance marking flow data requests
@@ -908,6 +910,30 @@ async function handleExamConfirmRequest(data) {
   logToFile('Unknown exam-confirm flow action', { action });
   return FlowEncryptionService.createErrorResponse('Unknown action');
 }
+
+// ============================================================
+// OBSERVE FORM ENDPOINT — the coach reviews and edits the AI's ratings
+// (/observe, Meta only; every other channel uses the chat form).
+// flow_token is "<observerId>:<sessionId>"; the handler checks ownership.
+// ============================================================
+
+router.post('/observe-form', async (req, res) => {
+  try {
+    if (!FlowEncryptionService.isConfigured()) {
+      logToFile('Flow encryption not configured', { endpoint: 'observe-form' });
+      return res.status(500).json({ error: 'Flow encryption not configured' });
+    }
+    const encryptedResponse = await FlowEncryptionService.processEncryptedRequest(
+      req.body,
+      async (decryptedData) => await handleObserveFormRequest(decryptedData)
+    );
+    res.set('Content-Type', 'text/plain');
+    res.send(encryptedResponse);
+  } catch (error) {
+    logToFile('Flow endpoint error', { endpoint: 'observe-form', error: error.message, stack: error.stack });
+    res.status(500).json({ error: error.message });
+  }
+});
 
 module.exports = router;
 // The marking request handler, for tests that drive INIT/data_exchange directly.
