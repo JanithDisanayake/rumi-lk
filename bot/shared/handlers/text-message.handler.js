@@ -148,7 +148,7 @@ async function tryShareCodeJoin(from, messageBody, typingController) {
     // session.
     typingController.stop();
     setImmediate(() => VideoQuizShare.beginFromCodeLocked(from, code)
-      .catch((err) => logToFile('❌ video-quiz join failed', { from, code, error: err.message }, 'error')));
+      .catch((err) => logToFile('❌ video-quiz join failed', { phoneTail: String(from).slice(-4), code, error: err.message }, 'error')));
     return true;
   } catch (vqErr) {
     logToFile('Video Quiz share: routing error', { error: vqErr.message });
@@ -438,7 +438,7 @@ async function handleTextMessage(message, from, messageBody, user = null) {
     try {
       const VideoQuizShare = require('../services/quiz/video-quiz-share.service');
       if (await VideoQuizShare.consumeJoinReply(from, messageBody)) {
-        logToFile('Text consumed as video-quiz join detail — short-circuit', { from });
+        logToFile('Text consumed as video-quiz join detail — short-circuit', { phoneTail: String(from).slice(-4) });
         return;
       }
     } catch (vqErr) {
@@ -757,7 +757,7 @@ async function handleTextMessage(message, from, messageBody, user = null) {
     ? require('../services/quiz/transcript-quiz-list.service').isQuizCommand(messageBody)
     : (trimmedMessage === '/quiz' || trimmedMessage.startsWith('/quiz '));
   if (isQuizCommand) {
-    logToFile('📝 /quiz command detected', { userId: user?.id, phoneNumber: from, lessonQuiz: lessonQuizOn });
+    logToFile('📝 /quiz command detected', { userId: user?.id, phoneTail: String(from).slice(-4), lessonQuiz: lessonQuizOn });
     if (!user) {
       typingController.stop();
       await WhatsAppService.sendMessage(

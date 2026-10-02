@@ -300,3 +300,34 @@ describe('/quiz', () => {
     expect(mockDetectIntent).not.toHaveBeenCalled();
   });
 });
+
+describe('no full phone number in the logs (review F-N7)', () => {
+  // The log lines this release added; main's own lines are out of scope here.
+  const line = (rx) => JSON.stringify(require('../../bot/shared/utils/logger').logToFile.mock.calls
+    .filter((c) => rx.test(String(c[0]))));
+
+  test('a failed join logs the last 4 digits, never the number', async () => {
+    mockShare.beginFromCodeLocked.mockRejectedValueOnce(new Error('db down'));
+    await say(CHILD, 'QUIZ-ABC234');
+    await new Promise((r) => setImmediate(r));
+    const l = line(/video-quiz join failed/);
+    expect(l).toMatch(/db down/);
+    expect(l).not.toContain(CHILD_PHONE);
+    expect(l).toContain(CHILD_PHONE.slice(-4));
+  });
+
+  test('a join detail consumed logs the last 4 digits, never the number', async () => {
+    mockShare.consumeJoinReply.mockResolvedValueOnce(true);
+    await say(CHILD, 'Child Example');
+    const l = line(/join detail/);
+    expect(l).toContain(CHILD_PHONE.slice(-4));
+    expect(l).not.toContain(CHILD_PHONE);
+  });
+
+  test('/quiz logs the last 4 digits, never the number', async () => {
+    await say(TEACHER, '/quiz');
+    const l = line(/\/quiz command detected/);
+    expect(l).toContain(TEACHER_PHONE.slice(-4));
+    expect(l).not.toContain(TEACHER_PHONE);
+  });
+});
