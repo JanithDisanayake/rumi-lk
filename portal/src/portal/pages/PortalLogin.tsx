@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { Button } from '@/components/ui/button';
@@ -8,12 +8,20 @@ import rumiLogo from '@/assets/rumi-logo-white.jpg';
 
 const PortalLogin = () => {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, user, loading: sessionLoading } = useAuth();
   const { toast } = useToast();
   
   const [phoneNumber, setPhoneNumber] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // An over-the-air Android app boots to this page on every launch
+  // (src/lib/app-target.cjs, resolveOtaUrl). A teacher who is already signed in
+  // goes straight to the dashboard instead of seeing a form that looks like a
+  // logout.
+  useEffect(() => {
+    if (!sessionLoading && user) navigate('/portal/dashboard', { replace: true });
+  }, [sessionLoading, user, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,6 +47,10 @@ const PortalLogin = () => {
     }
   };
 
+  // Nothing until the session is known: rendering the form while the check is
+  // in flight would flash a login screen at a signed-in teacher.
+  if (sessionLoading || user) return null;
+
   return (
     <div className="min-h-screen bg-primary flex items-center justify-center p-6">
       <div className="w-full max-w-md">
@@ -61,7 +73,7 @@ const PortalLogin = () => {
                 type="tel"
                 value={phoneNumber}
                 onChange={(e) => setPhoneNumber(e.target.value)}
-                placeholder="923001234567"
+                placeholder="15551234567"
                 className="w-full"
                 required
               />
