@@ -150,6 +150,11 @@ instead of the copy inside the APK: **a portal web deploy updates every installe
 How it is wired: `resolveOtaUrl()` in `src/lib/app-target.cjs` derives the origin from `VITE_API_BASE_URL`,
 so the host serving the code cannot drift from the host serving the data. If it cannot be derived (unset,
 relative, http), `server.url` stays unset and the bundled assets run — a known-good floor, not a blank shell.
+If the portal is **unreachable at launch**, Capacitor does *not* fall back to the bundled app by itself:
+without help Android shows its raw "Webpage not available" page. So the OTA config also sets
+`server.errorPath` to `public/ota-fallback.html` (bundled in the APK): a "Can't reach the portal" screen
+whose **Try again** reloads the portal. The portal is server-driven, so there is nothing useful to show
+offline beyond that.
 
 Under OTA the WebView runs the **web** bundle (served by the portal, so no `VITE_API_BASE_URL`), while
 Capacitor still injects its global. That is why the rule in `resolveApiBaseUrl()` is "**no usable origin** ⇒

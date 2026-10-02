@@ -22,7 +22,7 @@ what Rumi has produced for them.
    sniffing the hostname. A bundled app uses the absolute API url; a page served by the portal itself uses the
    relative one.
 3. **Over-the-air updates.** With `PORTAL_APP_OTA=1` the app loads the portal from your server on launch, so a
-   web deploy is an app update. If the server can't be derived, the copy bundled in the APK runs instead.
+   web deploy is an app update. If the server can't be derived, the copy bundled in the APK runs instead; if it can't be reached at launch, the app shows a bundled "Can't reach the portal" screen with **Try again**.
 4. **Native touches.** Tapped `/portal/dashboard` and `/portal/login` links open the app (Android App Links,
    verified against `/.well-known/assetlinks.json` served by the portal); the back key closes dialogs, goes
    back a page, or leaves from a home page; the session cookie is flushed to disk when the app is

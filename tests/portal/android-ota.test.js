@@ -159,3 +159,48 @@ describe('OTA: native shell running the web bundle', () => {
     ).toThrow(/absolute API base URL/);
   });
 });
+
+/**
+ * Under OTA, an unreachable portal must not leave the teacher on a raw WebView
+ * error page. Found on the emulator: with the portal down at launch the app
+ * showed Android's "Webpage not available / net::ERR_CONNECTION_REFUSED".
+ * Capacitor does NOT fall back to the bundled assets by itself; it loads
+ * `server.errorPath` from the bundled local server (https://localhost/<file>).
+ * Navigating from there to the bundled app at https://localhost/ is an
+ * off-origin navigation once server.url is set, and was handed to the system
+ * browser — also verified on the emulator. So the page offers a Retry that
+ * reloads the portal itself, the app's own host.
+ */
+describe('OTA: an unreachable portal shows a bundled retry page', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const PORTAL = path.join(__dirname, '../../portal');
+  const config = fs
+    .readFileSync(path.join(PORTAL, 'capacitor.config.ts'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+  const FALLBACK = path.join(PORTAL, 'public/ota-fallback.html');
+  const html = () => fs.readFileSync(FALLBACK, 'utf8');
+
+  it('sets server.errorPath together with server.url, never on its own', () => {
+    expect(config).toMatch(/otaUrl\s*\?\s*\{\s*url:\s*otaUrl,\s*errorPath:\s*`ota-fallback\.html\?u=\$\{encodeURIComponent\(otaUrl\)\}`\s*\}/);
+  });
+
+  it('ships the page in the bundle (portal/public/ is copied to dist/)', () => {
+    expect(fs.existsSync(FALLBACK)).toBe(true);
+  });
+
+  it('retries the portal url it was given, and only an https one', () => {
+    expect(html()).toMatch(/URLSearchParams\(location\.search\)\.get\(['"]u['"]\)/);
+    expect(html()).toMatch(/protocol\s*===\s*['"]https:['"]/);
+    expect(html()).toMatch(/location\.replace\(/);
+  });
+
+  it('never navigates to the bundled origin (that leaves the app)', () => {
+    expect(html()).not.toMatch(/location\.(replace|assign)\(\s*['"]\//);
+  });
+
+  it('loads nothing from the network (it must work offline)', () => {
+    expect(html()).not.toMatch(/(src|href)\s*=\s*["']https?:/i);
+  });
+});

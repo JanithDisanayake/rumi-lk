@@ -87,8 +87,12 @@ const config: CapacitorConfig = {
     // app on next launch. If the origin can't be derived this stays undefined
     // and Capacitor uses the bundled assets — a known-good floor rather than a
     // blank shell. The bundled build still ships and still must be correct: it
-    // is what runs whenever OTA is off.
-    ...(otaUrl ? { url: otaUrl } : {}),
+    // is what runs whenever OTA is off. If the portal is unreachable at launch,
+    // Capacitor does not fall back by itself — without errorPath the
+    // teacher gets Android's raw "Webpage not available". errorPath is served
+    // from the bundled assets (https://localhost/ota-fallback.html): a "can't
+    // reach the portal" page whose Retry reloads the portal url passed in ?u=.
+    ...(otaUrl ? { url: otaUrl, errorPath: `ota-fallback.html?u=${encodeURIComponent(otaUrl)}` } : {}),
   },
   plugins: {
     // @capacitor/app hands tapped App Links to the web code (`appUrlOpen`, see
