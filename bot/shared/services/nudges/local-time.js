@@ -6,7 +6,7 @@
  * middle of the night. Both questions are about the teachers' wall clock, not
  * the server's, so both are answered here from two settings:
  *
- *   TEACHER_NUDGES_TZ           an IANA zone name (default `UTC`). Resolved with
+ *   TEACHER_NUDGES_TZ           an IANA zone name (blank: ATTENDANCE_TZ, else `UTC`). Resolved with
  *                               Intl.DateTimeFormat, so daylight saving is
  *                               handled by the platform's tz database — there is
  *                               no hard-coded offset anywhere.
@@ -36,7 +36,8 @@ function isValidZone(tz) {
 
 /** The configured IANA zone, or UTC when unset or unknown. */
 function timeZone() {
-  const raw = String(process.env.TEACHER_NUDGES_TZ || '').trim();
+  // One clock for the school: blank falls back to the attendance timezone.
+  const raw = String(process.env.TEACHER_NUDGES_TZ || process.env.ATTENDANCE_TZ || '').trim();
   if (!raw) return DEFAULT_TZ;
   return isValidZone(raw) ? raw : DEFAULT_TZ;
 }

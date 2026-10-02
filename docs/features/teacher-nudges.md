@@ -131,7 +131,7 @@ does nothing and does not even read the database.
 | `TEACHER_NUDGES_ENABLED` | _(off)_ | Master switch. `true`, `1` or `yes` turns it on. Read on every tick. |
 | `TEACHER_NUDGES_SWEEP_MINUTES` | `5` | Minutes between sweeps on the SQS worker. Fractions are allowed (`0.5` means every 30 s). Values below `0.1` are ignored. |
 | `TEACHER_NUDGES_MAX_PER_TICK` | `200` | The most rows one sweep claims, across every kind. A backlog drains over the following ticks. |
-| `TEACHER_NUDGES_TZ` | `UTC` | IANA time zone used for "one per local day" and quiet hours. Daylight saving is handled. |
+| `TEACHER_NUDGES_TZ` | `ATTENDANCE_TZ`, else `UTC` | IANA time zone used for "one per local day" and quiet hours. Blank uses the school's attendance clock. Daylight saving is handled. |
 | `TEACHER_NUDGES_QUIET_HOURS` | `21-7` | Local hours with no nudges, written `start-end` (end exclusive). The range may wrap midnight. Blank means no quiet hours. |
 | `TEACHER_NUDGES_QUIET_MINUTES` | `1200` | How long a teacher must be silent before `re_engage` books them. |
 | `TEACHER_NUDGES_LOOKBACK_DAYS` | `14` | Silences that began longer ago than this are left alone. |

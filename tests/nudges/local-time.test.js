@@ -88,3 +88,18 @@ describe('local-time — quiet hours', () => {
     expect(localTime.isQuietHour(at(1))).toBe(false);
   });
 });
+
+describe('local-time — one clock for the school', () => {
+  afterEach(() => { delete process.env.ATTENDANCE_TZ; });
+
+  it('falls back to ATTENDANCE_TZ when TEACHER_NUDGES_TZ is blank', () => {
+    process.env.ATTENDANCE_TZ = 'Asia/Tokyo';
+    expect(localTime.timeZone()).toBe('Asia/Tokyo');
+  });
+
+  it('TEACHER_NUDGES_TZ still wins when both are set', () => {
+    process.env.ATTENDANCE_TZ = 'Asia/Tokyo';
+    process.env.TEACHER_NUDGES_TZ = 'America/New_York';
+    expect(localTime.timeZone()).toBe('America/New_York');
+  });
+});
