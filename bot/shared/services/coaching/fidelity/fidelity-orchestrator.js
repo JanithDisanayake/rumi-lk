@@ -175,8 +175,14 @@ async function computeLpFidelity(input = {}, deps = {}) {
   try {
     extracted = await extractPlanMoves(planText, { source, lessonId: lessonPlanId || undefined });
   } catch (e) {
+    // Only a plan the extractor could not READ is "the plan could not be read". A provider error on the call itself
+    // (a bad model slug, an outage) is our failure, and the teacher must not be told their plan was the problem.
+    if (e.code !== 'lp_unparseable') {
+      log('[lp-fidelity] the plan extractor call failed', { source, error: e.message });
+      return { status: 'fidelity_unavailable', source, lesson_plan_id: lessonPlanId, plan_hash: planHash, error: e.message || 'extractor_failed', cause: 'extractor_failed' };
+    }
     log('[lp-fidelity] the plan could not be read', { source, error: e.message });
-    return { status: 'lp_unparseable', source, lesson_plan_id: lessonPlanId, plan_hash: planHash, error: e.code || 'lp_unparseable', cause: e.message || null };
+    return { status: 'lp_unparseable', source, lesson_plan_id: lessonPlanId, plan_hash: planHash, error: e.code, cause: e.message || null };
   }
   const moves = extracted && Array.isArray(extracted.moves) ? extracted.moves : [];
   if (!moves.length) {
