@@ -455,6 +455,7 @@ describe('attach', () => {
 // client's own storage (bot.json in MATRIX_STORAGE_DIR, next to the sync
 // token), and answers the backlog after it -- once.
 describe('messages sent while the bot was down', () => {
+  const DAY_MS = 24 * 3600 * 1000;
   function sharedStorage() {
     const values = new Map();
     return {
@@ -470,7 +471,8 @@ describe('messages sent while the bot was down', () => {
   // `storage` with every other process in the test, like a restart would.
   async function startBot(storage) {
     jest.resetModules();
-    jest.doMock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn() }));
+    const logToFile = jest.fn();
+    jest.doMock('../../bot/shared/utils/logger', () => ({ logToFile }));
     jest.doMock('../../bot/shared/services/messaging/pending-options', () => pendingOptionsMock());
     jest.doMock('../../bot/shared/services/messaging/matrix-channel.service', () => ({ _cacheIncomingMedia: jest.fn() }));
     const handlers = {};
@@ -490,7 +492,7 @@ describe('messages sent while the bot was down', () => {
     const dispatch = jest.fn().mockResolvedValue(undefined);
     const fresh = require('../../bot/shared/services/messaging/inbound/matrix-events.adapter');
     await fresh.attach(dispatch);
-    return { handlers, dispatch, adapter: fresh };
+    return { handlers, dispatch, adapter: fresh, logToFile };
   }
 
   const text = (id, ts, body = 'hi') => ({
@@ -537,12 +539,41 @@ describe('messages sent while the bot was down', () => {
   it('persists the marker in the client storage, and ignores its own echoes for it', async () => {
     const storage = sharedStorage();
     const bot = await startBot(storage);
-    const ts = Date.now() + 10;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const ts = Date.now() - 5; // after the start, and not in the future
     await bot.handlers['room.message']('!dm:x', text('$m1', ts));
     await bot.handlers['room.message']('!dm:x', { ...text('$echo', ts + 5), sender: OWN_USER_ID });
     const marker = JSON.parse(storage.values.get(bot.adapter.INBOUND_MARKER_KEY));
     expect(marker.lastTs).toBe(ts);
     expect(marker.recentIds).toEqual(['$m1']);
+  });
+  // A clock jump on the homeserver, a federated or bridged event, or an
+  // appservice ?ts= can stamp an event weeks ahead. Trusted as the marker, that
+  // date became the cutoff after the next restart, and every real message
+  // until then was dropped without a log line.
+  it('one future-stamped event does not make the bot ignore every real message after a restart', async () => {
+    const storage = sharedStorage();
+    const first = await startBot(storage);
+    await first.handlers['room.message']('!dm:x', text('$future', Date.now() + 30 * DAY_MS));
+    expect(JSON.parse(storage.values.get(first.adapter.INBOUND_MARKER_KEY)).lastTs).toBeLessThanOrEqual(Date.now());
+
+    const second = await startBot(storage); // a restart / deploy
+    await second.handlers['room.message']('!dm:x', text('$real', Date.now() + 1000));
+    expect(second.dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('a marker already stored in the future is ignored, with one warning', async () => {
+    const storage = sharedStorage();
+    const KEY = 'org.rumi.inbound.marker';
+    storage.values.set(KEY, JSON.stringify({ lastTs: Date.now() + 30 * DAY_MS, recentIds: [] }));
+
+    const bot = await startBot(storage);
+    await bot.handlers['room.message']('!dm:x', text('$real-1', Date.now() + 1000));
+    await bot.handlers['room.message']('!dm:x', text('$real-2', Date.now() + 2000));
+    expect(bot.dispatch).toHaveBeenCalledTimes(2);
+    const warnings = bot.logToFile.mock.calls.filter(([msg]) => /in the future/.test(msg));
+    expect(warnings).toHaveLength(1);
+    expect(JSON.parse(storage.values.get(KEY)).lastTs).toBeLessThanOrEqual(Date.now());
   });
 });
 

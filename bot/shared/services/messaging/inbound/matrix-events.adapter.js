@@ -397,7 +397,12 @@ async function readInboundMarker(storage) {
 }
 
 async function recordProcessed(storage, marker, event) {
-  marker.lastTs = Math.max(marker.lastTs || 0, event.origin_server_ts || 0);
+  // origin_server_ts is the sender's homeserver's word, not ours: a clock jump,
+  // a federated or bridged event, or an appservice ?ts= can stamp an event
+  // weeks ahead. Trusted as is, that date became the cutoff after the next
+  // restart and every real message until then was dropped. Never record a time
+  // later than now.
+  marker.lastTs = Math.max(marker.lastTs || 0, Math.min(event.origin_server_ts || 0, Date.now()));
   marker.recentIds = [...marker.recentIds.filter((id) => id !== event.event_id), event.event_id].slice(-MARKER_RECENT_IDS);
   if (!storage || typeof storage.storeValue !== 'function') return;
   try {
@@ -1072,7 +1077,16 @@ async function attach(dispatch) {
   const storage = client.storageProvider;
   const saved = await readInboundMarker(storage);
   const marker = saved || { lastTs: 0, recentIds: [] };
-  const cutoffTs = saved ? saved.lastTs : startedAt;
+  // A marker in the future (written before its time was clamped, or a local
+  // clock that has since gone back) would drop every message until that date.
+  // The backlog can never start after this start, so cap it, and say so once.
+  if (saved && saved.lastTs > startedAt) {
+    logToFile('⚠️ Matrix inbound: the last-processed marker is in the future -- ignoring it, answering only new messages', {
+      channel: 'matrix', markerTs: new Date(saved.lastTs).toISOString(),
+    });
+    marker.lastTs = startedAt;
+  }
+  const cutoffTs = saved ? marker.lastTs : startedAt;
   if (saved && saved.lastTs < startedAt) {
     logToFile('Matrix inbound: answering messages sent since the last one processed', {
       channel: 'matrix', since: new Date(saved.lastTs).toISOString(),
