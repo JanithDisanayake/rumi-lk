@@ -2,12 +2,13 @@
 /**
  * Transcript quiz — the one LLM call shape both passes use.
  *
- * Model comes from TRANSCRIPT_QUIZ_MODEL (an OpenRouter-style id), read at
- * CALL time so a settings change takes effect without a restart. The default is
- * the winner of an offline eval of flash-tier models on real lesson
- * transcripts. Every call goes through llm-client.getClientForModel — the one
- * place a client is made — so the deployment's LLM_PROVIDER decides where it is
- * sent.
+ * The model comes from the registry job `quiz.transcript`
+ * (config/model-registry.js), read at CALL time so a settings change takes
+ * effect without a restart: a valid TRANSCRIPT_QUIZ_MODEL wins, a typo is
+ * ignored, and with no override the job's default is used — its OpenAI default
+ * under LLM_PROVIDER=openai, where OpenRouter ids do not exist. Every call goes
+ * through llm-client.getClientForModel — the one place a client is made — so
+ * the deployment's LLM_PROVIDER decides where it is sent.
  *
  * Two findings from that eval are encoded here rather than left to luck:
  *   - reasoning models (gpt-5*, gemini-3.5-flash, claude, deepseek) spend
@@ -19,14 +20,15 @@
  */
 
 const { getClientForModel } = require('../llm-client');
+const { resolveModelForJob } = require('../../config/model-registry');
 const { logToFile } = require('../../utils/logger');
 const { repairBackslashes } = require('../../utils/json-tex-backslashes');
 
-const DEFAULT_MODEL = 'google/gemini-2.5-flash';
 const REASONING_RE = /(^|\/)(gpt-5|o[1-9]|gemini-3\.5-flash$|gemini-3-flash|claude|deepseek)/i;
 
-function modelId() {
-  return (process.env.TRANSCRIPT_QUIZ_MODEL || '').trim() || DEFAULT_MODEL;
+/** The model a call of `job` runs on; an explicit valid `override` wins. */
+function modelId(job = 'quiz.transcript', override = null) {
+  return resolveModelForJob(job, { model: override || undefined }).model;
 }
 
 /**
@@ -60,11 +62,12 @@ async function completeJsonOnce({
 }) {
   // A pass that must NOT run on the author's model (the blind solve, which checks
   // the author's keys) names its own model and its own registry job; every other
-  // pass runs on TRANSCRIPT_QUIZ_MODEL exactly as before.
-  const requested = (modelOverride && String(modelOverride).trim()) || modelId();
+  // pass runs on the registry job quiz.transcript.
+  const jobName = job ? String(job) : 'quiz.transcript';
+  const requested = modelId(jobName, modelOverride ? String(modelOverride).trim() : null);
   // Naming the job arms the client with THIS job's registry entry (model-registry.js):
   // a pass that names its own job is billed and failed over as that job instead.
-  const { client, model } = getClientForModel(requested, { job: job ? String(job) : 'quiz.transcript' });
+  const { client, model } = getClientForModel(requested, { job: jobName });
   const reasoning = REASONING_RE.test(requested);
   const params = {
     model,
@@ -118,7 +121,7 @@ async function completeJsonOnce({
  * @param {string} args.prompt      the whole prompt (user turn)
  * @param {number} [args.maxTokens]
  * @param {string} [args.label]     for logs
- * @param {string} [args.model]     a model id for THIS call instead of TRANSCRIPT_QUIZ_MODEL
+ * @param {string} [args.model]     a model id for THIS call instead of the job's registry model
  * @param {string} [args.job]       the model-registry job the call is billed and failed over as
  *                                  (default `quiz.transcript`)
  * @returns {Promise<{json:object, model:string, costUsd:number|null, latencyMs:number, usage:object}>}
@@ -151,5 +154,5 @@ async function completeJson({
 }
 
 module.exports = {
-  completeJson, modelId, extractJson, DEFAULT_MODEL, REASONING_RE, MAX_ATTEMPTS,
+  completeJson, modelId, extractJson, REASONING_RE, MAX_ATTEMPTS,
 };
