@@ -15,6 +15,7 @@
  */
 
 const http = require('http');
+const { createRequire } = require('module');
 const path = require('path');
 
 const DASHBOARD = path.join(__dirname, '../../dashboard');
@@ -34,10 +35,12 @@ jest.mock('../../dashboard/config/supabase', () => {
   return { from: () => query() };
 });
 
-const express = require(path.join(DASHBOARD, 'node_modules/express'));
-const session = require(path.join(DASHBOARD, 'node_modules/express-session'));
-const cors = require(path.join(DASHBOARD, 'node_modules/cors'));
-const bcrypt = require(path.join(DASHBOARD, 'node_modules/bcryptjs'));
+// The dashboard's own dependencies, resolved the way dashboard/index.js resolves them.
+const dashboardRequire = createRequire(path.join(DASHBOARD, 'package.json'));
+const express = dashboardRequire('express');
+const session = dashboardRequire('express-session');
+const cors = dashboardRequire('cors');
+const bcrypt = dashboardRequire('bcryptjs');
 
 const {
   buildPortalCorsOrigins,
