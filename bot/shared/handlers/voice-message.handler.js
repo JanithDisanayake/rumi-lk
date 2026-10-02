@@ -715,9 +715,14 @@ async function handleVoiceMessage(message, from, user = null) {
     }
 
     // CLASSROOM COACHING DETECTION: Check audio duration before processing
+    let prefetchedAudio = null;
     try {
       const audioMetadata = await WhatsAppService.getMediaInfo(audioId);
-      const audioDuration = audioMetadata?.audio?.duration || audioMetadata?.voice?.duration || 0;
+      // Channels that report no duration (Matrix, Slack, Discord): the audio is measured, and kept for Step 1.
+      const { resolveAudioDurationSeconds } = require('../config/coaching-audio');
+      const measured = await resolveAudioDurationSeconds(audioId, audioMetadata);
+      prefetchedAudio = measured.buffer;
+      const audioDuration = measured.seconds;
       const audioDurationRounded = Math.round(audioDuration); // Round to integer for database
       const audioFormat = message.audio ? 'audio' : 'voice'; // 'audio' = document, 'voice' = voice message
 
@@ -784,7 +789,7 @@ async function handleVoiceMessage(message, from, user = null) {
 
     // Step 1: Download audio from WhatsApp (normal voice message flow)
     logToFile('Step 1: Downloading audio from WhatsApp...');
-    const audioBuffer = await WhatsAppService.downloadMedia(audioId);
+    const audioBuffer = prefetchedAudio || await WhatsAppService.downloadMedia(audioId);
     logToFile('Audio downloaded', { bufferSize: audioBuffer.length });
 
     // Step 2: Upload audio to R2 storage

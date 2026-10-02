@@ -39,3 +39,30 @@ describe('classroomAudioThresholdSeconds', () => {
     }
   });
 });
+
+describe('resolveAudioDurationSeconds — channels that report no duration', () => {
+  const { resolveAudioDurationSeconds } = require('../../../bot/shared/config/coaching-audio');
+
+  test('a duration in the channel metadata is used as is, with no download', async () => {
+    let downloaded = false;
+    const r = await resolveAudioDurationSeconds('m1', { audio: { duration: 1200.4 } }, { downloadMedia: async () => { downloaded = true; }, measure: async () => 0 });
+    expect(r).toEqual({ seconds: 1200.4, buffer: null });
+    expect(downloaded).toBe(false);
+  });
+
+  test('no duration (Matrix, Slack, Discord) → the audio is downloaded once and measured; the buffer is handed back for reuse', async () => {
+    const buf = Buffer.from('audio');
+    const r = await resolveAudioDurationSeconds('m1', { mime_type: 'audio/ogg' }, { downloadMedia: async () => buf, measure: async (b) => (b === buf ? 261.1 : 0) });
+    expect(r).toEqual({ seconds: 261.1, buffer: buf });
+  });
+
+  test('a measurement failure is 0 seconds (a voice note), never a throw', async () => {
+    const r = await resolveAudioDurationSeconds('m1', {}, { downloadMedia: async () => Buffer.from('x'), measure: async () => { throw new Error('ffprobe'); } });
+    expect(r.seconds).toBe(0);
+  });
+
+  test('the voice handler uses it', () => {
+    const src = fs.readFileSync(path.resolve(__dirname, '../../../bot/shared/handlers/voice-message.handler.js'), 'utf8');
+    expect(src).toContain('resolveAudioDurationSeconds(audioId, audioMetadata');
+  });
+});
