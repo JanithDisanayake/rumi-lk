@@ -111,6 +111,16 @@ const FEATURES = [
     keysAny: ['MISTRAL_API_KEY', 'CHANDRA_API_KEY'],
   },
   { id: 'observability_axiom', name: 'Observability (Axiom)', keys: ['AXIOM_DATASET', 'AXIOM_TOKEN'] },
+  // Lesson-plan fidelity is gated on a FLAG as well as a key: it ships off (LP_FIDELITY_ENABLED=true turns it on),
+  // and it needs Soniox because only the diarized transcript carries the [MM:SS] timings the grader quotes.
+  {
+    id: 'lp_fidelity',
+    name: 'Lesson-plan fidelity (did the lesson follow the plan?)',
+    keys: ['SONIOX_API_KEY'],
+    flag: 'LP_FIDELITY_ENABLED',
+    probe: 'diarization',
+    notes: 'Set LP_FIDELITY_ENABLED=true. Grades with OPENROUTER_API_KEY (LP_FIDELITY_MODEL, default google/gemini-3.8-flash).',
+  },
 ];
 
 // A var counts as "set" only if it holds a real value — not a template placeholder.
@@ -176,6 +186,8 @@ function isFeatureAvailable(feature, env = process.env, opts = {}) {
     present = keys.every((k) => isSet(env[k]));
   }
   if (!present) return false;
+  // A feature gated on a flag (e.g. LP_FIDELITY_ENABLED) is present only when the flag is exactly "true".
+  if (entry && entry.flag && String(env[entry.flag] || '').trim() !== 'true') return false;
 
   // Layer 2 — the operator's switch. It can only ever subtract: a feature with
   // no key stays off above, and a feature with no id (a bare keys array, the

@@ -19,7 +19,7 @@ const { logToFile } = require('../../utils/logger');
 const AudioService = require('../audio.service');
 const WhatsAppService = require('../whatsapp.service');
 const CoachingSessionService = require('./coaching-session.service');
-const { uploadClassroomAudio } = require('../../storage/r2');
+const { uploadClassroomAudio, isR2Configured } = require('../../storage/r2');
 const { TEMP_DIR, LISTENING_ANIMATION_MEDIA_ID } = require('../../utils/constants');
 const { getUserLanguage, setUserLanguage } = require('../../utils/language-cache');
 const { analyzeLanguage } = require('../../utils/language-detector');
@@ -78,8 +78,8 @@ class TranscriptionProcessorService {
         fileSize: audioData.length
       });
 
-      // Upload to R2 storage
-      const r2Url = await uploadClassroomAudio(
+      // Archive to R2 storage (when configured)
+      const r2Url = await TranscriptionProcessorService.archiveClassroomAudio(
         tempAudioPath,
         session.user_id,
         coachingSessionId,
@@ -246,6 +246,19 @@ class TranscriptionProcessorService {
       await this.handleTranscriptionError(coachingSessionId, error, payload.from);
       throw error;
     }
+  }
+
+  /**
+   * Archive the classroom audio to object storage. R2 is optional: without it the audio is not archived (audio_url
+   * stays null) and coaching carries on — transcription works from the local file.
+   * @returns {Promise<string|null>} the archived URL, or null when no object storage is configured
+   */
+  static async archiveClassroomAudio(audioPath, userId, coachingSessionId, metadata) {
+    if (!isR2Configured()) {
+      logToFile('Classroom audio not archived (object storage not configured)', { coachingSessionId });
+      return null;
+    }
+    return uploadClassroomAudio(audioPath, userId, coachingSessionId, metadata);
   }
 
   /**

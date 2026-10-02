@@ -475,6 +475,11 @@ async function handleWebhookPost(req, res) {
       const buttonId = message.interactive.button_reply.id;
       logToFile('📱 Interactive button clicked', { buttonId, from });
 
+      // Classroom-photo question (photo_yes_/photo_no_/photo_more_/photo_done_):
+      // "No"/"Done" move the coaching session on to the lesson-plan step.
+      const { handleCoachingFlowButton } = require('./shared/services/coaching/coaching-flow-buttons');
+      if (await handleCoachingFlowButton(buttonId, from, user)) return;
+
       // Coaching confirmation buttons
       if (buttonId.startsWith('coaching_confirm_')) {
         const sessionId = buttonId.replace('coaching_confirm_', '');
@@ -1200,6 +1205,12 @@ async function handleWebhookPost(req, res) {
         if (await VideoQuizService.handleAnswer(from, listId)) return;
       }
 
+      // The lesson-plan picker of the coaching flow (lp_select_/lp_upload_/lp_none_).
+      if (/^lp_(select|upload|none)_/.test(listId)) {
+        const { handleLpListSelection } = require('./shared/services/coaching/lp-coaching/lp-list-selection.handler');
+        if (await handleLpListSelection(listId, from)) return;
+      }
+
       // /quiz's class picker. QuizOrchestrator.initiateQuizRequest builds these
       // `quiz_class_<studentListId>` rows and continueWithClass() is documented
       // as "Called from whatsapp-bot.js list_reply handler" — but nothing ever
@@ -1564,7 +1575,8 @@ async function handleDocumentMessage(message, from, user) {
         });
 
         // Check if audio is 15+ minutes (900 seconds) = classroom audio
-        const CLASSROOM_AUDIO_THRESHOLD = 900; // 15 minutes in seconds
+        // COACHING_MIN_AUDIO_SECONDS, default 900 (15 minutes)
+        const CLASSROOM_AUDIO_THRESHOLD = require('./shared/config/coaching-audio').classroomAudioThresholdSeconds();
 
         if (audioDurationRounded >= CLASSROOM_AUDIO_THRESHOLD) {
           logToFile('🎓 CLASSROOM AUDIO DETECTED (15+ minutes)', {

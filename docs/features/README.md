@@ -9,6 +9,7 @@ Run **`npm run doctor`** at any time to see which features are live for your cur
 | 💬 [AI Chat](ai-chat.md) | Ask any teaching question, get a pedagogy-grounded answer | core — powered by `OPENROUTER_API_KEY`; voice questions need `SONIOX_API_KEY` |
 | 📝 [Registration](registration.md) | Friendly WhatsApp onboarding for teachers | _core — always on_ |
 | 🎯 [Classroom Coaching](coaching.md) | Recording → framework-scored report + reflective conversation | `SONIOX_API_KEY` |
+| 📏 [Lesson-plan Fidelity](lesson-plan-fidelity.md) | Did the lesson follow the plan? Move by move, with the moment as proof | `LP_FIDELITY_ENABLED=true` + `SONIOX_API_KEY` |
 | 📖 [Reading Assessment](reading-assessment.md) | Student reads aloud → fluency, accuracy, comprehension | `SONIOX_API_KEY` |
 | 📋 [Lesson Plans](lesson-plans.md) | Topic + grade → full lesson-plan PDF | `GAMMA_API_KEY` |
 | 📸 [Pic-to-LP](pic-to-lp.md) | Photo of a textbook page → illustrated 2-page LP | `KIE_API_KEY` |

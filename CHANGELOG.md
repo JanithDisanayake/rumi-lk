@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-10-02
+
+**Did the lesson follow the plan?** A teacher sends a lesson recording and links the plan they meant to teach — one
+Rumi made for them, a document, or pasted text. Rumi turns the plan into about a dozen observable moves, checks each
+one against the timestamped recording, and the coaching report shows, move by move, what happened, with the moment
+in the recording as proof. A different activity that serves the same purpose gets full credit; a recording Rumi
+cannot judge is "not assessed", never 0%. Off by default (`LP_FIDELITY_ENABLED=true`).
+
+### Added
+
+- **The fidelity engine** (`bot/shared/services/coaching/fidelity/`): a plan → moves extractor, a per-move grader
+  (`executed`, `substituted_equivalent`, `substituted_better`, `partial`, `not_done`, `not_adjudicable`, each asked
+  to quote a `[MM:SS]` line), and a deterministic scorer (credit ÷ moves counted, band ≥80 / 50-79 / <50, configurable).
+  Results are stored as `coaching_sessions.analysis_data.lp_fidelity`, framework-neutral, with an optional
+  `applyLpFidelity` framework hook (FICO maps it onto indicator 1.2). Default grader `google/gemini-3.8-flash` via
+  OpenRouter (`LP_FIDELITY_MODEL`, `LP_FIDELITY_EXTRACT_MODEL`, caps `LP_FIDELITY_MAX_TOKENS` / `LP_FIDELITY_EXTRACT_MAX_TOKENS`).
+  A credited verdict that quotes no moment is flagged (`unquoted_credit`) and shown as such in the report.
+- **The timestamp input contract:** a transcript without `[MM:SS]` timings is "not assessed" in code before any model
+  call. Every outcome has its own words for the teacher — measured, a different lesson, no timings, an unclear
+  recording, no plan, an unreadable plan, a failed check.
+- **In the report:** a "Did the lesson follow the plan?" block in the coaching PDF with a per-move table (planned
+  move · what the recording shows · verdict); one chat line after the report; the voice note speaks the band in
+  words, never a percentage.
+- **Plans Rumi made keep their text** (`content.plan_text` on `lesson_plans`), so a teacher can pick one from a short
+  list after sending a recording (`LP_FIDELITY_LIST_LIMIT`), and its move list is extracted once and kept on the plan
+  (`content.fidelity_moves`) so every lesson taught from it is graded against the same moves. Plans can also be
+  uploaded or pasted as a message.
+- **Diarization health:** every classroom transcription records whether it came back with speaker timings;
+  `rumi doctor` shows the 7-day rate under the feature and flags it below 80%.
+- `bot/scripts/fidelity-calibration.js` and a fictional fixture set (`tests/fixtures/fidelity/`) to re-check the
+  calibration after any prompt or model change; `docs/features/lesson-plan-fidelity.md`; an `LP_FIDELITY_*` block in
+  `.env.template`; a `Lesson-plan fidelity` row in `rumi doctor` and the console (switch: `RUMI_FEATURE_LP_FIDELITY`).
+- `COACHING_MIN_AUDIO_SECONDS` (default 900): how long audio must be to start classroom coaching.
+
+- **Operator console** (#97, on `main` since 2.2.0, recorded here) — `rumi start` opens a web page that shows what
+  is connected and switched on, each pipeline layer, feature switches that pause a feature without deleting its key
+  (`RUMI_FEATURE_<ID>`), and a live activity feed. `rumi console` serves it when the bot won't start. See
+  `docs/console.md`.
+- **Opt-in usage stats** (#95, on `main` since 2.2.0, recorded here) — `rumi setup` asks once. With
+  `RUMI_TELEMETRY=on` and both keys present, a deployment shares anonymous counts; with it off or blank, nothing is sent.
+
+### Fixed
+
+- The classroom-photo question's buttons (Yes / No / Add another / Done) had no handler, so a recording stalled after
+  transcription; "No" and "Done" now move to the lesson-plan step, which was never asked before.
+- Classroom coaching on Matrix, Slack and Discord: those channels report no audio duration, so a lesson recording was
+  always read as 0 seconds and never started coaching. The recording is now measured.
+- Classroom coaching without object storage: the transcription job failed building an S3 client; without R2 the
+  audio is no longer archived and the voice note is sent from memory.
+- The lesson-plan extraction worker stored only a 500-character excerpt of an uploaded plan; it now stores the full
+  text.
+
 ## [2.2.0] - 2026-09-04
 
 **The Morning Brief.** Every morning, your team wakes up to one thread that says how the programme is
