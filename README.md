@@ -218,6 +218,7 @@ key(s) that switch it on.
 | 🔐 **[Rumi Messenger (Matrix)](docs/channels/matrix.md)** | Run Rumi on your own end-to-end-encrypted messenger: same features, numbered menus instead of buttons, no per-message fee | `MATRIX_HOMESERVER_URL` + `MATRIX_ACCESS_TOKEN` |
 | 🌅 **[Morning Brief](docs/features/morning-brief.md)** | Every morning, one thread that tells your team how the programme is doing — registration, lesson plans, coaching, scores, reading, every school worst-first — on WhatsApp, Slack, Discord or Matrix, with a live page | `BRIEF_RECIPIENTS` + a read-only `BRIEF_DATABASE_URL` |
 | 🔭 **[Observe — the coach's assistant](docs/features/observe.md)** | For the people who visit classrooms: a lesson recording becomes pre-filled ratings the coach edits, a guide for the feedback conversation, coaching on how that conversation went (never a score, and no praise for a belittling one), and a warm report for the teacher — with a schedule, a pending list and a portal view | `OBSERVE_ENABLED=true` + a roster (`node bot/scripts/observe-roster.js`); recordings need `SONIOX_API_KEY` |
+| 📱 **[Your own Android app](docs/android-app.md)** | Rumi on an app you own, brand and host: the Rumi Messenger chat app (Rumi is one of the contacts), plus an optional [portal app](docs/features/android-portal-app.md) for the teacher dashboard — no per-message fee | a Matrix server ([Rumi Messenger](docs/channels/matrix.md)); the portal app needs `portal/.env.app` |
 
 > **No tiers, no toggles to hunt for.** Rumi gates features by **presence**: set a feature's API key and it
 > switches on; leave it blank and it stays off cleanly — the bot never crashes over a missing key. Run
@@ -246,6 +247,20 @@ Which languages appear is driven per-region by config (`region_features`), so a 
 serves.
 
 ---
+
+## 📱 Your own Android app
+
+WhatsApp bills every business message, and those prices keep rising. Rumi doesn't need it: give teachers
+**Rumi Messenger**, a branded Android chat app (a fork of Element X) that signs in to *your* Matrix server,
+where Rumi is one of their contacts — the same lesson plans, quizzes and coaching, with no per-message fee
+and every message end-to-end encrypted. Optionally, wrap the teacher **portal** in its own app too.
+
+- **[Your own Android app](docs/android-app.md)** — what the app is, the white-label checklist (every value
+  you change), debug and signed builds, publishing an APK on GitHub Releases or Google Play, keystore custody,
+  and the AGPL-3.0 obligations in plain words.
+- **[Portal app](docs/features/android-portal-app.md)** — `portal/` as a Capacitor Android app with
+  over-the-air updates, App Links and a back key that behaves; build guide in
+  [`portal/ANDROID.md`](portal/ANDROID.md).
 
 ## 📚 The Taleemabad Content Library
 

@@ -130,6 +130,13 @@ const wordCloudRoutes = require('./routes/wordcloud');
 
 // Teacher Portal Routes
 const portalRoutes = require('./routes/portal.routes');
+const { ASSET_LINKS_PATH, assetLinksHandler } = require('./lib/asset-links');
+const {
+  buildPortalCorsOrigins,
+  isPortalAppEnabled,
+  keepSessionsLaxOutsidePortalApi,
+  sessionCookieOptions,
+} = require('./lib/portal-app-origins');
 
 // BYOF Routes (Build Your Own Feature) - Conversational AI for bug/feature planning
 const byofRoutes = require('./routes/byof.routes');
@@ -145,6 +152,10 @@ app.locals.supabase = supabase;
 
 // Trust Railway proxy (required for rate limiting and sessions)
 app.set('trust proxy', 1);
+
+// Android App Links verification file for the portal app (dashboard/lib/asset-links.js).
+// Before any static/SPA handler, so the catch-all can never answer it with HTML.
+app.get(ASSET_LINKS_PATH, assetLinksHandler);
 
 // Admin credentials (hashed password)
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
@@ -236,21 +247,19 @@ if (!sessionStore) {
 }
 
 // SECURITY: Session configuration with enhanced security
-// UPDATED: sameSite changed to 'lax' since frontend and backend are now on same domain
+// The cookie is always sameSite 'lax': it carries admin sessions too, and
+// there is no CSRF token. The portal app's sessions are widened one by one —
+// see dashboard/lib/portal-app-origins.js.
 app.use(session({
   store: sessionStore, // Redis store if available, otherwise MemoryStore
   secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
   name: process.env.SESSION_COOKIE_NAME || 'app.sid', // Custom name (hide that it's express-session)
   resave: false,
   saveUninitialized: false,
-  cookie: {
-    secure: true, // HTTPS only
-    httpOnly: true, // Prevents client-side JS from accessing cookie
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    sameSite: 'lax', // CHANGED: 'lax' works for same-domain setup (was 'none' for cross-origin)
-    // NOTE: Now serving frontend from same domain, no CORS needed for cookies
-  }
+  cookie: sessionCookieOptions(),
 }));
+// A portal-app session's sameSite 'none' never applies outside /api/portal.
+app.use(keepSessionsLaxOutsidePortalApi);
 
 // Rate limiting for login attempts
 const loginLimiter = rateLimit({
@@ -316,7 +325,6 @@ const PORTAL_URL = (process.env.PORTAL_URL || '').replace(/\/$/, '');
 const _websiteOrigins = WEBSITE_URL
   ? [WEBSITE_URL, WEBSITE_URL.replace('https://www.', 'https://')]
   : [];
-const _portalOrigins = PORTAL_URL ? [PORTAL_URL] : [];
 
 const trackingCorsOptions = {
   origin: [
@@ -332,14 +340,9 @@ const trackingCorsOptions = {
 
 // CORS configuration for teacher portal endpoints
 const portalCorsOptions = {
-  origin: [
-    ..._portalOrigins,
-    ..._websiteOrigins, // Allow main website too (for navigation link)
-    'http://localhost:5173', // Vite dev server default port
-    'http://localhost:3000',
-    'http://127.0.0.1:5173',
-    'http://127.0.0.1:3000'
-  ],
+  // Portal + website + local dev servers, + the portal app's Capacitor origins
+  // when PORTAL_APP_ENABLED (dashboard/lib/portal-app-origins.js).
+  origin: buildPortalCorsOrigins({ portalUrl: PORTAL_URL, websiteOrigins: _websiteOrigins, appEnabled: isPortalAppEnabled(process.env) }),
   methods: ['GET', 'POST'],
   allowedHeaders: ['Content-Type'],
   credentials: true, // Required for session cookies

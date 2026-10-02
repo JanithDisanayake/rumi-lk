@@ -45,6 +45,10 @@ jobs:
         working-directory: bot
         run: npm ci --no-audit --no-fund
 
+      - name: Install dashboard/ deps (the portal session test boots its real middleware)
+        working-directory: dashboard
+        run: npm ci --no-audit --no-fund
+
       - name: Run full test suite
         run: node tests/run.js
 

@@ -29,6 +29,12 @@ jobs:
       - name: Install root dependencies
         run: npm ci
 
+      - name: Install dashboard dependencies
+        # tests/portal/portal-app-session-runtime.test.js boots the dashboard's
+        # real express-session, cors and portal router.
+        working-directory: dashboard
+        run: npm ci
+
       - name: Run unit tests
         # --maxWorkers is forced well above the runner's core count: this repo's
         # test suite has dozens of files that mock bot/shared/config/supabase

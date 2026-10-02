@@ -507,6 +507,20 @@ MMS_API_KEY=your-secret-key-here
 | Schema too large to paste | Split `00_complete-schema.sql` at section headers and run each section separately |
 | `validate:env` fails | Check that all REQUIRED variables in `.env.template` are filled in |
 
+## Optional: your own Android app
+
+Teachers can reach Rumi on an app you own instead of WhatsApp. Two separate apps, both optional:
+
+1. **Rumi Messenger** (chat with Rumi and colleagues): first run Rumi on a Matrix server
+   ([docs/channels/matrix.md](docs/channels/matrix.md)), then brand, build and publish the Android app —
+   [docs/android-app.md](docs/android-app.md).
+2. **Portal app** (the teacher dashboard): on the dashboard service set `PORTAL_APP_ENABLED=true` (and
+   `ANDROID_APP_PACKAGE` + `ANDROID_APP_SHA256_FINGERPRINTS` for tapped links), then
+   `cd portal && cp .env.app.example .env.app && npm run android:debug` — full guide in
+   [portal/ANDROID.md](portal/ANDROID.md). Needs JDK 21 and the Android SDK.
+
+---
+
 ## Pulling Updates
 
 ```bash

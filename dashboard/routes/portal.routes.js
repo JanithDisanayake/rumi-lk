@@ -33,6 +33,7 @@ const router = express.Router();
 const supabase = require('../config/supabase');
 const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { generatePresignedUrl, generatePresignedUrls, isValidR2Url } = require('../services/r2.service');
+const { widenPortalAppSession } = require('../lib/portal-app-origins');
 const { createCoachRouter } = require('./portal-coach.routes');
 const { canUseCoachView } = require('../services/coach-observations.service');
 
@@ -398,6 +399,9 @@ router.post('/setup', publicAuthLimiter, async (req, res) => {
         });
       }
 
+      // The bundled portal app needs a SameSite=none cookie (lib/portal-app-origins.js)
+      widenPortalAppSession(req);
+
       // Set new session data
       req.session.portalUserId = user.id;
       req.session.isPortalAuth = true;
@@ -487,6 +491,9 @@ router.post('/login', publicAuthLimiter, async (req, res) => {
           error: 'Login failed. Please try again.'
         });
       }
+
+      // The bundled portal app needs a SameSite=none cookie (lib/portal-app-origins.js)
+      widenPortalAppSession(req);
 
       // Set new session data
       req.session.portalUserId = user.id;
