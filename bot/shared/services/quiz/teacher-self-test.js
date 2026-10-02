@@ -49,18 +49,22 @@ function excludeSelfTests(sessions, teacherUserId) {
  * Retire the quiz-joined `students` rows on this handset (is_active false).
  *
  * Scoped to `list_id IS NULL`: only rows a quiz join created are touched, never
- * a child on a teacher's attendance roster. Never throws — returns how many rows
- * it retired, 0 on any failure.
+ * a child on a teacher's attendance roster. And scoped to rows THIS teacher's
+ * own quiz filed (`enrolled_by_user_id`): a teacher is often a parent on the
+ * same number, and their own children — joined to another teacher's quiz, or
+ * with no recorded teacher — are not the teacher and must stay. No teacher, no
+ * retire. Never throws — returns how many rows it retired, 0 on any failure.
  */
-async function retireQuizStudentRows(phone, reason) {
+async function retireQuizStudentRows(phone, reason, teacherUserId = null) {
   const key = StudentIdentity.normalisePhone(phone);
-  if (!key) return 0;
+  if (!key || !teacherUserId) return 0;
   try {
     const { data, error } = await supabase
       .from('students')
       .update({ is_active: false, updated_at: new Date().toISOString() })
       .eq('phone', key)
       .is('list_id', null)
+      .eq('enrolled_by_user_id', teacherUserId)
       .eq('is_active', true)
       .select('id');
     if (error) {
@@ -92,10 +96,11 @@ async function resolveSelfTest({ phone, teacherUserId }) {
     // before this self-test path existed carries stray quiz-joined `students`
     // rows on this same handset. Now that we know this phone IS the teacher,
     // retire them so the data stops lying about who owns the phone.
-    // retireQuizStudentRows never throws and is scoped to list_id IS NULL — an
-    // attendance-roster child is untouched. A retire failure must never stop
+    // retireQuizStudentRows never throws and is scoped to list_id IS NULL and
+    // to rows this teacher's quiz filed — an attendance-roster child and the
+    // teacher's own children are untouched. A retire failure must never stop
     // the self-test from being recognised, so nothing here can affect `return`.
-    const retired = await retireQuizStudentRows(phone, 'self_test');
+    const retired = await retireQuizStudentRows(phone, 'self_test', teacher.id);
     if (retired > 0) {
       logEvent('video_quiz.self_test_rows_retired', { userId: teacher.id, retired });
     }
