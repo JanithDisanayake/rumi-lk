@@ -185,6 +185,10 @@ describe('Security Scan', () => {
             // only) so bootstrap-db.js / migrate.js work against a plain
             // local Postgres — setup-time, not a runtime SQL surface.
             if (file.includes('infrastructure/local/supabase-shim.sql') || file.includes('infrastructure/local/up.sh')) continue;
+            // Allow the migration that revokes the helper from PUBLIC, anon
+            // and authenticated on existing databases: it narrows exec_sql,
+            // it does not create or call it.
+            if (file.includes('migrations/V1.0.1__exec_sql_service_role_only.sql')) continue;
             throw new Error(`Active exec_sql reference found at ${file}:${i + 1}: ${line.trim()}`);
           }
         }

@@ -124,7 +124,7 @@ cd bot && npm install && cd ..
 2. **Create a new project** — choose a region closest to your users
 3. **Run the schema.** Two ways:
 
-   **Option A — one command (recommended):** First create the tiny `exec_sql` helper that `npm run bootstrap:db` uses to apply SQL. A brand-new Supabase project does not have it, so paste this **once** in the SQL Editor (ALTER OWNER gives it extension-creation rights; search_path includes `extensions` because uuid-ossp lives there; GRANT and NOTIFY make PostgREST see it):
+   **Option A — one command (recommended):** First create the tiny `exec_sql` helper that `npm run bootstrap:db` uses to apply SQL. A brand-new Supabase project does not have it, so paste this **once** in the SQL Editor (ALTER OWNER gives it extension-creation rights; search_path includes `extensions` because uuid-ossp lives there; REVOKE keeps anyone holding your public anon key from calling it, since it runs any SQL as the database owner; GRANT and NOTIFY make PostgREST see it):
    ```sql
    CREATE OR REPLACE FUNCTION public.exec_sql(query text)
    RETURNS void
@@ -134,6 +134,7 @@ cd bot && npm install && cd ..
    AS $$ BEGIN EXECUTE query; END; $$;
 
    ALTER FUNCTION public.exec_sql(text) OWNER TO postgres;
+   REVOKE EXECUTE ON FUNCTION public.exec_sql(text) FROM PUBLIC, anon, authenticated;
    GRANT EXECUTE ON FUNCTION public.exec_sql(text) TO service_role;
    NOTIFY pgrst, 'reload schema';
    ```

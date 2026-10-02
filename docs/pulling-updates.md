@@ -48,12 +48,26 @@ The migration runner:
 - Uses checksums to detect modified migrations
 - All statements use `IF NOT EXISTS` / `IF EXISTS` for safety
 
-**Prerequisite**: Your Supabase database needs the `exec_sql` function:
+**Prerequisite**: Your Supabase database needs the `exec_sql` function. If you created it from an
+older copy of these docs, recreate it with this (the `REVOKE` matters: without it, anyone with your
+project URL and anon key can run SQL as the database owner):
 
 ```sql
-CREATE OR REPLACE FUNCTION exec_sql(query TEXT)
-RETURNS VOID AS $$ BEGIN EXECUTE query; END; $$ LANGUAGE plpgsql;
+CREATE OR REPLACE FUNCTION public.exec_sql(query text)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$ BEGIN EXECUTE query; END; $$;
+
+ALTER FUNCTION public.exec_sql(text) OWNER TO postgres;
+REVOKE EXECUTE ON FUNCTION public.exec_sql(text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.exec_sql(text) TO service_role;
+NOTIFY pgrst, 'reload schema';
 ```
+
+The migration `V1.0.1__exec_sql_service_role_only.sql` applies the same `REVOKE` to an existing helper,
+and stops with an error if it could not.
 
 ### 3. Install New Dependencies
 
