@@ -27,7 +27,7 @@ const CoachingSessionService = require('./coaching-session.service');
 const CoachingHelpersService = require('./coaching-helpers.service');
 const PDFReportService = require('../pdf-report.service');
 const FeatureLinkerService = require('../feature-linker.service');
-const { uploadVoiceDebrief, uploadReportPDF } = require('../../storage/r2');
+const { uploadVoiceDebrief, uploadReportPDF, isR2Configured } = require('../../storage/r2');
 const { TEMP_DIR } = require('../../utils/constants');
 const { getCoachingMessage } = require('../../config/coaching-messages');
 
@@ -1306,6 +1306,14 @@ class ReportGeneratorService {
 
       // Generate audio from script
       const voiceBuffer = await AudioService.generateSpeechForLanguage(voiceScript, outputLanguage);
+
+      // Without object storage (R2 is optional) the voice note is sent from memory instead of by URL.
+      if (!isR2Configured()) {
+        await WhatsAppService.sendMessage(phoneNumber, getCoachingMessage('voiceSummaryReady', _languageFromSession(session)));
+        await WhatsAppService.sendAudio(phoneNumber, voiceBuffer, TEMP_DIR);
+        logToFile('Voice debrief sent without object storage', { coachingSessionId });
+        return;
+      }
 
       // Upload voice debrief to R2
       const voiceUrl = await uploadVoiceDebrief(

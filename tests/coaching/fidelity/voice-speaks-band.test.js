@@ -9,7 +9,7 @@
  */
 jest.mock('../../../bot/shared/config/supabase', () => ({ from: () => ({ update: () => ({ eq: async () => ({}) }) }) }));
 jest.mock('../../../bot/shared/utils/logger', () => ({ logToFile: jest.fn(), logWarn: jest.fn() }));
-jest.mock('../../../bot/shared/storage/r2', () => ({ uploadVoiceDebrief: jest.fn(async () => 'https://r2.example.com/v.mp3'), uploadReportPDF: jest.fn() }));
+jest.mock('../../../bot/shared/storage/r2', () => ({ isR2Configured: () => true, uploadVoiceDebrief: jest.fn(async () => 'https://r2.example.com/v.mp3'), uploadReportPDF: jest.fn() }));
 jest.mock('../../../bot/shared/services/audio.service', () => ({ generateSpeechForLanguage: jest.fn(async () => Buffer.alloc(32000)) }));
 jest.mock('../../../bot/shared/services/whatsapp.service', () => ({ sendMessage: jest.fn(async () => true), sendAudioFromUrl: jest.fn(async () => true) }));
 jest.mock('../../../bot/shared/services/coaching/coaching-helpers.service', () => ({ determineOutputLanguage: jest.fn(async () => 'en') }));
