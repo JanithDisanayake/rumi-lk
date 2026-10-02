@@ -4265,7 +4265,6 @@ CREATE INDEX IF NOT EXISTS idx_teacher_nudges_user_recent
 CREATE INDEX IF NOT EXISTS idx_users_last_message_at
     ON users (last_message_at);
 
-=======
 -- ============================================================================
 -- Observe: the coach's assistant (v2.8.0)
 -- Leader observations ride on coaching_sessions; the coach's roster is derived
