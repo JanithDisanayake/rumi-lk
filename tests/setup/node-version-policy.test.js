@@ -26,6 +26,10 @@ describe('Node version policy', () => {
     for (const major of pins) expect(major).toBeGreaterThanOrEqual(22);
   });
 
+  it.each(['ci.yml', 'deploy.yml', 'fresh-clone-smoke.yml'])('%s has no stale Node 20 label or comment', (file) => {
+    expect(read(`.github/workflows/${file}`)).not.toMatch(/Node(\.js)? 20\b/);
+  });
+
   it.each(['README.md', 'SETUP.md', 'AGENTS.md', 'docs/local-stack.md'])('%s states the same minimum', (rel) => {
     expect(read(rel)).not.toMatch(/Node(\.js)? 20\+/);
   });

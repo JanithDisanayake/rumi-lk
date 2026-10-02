@@ -12,9 +12,9 @@ jobs:
 
     strategy:
       matrix:
-        # Node 20 is the floor: the baileys sandbox driver refuses to install
-        # on 18 ("requires Node.js 20+ to run reliably"), and 18 has been
-        # end-of-life since April 2025.
+        # Node 22 is the floor: the previous LTS reached end-of-life in April 2026 and
+        # matrix-bot-sdk requires 22. 24 is tested too because Matrix
+        # end-to-end encryption needs it.
         node-version: [22, 24]
 
     steps:
