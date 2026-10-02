@@ -7,7 +7,8 @@
  * `table!inner(cols)` joins on <table>_id or user_id, `alias:col->path` JSON
  * projections), eq/neq/in/is/not/gte/
  * lte/lt/gt/ilike/or-free filters (JSON paths like `col->a->>b` too), order, limit, single/maybeSingle, insert,
- * update, upsert, delete, and `.select()` after a write.
+ * update, upsert, delete, `.select()` after a write, and `select(cols, { count: 'exact', head })`
+ * (the matching-row count, before any limit; `head` returns no rows).
  *
  * Usage:
  *   const mockDb = createFakeSupabase({ users: [...], coaching_sessions: [...] });
@@ -114,7 +115,11 @@ function createFakeSupabase(seed = {}) {
             return (a[col] < b[col] ? -1 : 1) * (asc ? 1 : -1);
           });
         }
+        state.matched = result.length;
         if (state.limit !== null) result = result.slice(state.offset || 0, (state.offset || 0) + state.limit);
+      }
+      if (state.op === 'select' && state.count) {
+        return { data: state.head ? null : result.map(project), count: state.matched, error: null };
       }
       const data = (state.op === 'select' || state.returning) ? result.map(project) : null;
       if (state.single) {
@@ -127,8 +132,9 @@ function createFakeSupabase(seed = {}) {
     }
 
     const api = {
-      select(cols = '*') {
-        if (state.op === 'select') state.cols = cols; else { state.returning = true; state.cols = cols; }
+      select(cols = '*', opts = {}) {
+        if (state.op === 'select') { state.cols = cols; state.count = opts.count || null; state.head = !!opts.head; }
+        else { state.returning = true; state.cols = cols; }
         return api;
       },
       insert(p) { state.op = 'insert'; state.payload = p; return api; },

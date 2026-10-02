@@ -1280,6 +1280,7 @@ GUIDELINES:
                 .select('id', { count: 'exact', head: true })
                 .eq('user_id', userId)
                 .eq('status', 'completed')
+                .is('observation_type', null) // never a coach's observation of this teacher: it is not their own session
                 .neq('id', currentSessionId);
 
               if (countError) {
