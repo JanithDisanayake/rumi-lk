@@ -194,6 +194,60 @@ describe('many loaded books', () => {
     }
   });
 
+  // A K-12 set: 12 grades × 8 subjects, too many for one numbered message (Meta's text limit is 4096 characters).
+  function k12() {
+    const subjects = ['science', 'mathematics', 'english', 'social_studies', 'computer_science', 'general_knowledge', 'art', 'urdu'];
+    const textbooks = [];
+    const toc = [];
+    for (let g = 1; g <= 12; g += 1) {
+      for (const sub of subjects) {
+        const id = `tb-${g}-${sub}`;
+        textbooks.push({ id, grade: g, subject: sub, curriculum: 'national_2026_edition' });
+        toc.push({ id: `t-${id}`, textbook_id: id, chapter_number: 1, chapter_title: `${sub} ${g} chapter one`, page_start: 1, page_end: 1 });
+      }
+    }
+    return seed({ lesson_plans: [], textbooks, textbook_toc: toc, textbook_pages: [] });
+  }
+
+  it('a K-12 set too long for one message asks the subject first, then lists that subject\'s books', async () => {
+    load(k12());
+    await start();
+    expect(rowsOf(lastList()).find((r) => r.id === 'tp_src_books')).toMatchObject({ title: 'Textbooks (96)' });
+    await pick('tp_src_books');
+    const subjects = lastText();
+    expect(subjects.length).toBeLessThanOrEqual(4096);
+    expect(subjects).toMatch(/which subject/i);
+    const m = subjects.match(/(\d+)\. Mathematics \(12 books\)/);
+    expect(m).not.toBeNull();
+    await say(m[1]);
+    const books = lastText();
+    expect(books.length).toBeLessThanOrEqual(4096);
+    expect(books).toMatch(/12\. Grade 12 · Mathematics/);
+    expect(books).not.toMatch(/Science/);
+    await say('12');
+    expect(lastList().header).toMatch(/Grade 12 · Mathematics/);
+  });
+
+  it('many editions of one subject are narrowed by grade instead', async () => {
+    const textbooks = [];
+    const toc = [];
+    for (let g = 1; g <= 12; g += 1) {
+      for (let e = 1; e <= 8; e += 1) {
+        const id = `sci-${g}-${e}`;
+        textbooks.push({ id, grade: g, subject: 'science', curriculum: `edition-${e}-of-the-national-science-series` });
+        toc.push({ id: `t-${id}`, textbook_id: id, chapter_number: 1, chapter_title: 'One', page_start: 1, page_end: 1 });
+      }
+    }
+    load(seed({ lesson_plans: [], textbooks, textbook_toc: toc, textbook_pages: [] }));
+    await start('science');
+    await pick('tp_src_books');
+    expect(lastText()).toMatch(/which grade/i);
+    expect(lastText()).toMatch(/12\. Grade 12 \(8 books\)/);
+    await say('12');
+    expect(lastText().length).toBeLessThanOrEqual(4096);
+    expect(lastText()).toMatch(/8\. Grade 12 · Science — 1 chapter · edition-8/);
+  });
+
   it('a grade alone narrows every subject to that grade', async () => {
     load(k8());
     await start('7');

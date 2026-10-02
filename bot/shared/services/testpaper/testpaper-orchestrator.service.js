@@ -44,6 +44,11 @@ const DESC_MAX = 72;
  * out of reach; a subject and grade in the command narrow it.
  */
 const MAX_BOOK_ROWS = 6;
+/**
+ * The longest numbered book list sent as one message. Meta's text body limit
+ * is 4096 characters; past this, the list is narrowed by subject, then grade.
+ */
+const MAX_LIST_CHARS = 3500;
 /** Pasted text shorter than this is a message, not a chapter. */
 const MIN_PASTE_CHARS = 300;
 /** Languages offered after the teacher's own, in this order. */
@@ -210,16 +215,46 @@ async function _offerChapters(user, from, lang, state, bookIndex) {
   return true;
 }
 
-/** Every book as a numbered message, answered in text (see handleText). */
+function _bookExample(books) {
+  const last = books[books.length - 1];
+  return [String(last?.subject || 'science').replace(/_/g, ' '), last?.grade].filter((x) => x != null).join(' ');
+}
+
+/**
+ * Every book as a numbered message, answered in text (see handleText). A list
+ * too long for one message is narrowed first: by subject, or by grade when
+ * every book is the same subject. Each pick re-enters here with fewer books.
+ */
 async function _offerBooks(user, from, lang, state) {
   const books = state.books || [];
-  await Session.save(user.id, { ...state, step: 'pick_book' });
-  const list = books
-    .map((b, i) => `${i + 1}. ${_bookLabel(b)} — ${t('sourceTextbookHint', lang, { chapters: b.chapterCount, curriculum: b.curriculum })}`)
-    .join('\n');
-  const last = books[books.length - 1];
-  const example = [String(last?.subject || 'science').replace(/_/g, ' '), last?.grade].filter((x) => x != null).join(' ');
-  await WhatsAppService.sendMessage(from, t('pickBookText', lang, { list, example }));
+  const example = _bookExample(books);
+  const lines = books
+    .map((b, i) => `${i + 1}. ${_bookLabel(b)} — ${t('sourceTextbookHint', lang, { chapters: b.chapterCount, curriculum: b.curriculum })}`);
+  const by = ['subject', 'grade'].find((k) => new Set(books.map((b) => String(b[k]))).size > 1);
+
+  if (lines.join('\n').length <= MAX_LIST_CHARS || !by) {
+    // Every book of one subject and grade (many editions) and still too long:
+    // send what fits rather than a message the channel would refuse.
+    while (lines.length > 1 && lines.join('\n').length > MAX_LIST_CHARS) lines.pop();
+    await Session.save(user.id, { ...state, books: books.slice(0, lines.length), step: 'pick_book' });
+    await WhatsAppService.sendMessage(from, t('pickBookText', lang, { list: lines.join('\n'), example }));
+    return true;
+  }
+
+  const groups = [];
+  for (const b of books) {
+    const key = String(b[by]);
+    let g = groups.find((x) => x.key === key);
+    if (!g) {
+      g = { key, label: by === 'grade' ? `Grade ${b.grade}` : subjectName(b.subject), count: 0 };
+      groups.push(g);
+    }
+    g.count += 1;
+  }
+  if (by === 'subject') groups.sort((x, y) => x.label.localeCompare(y.label));
+  await Session.save(user.id, { ...state, step: 'pick_book_group', bookGroupBy: by, bookGroups: groups });
+  const list = groups.map((g, i) => `${i + 1}. ${t('bookGroupRow', lang, g)}`).join('\n');
+  await WhatsAppService.sendMessage(from, t('pickBookGroupText', lang, { list, by, example }));
   return true;
 }
 
@@ -521,6 +556,17 @@ async function handleText({ user, from, text, language }) {
   }
 
   switch (state.step) {
+    case 'pick_book_group': {
+      const picks = parsePicks(trimmed, state.bookGroups.length);
+      if (!picks || picks.length !== 1) {
+        if (trimmed.length > 40) return false; // talking, not answering
+        await WhatsAppService.sendMessage(from, t('pickAgain', lang));
+        return true;
+      }
+      const group = state.bookGroups[picks[0] - 1];
+      const books = state.books.filter((b) => String(b[state.bookGroupBy]) === group.key);
+      return _offerBooks(user, from, lang, { ...state, books, bookGroups: undefined, bookGroupBy: undefined });
+    }
     case 'pick_book': {
       const picks = parsePicks(trimmed, state.books.length);
       if (!picks || picks.length !== 1) {
