@@ -30,4 +30,17 @@ describe('the version has one source', () => {
     expect(rumiVersion()).toBe(botPkg.version);
     expect(botPkg.version).toBe(rootPkg.version);
   });
+
+  // The dashboard deploys with dashboard/ as its root (dashboard/railway.toml),
+  // where ../package.json is absent, so /health falls back to its own
+  // package.json. That copy has to move in lockstep or the dashboard reports
+  // an old release.
+  it('dashboard/package.json (and its lockfile) carry the same version', () => {
+    const rootPkg = JSON.parse(read('package.json'));
+    const dashPkg = JSON.parse(read('dashboard/package.json'));
+    const dashLock = JSON.parse(read('dashboard/package-lock.json'));
+    expect(dashPkg.version).toBe(rootPkg.version);
+    expect(dashLock.version).toBe(rootPkg.version);
+    expect(dashLock.packages[''].version).toBe(rootPkg.version);
+  });
 });

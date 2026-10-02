@@ -13,7 +13,7 @@ const ROOT = path.join(__dirname, '../..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 describe('Node version policy', () => {
-  it.each(['package.json', 'bot/package.json'])('%s declares engines.node >=22', (rel) => {
+  it.each(['package.json', 'bot/package.json', 'dashboard/package.json'])('%s declares engines.node >=22', (rel) => {
     expect(JSON.parse(read(rel)).engines.node).toBe('>=22.0.0');
   });
 
