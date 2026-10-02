@@ -144,7 +144,13 @@ function createFakeSupabase(seed = {}) {
       range(a, b) { state.limit = b - a + 1; return api; },
       single() { state.single = 'one'; return api; },
       maybeSingle() { state.single = 'maybe'; return api; },
-      then(resolve, reject) { try { resolve(run()); } catch (e) { if (reject) reject(e); else throw e; } },
+      // Runs at call time (as before) but returns a real promise, so a chained
+      // `.then(cb)` resolves to cb's value like supabase-js does.
+      then(resolve, reject) {
+        let p;
+        try { p = Promise.resolve(run()); } catch (e) { p = Promise.reject(e); }
+        return p.then(resolve, reject);
+      },
     };
     return api;
   }
