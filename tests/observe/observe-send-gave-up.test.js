@@ -10,6 +10,7 @@ const os = require('os');
 const path = require('path');
 const fs = require('fs');
 const { createFakeSupabase } = require('./_helpers/fake-supabase');
+const { mockBotDependency } = require('../_helpers/mock-bot-dependency');
 
 const mockTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'obs-gaveup-'));
 const mockDb = createFakeSupabase({
@@ -35,6 +36,9 @@ jest.mock('../../bot/shared/services/coaching/coaching-job-queue.service', () =>
 jest.mock('../../bot/shared/services/observe/observe-state.service', () => ({
   getState: jest.fn(async () => null), setState: jest.fn(async () => true), clearState: jest.fn(async () => true),
 }));
+
+// bot-only package (the debrief service reaches gpt5-mini): the root CI job runs before bot/node_modules installs
+mockBotDependency('jsonrepair', () => ({ jsonrepair: (s) => s }));
 
 const WA = require('../../bot/shared/services/whatsapp.service');
 const Send = require('../../bot/shared/services/observe/observe-send.service');
