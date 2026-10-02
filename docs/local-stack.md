@@ -126,12 +126,16 @@ What `up.sh` sets up inside Postgres:
 - **A Supabase compatibility shim** (`infrastructure/local/supabase-shim.sql`): the `anon`,
   `authenticated` and `service_role` roles, the `authenticator` role PostgREST logs in as, the `auth`
   and `extensions` schemas with `auth.role()` and `auth.uid()`, and the `exec_sql` helper that
-  `npm run bootstrap:db` and `infrastructure/scripts/migrate.js` use.
+  `npm run bootstrap:db` and `infrastructure/scripts/migrate.js` use (callable with the service key
+  only). Like hosted Supabase, `anon` and `authenticated` get full privileges on every table in
+  `public`, so Row Level Security is the only thing between those keys and the data, exactly as in
+  production.
 - **The schema**: `infrastructure/supabase/00_complete-schema.sql`, `01_rls-policies.sql` and
   `02_seed-data.sql`, applied in one transaction. If any statement fails, nothing is half-applied.
 - **The key**: `SUPABASE_SERVICE_ROLE_KEY` is a JWT signed with a random secret kept in
   `.local-stack/jwt-secret`. `infrastructure/local/mint-jwt.js` makes it with Node's own crypto. To
-  make an `anon` key for testing Row Level Security:
+  make an `anon` key for testing Row Level Security (it reads what the anon key of a hosted project
+  would read, including every table that has RLS off):
   `node infrastructure/local/mint-jwt.js --secret-file .local-stack/jwt-secret --role anon`
 
 To open a database shell, use the `psql` command `up.sh` prints at the end.

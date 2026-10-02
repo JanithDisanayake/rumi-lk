@@ -154,6 +154,10 @@ psql_q >/dev/null <<'SQL'
 GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
 GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO service_role;
+-- The shim's default privileges cover tables created after it ran; this
+-- covers a state dir whose schema was applied before they existed.
+GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;
 NOTIFY pgrst, 'reload schema';
 SQL
 TABLES="$(psql_q -tAc "select count(*) from information_schema.tables where table_schema = 'public' and table_type = 'BASE TABLE'")"

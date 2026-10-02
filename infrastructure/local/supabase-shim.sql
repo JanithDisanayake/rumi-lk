@@ -8,10 +8,12 @@
 --     authenticator login role PostgREST connects as
 --   * the schemas extensions and auth, with auth.role() and auth.uid() reading
 --     the JWT claims PostgREST puts in request.jwt.claims
---   * default privileges so service_role can use every table the schema files
---     create
+--   * Supabase's default privileges: service_role, anon and authenticated
+--     get every table and sequence the schema files create, so Row Level
+--     Security is the only guard, as on a hosted project
 --   * the exec_sql RPC that infrastructure/scripts/bootstrap-db.js and
---     migrate.js call (the same definition SETUP.md asks Supabase users to paste)
+--     migrate.js call (the same definition SETUP.md asks Supabase users to
+--     paste), callable by service_role only
 --   * pgvector when it is installed, otherwise a stand-in `vector` type
 --
 -- Local development only. Safe to run more than once. Run as the postgres
@@ -59,6 +61,11 @@ GRANT EXECUTE ON FUNCTION auth.role(), auth.uid() TO anon, authenticated, servic
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO service_role;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO service_role;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO service_role;
+-- Hosted Supabase grants these to anon and authenticated too and relies on
+-- RLS. Mirror it, so a local anon key sees exactly what it would see in
+-- production (a table with RLS off is readable here as it is there).
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated;
 
 -- pgvector: the schema has one vector column (and a CREATE EXTENSION line that
 -- up.sh comments out when the extension is not installed). Without pgvector,
@@ -77,7 +84,9 @@ END
 $$;
 
 -- exec_sql: the helper bootstrap-db.js / migrate.js / the setup wizard use.
--- Same definition as infrastructure/scripts/exec-sql-helper.js.
+-- Same definition as infrastructure/scripts/exec-sql-helper.js. It runs any
+-- SQL as postgres, so EXECUTE is revoked from PUBLIC (Postgres's default for
+-- new functions) and from anon and authenticated (Supabase's default).
 CREATE OR REPLACE FUNCTION public.exec_sql(query text)
 RETURNS void
 LANGUAGE plpgsql
@@ -86,7 +95,7 @@ SET search_path = public, extensions
 AS $$ BEGIN EXECUTE query; END; $$;
 
 ALTER FUNCTION public.exec_sql(text) OWNER TO postgres;
-REVOKE EXECUTE ON FUNCTION public.exec_sql(text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.exec_sql(text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.exec_sql(text) TO service_role;
 
 NOTIFY pgrst, 'reload schema';

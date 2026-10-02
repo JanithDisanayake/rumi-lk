@@ -33,6 +33,23 @@ describe('local stack scripts', () => {
     expect(shim).toMatch(/CREATE DOMAIN public\.vector/);
   });
 
+  // Hosted Supabase gives anon and authenticated full table privileges in
+  // public and leaves Row Level Security as the only guard. The local stack
+  // must do the same, or an anon key minted to test RLS is refused by a
+  // missing GRANT and a table with RLS off looks safe when it is not.
+  it('the shim grants anon and authenticated what Supabase grants, and up.sh catches up existing tables', () => {
+    const shim = read('infrastructure/local/supabase-shim.sql');
+    for (const kind of ['TABLES', 'SEQUENCES']) {
+      expect(shim).toMatch(new RegExp(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON ${kind} TO anon, authenticated;`));
+    }
+    const up = read('infrastructure/local/up.sh');
+    expect(up).toMatch(/GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;/);
+    expect(up).toMatch(/GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;/);
+    // ...but never the SQL-running helper.
+    expect(shim).toMatch(/REVOKE EXECUTE ON FUNCTION public\.exec_sql\(text\) FROM PUBLIC, anon, authenticated;/);
+    expect(shim).not.toMatch(/GRANT[^;]*exec_sql[^;]*TO[^;]*\b(anon|authenticated|PUBLIC)\b/i);
+  });
+
   it('up.sh comments out exactly the one pgvector line that 00_complete-schema.sql has', () => {
     const up = read('infrastructure/local/up.sh');
     const line = 'CREATE EXTENSION IF NOT EXISTS "vector"';
