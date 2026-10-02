@@ -44,6 +44,7 @@ const REQUIRED_VARS = [
 const CHANNEL_REQUIRED_VARS = {
   meta: ['WHATSAPP_TOKEN', 'PHONE_NUMBER_ID', 'WEBHOOK_VERIFY_TOKEN', 'WABA_ID'],
   baileys: [],
+  none: [],
 };
 
 // Additive channels (Slack, Discord, ...) run ALONGSIDE whichever
@@ -62,6 +63,13 @@ const ADDITIVE_CHANNEL_REQUIRED_VARS = {
   // connection too — see discord-events.adapter.js. There is no HTTP route
   // to sign-verify at all for this driver, unlike Slack's webhook-based design.
   discord: ['DISCORD_BOT_TOKEN', 'DISCORD_APPLICATION_ID'],
+  // Matrix needs no signing secret / interactions endpoint either, like
+  // Discord, it runs a persistent sync connection (matrix-bot-sdk's own
+  // /sync loop) rather than a signed HTTP webhook, so there is no third var
+  // to verify requests with the way Slack's SLACK_SIGNING_SECRET does.
+  // MATRIX_USER_ID/MATRIX_STORAGE_DIR/MATRIX_E2EE are genuinely optional
+  // (sensible defaults in matrix-connection.js), not just left off this list.
+  matrix: ['MATRIX_HOMESERVER_URL', 'MATRIX_ACCESS_TOKEN'],
 };
 
 // Optional features → the env key(s) that switch each one on.
@@ -71,17 +79,27 @@ const FEATURES = [
     id: 'channel_slack',
     name: 'Slack channel (Bot + Events API)',
     keys: ['SLACK_BOT_TOKEN', 'SLACK_SIGNING_SECRET'],
-    notes: 'Runs alongside your WhatsApp driver, in both sandbox and production — set via `rumi setup`\'s messaging channels step.',
+    notes: 'Runs alongside your other channels, or on its own with CHANNEL_DRIVER=none, in both sandbox and production — set via `rumi setup`\'s messaging channels step.',
     probe: 'slack',
   },
   {
     id: 'channel_discord',
     name: 'Discord channel (Gateway)',
     keys: ['DISCORD_BOT_TOKEN', 'DISCORD_APPLICATION_ID'],
-    notes: 'Runs alongside your WhatsApp driver via a persistent Gateway connection — set via `rumi setup`\'s '
+    notes: 'Runs alongside your other channels, or on its own, via a persistent Gateway connection — set via `rumi setup`\'s '
       + 'messaging channels step. MESSAGE_CONTENT is a privileged intent; needs Discord\'s own Bot Verification '
       + 'once the bot is in 100+ servers.',
     probe: 'discord',
+  },
+  {
+    id: 'channel_matrix',
+    name: 'Matrix channel (self-hosted homeserver)',
+    keys: ['MATRIX_HOMESERVER_URL', 'MATRIX_ACCESS_TOKEN'],
+    notes: 'Runs alongside your other channels, or on its own, via a persistent sync connection to your own homeserver, '
+      + 'no third-party app review at all (self-hosted). End-to-end encryption is required by default and '
+      + 'uses the native crypto module matrix-bot-sdk installs (Node 22+); if it cannot load the channel '
+      + 'refuses to start unless MATRIX_E2EE=off. Worker sends are relayed through the bot over REDIS_URL.',
+    probe: 'matrix',
   },
   {
     id: 'morning_brief',
@@ -252,16 +270,41 @@ function availableFeatures(env = process.env) {
 }
 
 /**
+ * Has the operator switched this additive channel off (the console's
+ * `channel_<name>` switch, RUMI_FEATURE_CHANNEL_<NAME>=off)? Only a channel
+ * with such a switch can be off; the default is on.
+ *
+ * Read from `env` as well as the overrides cache: messaging/index.js resolves
+ * its channels when it is first required, which in whatsapp-bot.js is before
+ * the cache is loaded. The console writes both (the cache, then `.env` and
+ * `process.env`), so the two agree after a toggle.
+ *
+ * @param {string} name e.g. 'matrix'
+ * @param {object} [env]
+ * @returns {boolean}
+ */
+function isChannelSwitchedOff(name, env = process.env) {
+  const id = `channel_${name}`;
+  if (!FEATURES.some((f) => f.id === id)) return false;
+  const stored = String((env && env[overrides.envVarFor(id)]) || '').trim().toLowerCase();
+  return stored === 'off' || !overrides.isEnabled(id);
+}
+
+/**
  * Which additive channels (Slack, Discord, ...) are active — i.e. every var
- * ADDITIVE_CHANNEL_REQUIRED_VARS lists for that channel is present. Distinct
- * from resolveChannelDriver: that resolves the ONE mutually-exclusive
- * WhatsApp-family driver (meta|baileys); this resolves the SET of additional
- * channels running concurrently alongside it. A deployment with none
- * configured gets [] — byte-identical behavior to before this existed.
+ * ADDITIVE_CHANNEL_REQUIRED_VARS lists for that channel is present, and the
+ * operator has not switched it off. Distinct from resolveChannelDriver: that
+ * resolves the ONE mutually-exclusive WhatsApp-family driver
+ * (meta|baileys|none); this resolves the SET of additional channels running
+ * concurrently alongside it. A deployment with none configured gets [] —
+ * byte-identical behavior to before this existed.
+ *
+ * The bot connects (Discord, Matrix) and the router routes from this at
+ * startup, so a switch flipped in the console applies at the next restart.
  */
 function resolveActiveChannels(env = process.env) {
   return Object.keys(ADDITIVE_CHANNEL_REQUIRED_VARS).filter((name) =>
-    ADDITIVE_CHANNEL_REQUIRED_VARS[name].every((k) => isSet(env[k]))
+    ADDITIVE_CHANNEL_REQUIRED_VARS[name].every((k) => isSet(env[k])) && !isChannelSwitchedOff(name, env)
   );
 }
 
@@ -273,6 +316,7 @@ module.exports = {
   isSet,
   resolveChannelDriver,
   resolveActiveChannels,
+  isChannelSwitchedOff,
   requiredVarsFor,
   missingRequired,
   isFeatureAvailable,

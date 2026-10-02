@@ -41,6 +41,7 @@ const {
   storeLessonPlan
 } = require('../database/bot-helpers');
 const { driverForIdentifier } = require('../services/messaging/channel-registry');
+const { nativeFlowIdFor } = require('../services/messaging/channel-capabilities');
 const supabase = require('../config/supabase');
 const fs = require('fs');
 
@@ -209,7 +210,10 @@ async function handleTextMessage(message, from, messageBody, user = null) {
   // ============================================================
   if (user) {
     try {
-      const isPendingName = await FeatureRegistrationService.isPendingName(user.id);
+      // A command (/menu, /reading test) still runs while a name is pending;
+      // it is not the name. The name question comes back after a feature.
+      const isPendingName = !String(messageBody || '').trim().startsWith('/')
+        && await FeatureRegistrationService.isPendingName(user.id);
       if (isPendingName) {
         logToFile('📝 User is pending name registration, handling name response', { userId: user.id });
 
@@ -227,6 +231,18 @@ async function handleTextMessage(message, from, messageBody, user = null) {
 
         if (result.success) {
           logToFile('✅ Name registration completed via text', { userId: user.id, firstName: result.firstName });
+        } else if (result.confirm) {
+          // A lone greeting word ("Salam") may be a greeting or the name.
+          // Ask in words that make plain it can be the name; the same word
+          // sent again is taken (FeatureRegistrationService.resolveNameReply).
+          const name = result.confirm;
+          const confirmMessages = {
+            en: `Is "${name}" your name? Send it again and I'll use it, or tell me the name you'd like me to use.`,
+            ur: `کیا "${name}" آپ کا نام ہے؟ یہی دوبارہ بھیج دیں تو میں یہی نام رکھوں گی، یا وہ نام بتا دیں جس سے آپ کو بلاؤں۔`,
+            ar: `هل "${name}" اسمك؟ أرسله مرة أخرى وسأستخدمه، أو أخبرني بالاسم الذي تريد أن أناديك به.`,
+            es: `¿"${name}" es tu nombre? Envíalo otra vez y lo usaré, o dime el nombre que quieres que use.`
+          };
+          await WhatsAppService.sendMessage(from, confirmMessages[userLanguage] || confirmMessages.en);
         } else {
           logToFile('⚠️ Name extraction failed, asking again', { userId: user.id });
           // Ask again if extraction failed
@@ -1431,7 +1447,7 @@ async function handleTextMessage(message, from, messageBody, user = null) {
     }
     try {
       typingController.stop();
-      const STATUS_FLOW_ID = process.env.STATUS_FLOW_ID || '';
+      const STATUS_FLOW_ID = nativeFlowIdFor(from, process.env.STATUS_FLOW_ID);
       if (STATUS_FLOW_ID) {
         await WhatsAppService.sendFlow(from, {
           flowId: STATUS_FLOW_ID,
@@ -1464,7 +1480,7 @@ async function handleTextMessage(message, from, messageBody, user = null) {
   // HOMEWORK_FLOW_ID; offers the homework request flow.
   // ============================================================
   {
-    const HOMEWORK_FLOW_ID = process.env.HOMEWORK_FLOW_ID || '';
+    const HOMEWORK_FLOW_ID = nativeFlowIdFor(from, process.env.HOMEWORK_FLOW_ID);
     const hwDecision = evaluateHomeworkTrigger({ messageBody, user, homeworkFlowId: HOMEWORK_FLOW_ID });
     if (hwDecision.match) {
       typingController.stop();
@@ -1501,7 +1517,7 @@ async function handleTextMessage(message, from, messageBody, user = null) {
     logToFile('📋 Edit class keyword detected', { userId: user.id });
     typingController.stop();
 
-    const EDIT_CLASS_FLOW_ID = process.env.EDIT_CLASS_FLOW_ID || '';
+    const EDIT_CLASS_FLOW_ID = nativeFlowIdFor(from, process.env.EDIT_CLASS_FLOW_ID);
     if (!EDIT_CLASS_FLOW_ID) {
       await WhatsAppService.sendMessage(from, 'Sorry, class editing is not available yet. Please try again later.');
       return;

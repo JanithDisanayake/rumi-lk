@@ -88,7 +88,7 @@ DROP POLICY IF EXISTS "service_role_test_papers" ON test_papers;
 CREATE POLICY "service_role_test_papers" ON test_papers FOR ALL USING (auth.role() = 'service_role');
 
 INSERT INTO schema_versions (version, description)
-VALUES ('2.8.0', 'Test papers: test_paper_requests + test_papers (versions)')
+VALUES ('2.4.0', 'Test papers: test_paper_requests + test_papers (versions)')
 ON CONFLICT (version) DO NOTHING;
 
 NOTIFY pgrst, 'reload schema';

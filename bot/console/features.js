@@ -35,8 +35,9 @@ const WHEN_OFF = {
   exam_ocr: 'Photographed exam papers cannot be marked. Typed and printed worksheets still work.',
   observability_axiom: 'Logs stay in the terminal and the daily file instead of going to Axiom.',
   morning_brief: 'The daily programme-health message stops being sent.',
-  channel_slack: 'Teachers can no longer reach Rumi in Slack. WhatsApp is unaffected.',
-  channel_discord: 'Teachers can no longer reach Rumi in Discord. WhatsApp is unaffected.',
+  channel_slack: 'Teachers can no longer reach Rumi in Slack. Your other channels are unaffected.',
+  channel_discord: 'Teachers can no longer reach Rumi in Discord. Your other channels are unaffected.',
+  channel_matrix: 'Teachers can no longer reach Rumi on your Matrix messenger. Your other channels are unaffected.',
 };
 
 /** Human titles, borrowed from the wizard where it has one. */

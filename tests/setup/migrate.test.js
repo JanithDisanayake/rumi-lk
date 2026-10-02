@@ -198,10 +198,10 @@ describe('MigrationRunner', () => {
 
       await runner.applyMigration(filePath);
 
-      // Verify the checksum was recorded
+      // Verify the checksum was recorded (in the description: see the next test)
       expect(mockInsert).toHaveBeenCalledWith(
         expect.arrayContaining([
-          expect.objectContaining({ checksum: expectedChecksum }),
+          expect.objectContaining({ description: expect.stringContaining(expectedChecksum) }),
         ])
       );
     });
@@ -251,6 +251,35 @@ describe('MigrationRunner', () => {
           }),
         ])
       );
+    });
+
+    // A deployment's schema_versions comes from 00_complete-schema.sql (fresh install) or
+    // from V1.0.0__baseline.sql (older installs). The row is written through the REST API,
+    // which rejects any column the table does not have, so every key must exist in both.
+    it('records only columns that every schema_versions definition has', async () => {
+      const root = path.resolve(__dirname, '../..');
+      const columnsOf = (rel) => {
+        const sql = fs.readFileSync(path.join(root, rel), 'utf-8');
+        const body = sql.match(/CREATE TABLE IF NOT EXISTS schema_versions \(([\s\S]*?)\n\);/)[1];
+        return body
+          .split('\n')
+          .map((line) => line.trim().split(/\s+/)[0])
+          .filter((word) => word && /^[a-z_]+$/.test(word));
+      };
+      const fresh = columnsOf('infrastructure/supabase/00_complete-schema.sql');
+      const baseline = columnsOf('infrastructure/supabase/migrations/V1.0.0__baseline.sql');
+      const shared = fresh.filter((c) => baseline.includes(c));
+      expect(shared).toEqual(expect.arrayContaining(['version', 'description', 'applied_at']));
+
+      global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+      const mockInsert = jest.fn().mockResolvedValue({ error: null });
+      mockFrom.mockReturnValue({ insert: mockInsert });
+
+      await runner.applyMigration(path.join(tmpDir, 'V1.1.0__add_sessions.sql'));
+
+      const [[rows]] = mockInsert.mock.calls;
+      for (const key of Object.keys(rows[0])) expect(shared).toContain(key);
+      expect(rows[0].description).toContain('V1.1.0__add_sessions.sql');
     });
 
     it('throws when SQL execution fails', async () => {
@@ -330,5 +359,23 @@ describe('MigrationRunner', () => {
       expect(Array.isArray(result.skipped)).toBe(true);
       expect(Array.isArray(result.errors)).toBe(true);
     });
+  });
+});
+
+// migrate.js skips any version already in schema_versions, so a migration that records a version
+// other than its own (left behind by a rename) makes the real migration of that version a silent no-op.
+describe('migration files', () => {
+  const dir = path.resolve(__dirname, '../../infrastructure/supabase/migrations');
+
+  it('each migration records only its own version in schema_versions', () => {
+    const wrong = [];
+    for (const file of fs.readdirSync(dir).filter((f) => /^V\d+\.\d+\.\d+__.*\.sql$/.test(f))) {
+      const own = file.match(/^V(\d+\.\d+\.\d+)__/)[1];
+      const sql = fs.readFileSync(path.join(dir, file), 'utf-8');
+      const re = /INSERT INTO schema_versions[^;]*?VALUES\s*\(\s*'([^']+)'/gi;
+      let m;
+      while ((m = re.exec(sql))) if (m[1] !== own) wrong.push(`${file} records ${m[1]}`);
+    }
+    expect(wrong).toEqual([]);
   });
 });

@@ -25,6 +25,7 @@
 require('dotenv').config();
 const supabase = require('../shared/config/supabase');
 const { logToFile } = require('../shared/utils/logger');
+const { displayName } = require('../shared/utils/display-name');
 const WhatsAppService = require('../shared/services/whatsapp.service');
 const CoachingJobQueueService = require('../shared/services/coaching/coaching-job-queue.service');
 const { ownCoaching } = require('../shared/services/coaching/own-coaching');
@@ -289,14 +290,14 @@ async function sendSessionReminder(session) {
     let reminderText;
 
     if (context.subject) {
-      reminderText = `Hi ${session.users.first_name}! 👋\n\n` +
+      reminderText = `Hi ${displayName(session.users, 'there', { firstOnly: true })}! 👋\n\n` +
         `You have an incomplete coaching session for your ${context.subject} lesson` +
         (questionsAnswered > 0
           ? ` (${questionsAnswered}/3 reflections completed).\n\n`
           : `.\n\n`) +
         `Ready to continue? I just have ${questionsRemaining} more question${questionsRemaining > 1 ? 's' : ''} for you!`;
     } else {
-      reminderText = `Hi ${session.users.first_name}! 👋\n\n` +
+      reminderText = `Hi ${displayName(session.users, 'there', { firstOnly: true })}! 👋\n\n` +
         `You started a coaching session but didn't finish the reflective conversation.\n\n` +
         (questionsAnswered > 0
           ? `✅ Progress: ${questionsAnswered}/3 questions answered\n\n`
@@ -381,9 +382,9 @@ async function autoCompleteSession(session) {
 
     // 3. Notify user
     const notificationText = questionsAnswered > 0
-      ? `Hi ${session.users.first_name}! I noticed you didn't get back to complete your coaching session. ` +
+      ? `Hi ${displayName(session.users, 'there', { firstOnly: true })}! I noticed you didn't get back to complete your coaching session. ` +
         `No worries - I'm generating your report now based on the ${questionsAnswered} reflection${questionsAnswered > 1 ? 's' : ''} you provided. 📊`
-      : `Hi ${session.users.first_name}! Since you didn't continue the reflective conversation, ` +
+      : `Hi ${displayName(session.users, 'there', { firstOnly: true })}! Since you didn't continue the reflective conversation, ` +
         `I'm generating your coaching report based on the classroom audio analysis. 📊`;
 
     await WhatsAppService.sendMessage(session.recipient_identifier, notificationText);

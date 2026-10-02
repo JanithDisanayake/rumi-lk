@@ -51,7 +51,7 @@ describe('the migration', () => {
 
   it('records its version', () => {
     const migration = fs.readFileSync(MIGRATION_PATH, 'utf8');
-    expect(migration).toMatch(/INSERT INTO schema_versions \(version, description\)\s+VALUES \('2\.8\.0'/);
+    expect(migration).toMatch(/INSERT INTO schema_versions \(version, description\)\s+VALUES \('2\.4\.0'/);
   });
 
   it('enables RLS on what it creates', () => {

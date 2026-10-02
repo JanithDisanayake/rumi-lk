@@ -19,7 +19,7 @@ working is not asked about twice.
 | **The AI** — one key, many models | [openrouter.ai/keys](https://openrouter.ai/keys) | a few dollars goes a long way |
 | **WhatsApp** | your own phone | — |
 
-Node.js 20+ and git need to be installed. Redis is required too, but the wizard offers to start one for you
+Node.js 22+ and git need to be installed. Redis is required too, but the wizard offers to start one for you
 with Docker if you have it — otherwise paste any reachable address (Railway, Upstash, your own server).
 
 > **You do not need a Meta WhatsApp Business account to try Rumi.** The wizard's default links your own
@@ -83,7 +83,7 @@ Flows, workers) are needed for a real deployment either way.
 
 | Requirement | Where to Get It |
 |------------|----------------|
-| Node.js 20+ | [nodejs.org](https://nodejs.org) |
+| Node.js 22+ | [nodejs.org](https://nodejs.org) |
 | GitHub account | [github.com](https://github.com) (to fork the repo) |
 | Supabase account | [supabase.com](https://supabase.com) (free tier works) |
 | Railway account | [railway.app](https://railway.app) (for hosting + Redis) |
@@ -115,11 +115,16 @@ cd bot && npm install && cd ..
 
 ## Step 2: Create Supabase Database
 
+> **No Supabase account?** For a laptop, demo or test setup you can skip this step and Step 3:
+> `bash infrastructure/local/up.sh` starts a private Postgres, PostgREST and Redis (no Docker), applies
+> the schema, and prints the `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and `REDIS_URL` lines for `.env`.
+> Not for production. See [docs/local-stack.md](docs/local-stack.md).
+
 1. **Create account** at [supabase.com](https://supabase.com) (free tier is sufficient)
 2. **Create a new project** — choose a region closest to your users
 3. **Run the schema.** Two ways:
 
-   **Option A — one command (recommended):** First create the tiny `exec_sql` helper that `npm run bootstrap:db` uses to apply SQL. A brand-new Supabase project does not have it, so paste this **once** in the SQL Editor (ALTER OWNER gives it extension-creation rights; search_path includes `extensions` because uuid-ossp lives there; GRANT and NOTIFY make PostgREST see it):
+   **Option A — one command (recommended):** First create the tiny `exec_sql` helper that `npm run bootstrap:db` uses to apply SQL. A brand-new Supabase project does not have it, so paste this **once** in the SQL Editor (ALTER OWNER gives it extension-creation rights; search_path includes `extensions` because uuid-ossp lives there; REVOKE keeps anyone holding your public anon key from calling it, since it runs any SQL as the database owner; GRANT and NOTIFY make PostgREST see it):
    ```sql
    CREATE OR REPLACE FUNCTION public.exec_sql(query text)
    RETURNS void
@@ -129,6 +134,7 @@ cd bot && npm install && cd ..
    AS $$ BEGIN EXECUTE query; END; $$;
 
    ALTER FUNCTION public.exec_sql(text) OWNER TO postgres;
+   REVOKE EXECUTE ON FUNCTION public.exec_sql(text) FROM PUBLIC, anon, authenticated;
    GRANT EXECUTE ON FUNCTION public.exec_sql(text) TO service_role;
    NOTIFY pgrst, 'reload schema';
    ```

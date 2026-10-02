@@ -106,6 +106,25 @@ async function getOrCreateUser(phoneNumber) {
  *   no inbound message to reply to) can deliver back to it rather than re-derive it.
  * @returns {Promise<object>} User record (the same shape getOrCreateUser returns)
  */
+/**
+ * The phone number a new Matrix user can be recorded with, or null. Only the
+ * bare-digits identity counts ("mtx:<digits>": the "+<digits>" account on the
+ * bot's own homeserver, see matrix-identity.js). The "t" account
+ * ("mtx:t<digits>") and every other server's users keep their number out of
+ * users.phone_number: it is only a username, and recording it would let that
+ * account claim the WhatsApp teacher with the same number. Even for the "+"
+ * account the number is admin-asserted, not verified (docs/channels/matrix.md).
+ */
+async function matrixPhoneNumberFor(channel, channelUserId) {
+  if (channel !== 'matrix' || !/^\d{7,15}$/.test(String(channelUserId))) return null;
+  const { data: taken } = await supabase
+    .from('users')
+    .select('id')
+    .eq('phone_number', String(channelUserId))
+    .single();
+  return taken ? null : String(channelUserId);
+}
+
 async function getOrCreateUserByChannel(channel, channelUserId, { replyIdentifier = null } = {}) {
   if (channel === 'whatsapp') {
     // The legacy path is authoritative for WhatsApp — same lookup key
@@ -143,15 +162,28 @@ async function getOrCreateUserByChannel(channel, channelUserId, { replyIdentifie
         console.error('Error fetching user for existing channel link:', fetchUserError);
         throw fetchUserError;
       }
+      // A Matrix teacher created before their number was recorded (see below).
+      if (user && !user.phone_number) {
+        const phoneNumber = await matrixPhoneNumberFor(channel, channelUserId);
+        if (phoneNumber) {
+          await supabase.from('users').update({ phone_number: phoneNumber }).eq('id', user.id);
+          user.phone_number = phoneNumber;
+        }
+      }
       return user;
     }
 
     // No existing link — brand-new person on this channel. Create both the
-    // users row (no phone_number — see the schema's relaxed NOT NULL) and its
-    // first user_channels row together.
+    // users row and its first user_channels row together. A users row has no
+    // phone_number (see the schema's relaxed NOT NULL), except for a Matrix
+    // teacher whose username is their phone number (mtx:<digits>, see
+    // matrix-identity.js): the portal signs teachers in by phone_number. It is
+    // only recorded when no other user has that number already.
+    const phoneNumber = await matrixPhoneNumberFor(channel, channelUserId);
     const { data: newUser, error: createUserError } = await supabase
       .from('users')
       .insert({
+        ...(phoneNumber ? { phone_number: phoneNumber } : {}),
         registration_completed: false,
         created_at: new Date().toISOString(),
         last_message_at: new Date().toISOString(),

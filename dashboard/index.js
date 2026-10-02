@@ -3567,18 +3567,20 @@ app.get('/observability/api/broadcast/:id/stats', requireAdmin, async (req, res)
 // HEALTH CHECK (before static serving)
 // ============================================================================
 
-app.get('/health', (req, res) => {
-  const fs = require('fs');
-  const versionFile = path.join(__dirname, '../VERSION'); // VERSION file is in parent directory
-  let version = '2.1.0'; // Default fallback
-
+/**
+ * The Rumi release version: the repo's root package.json (bumped at every
+ * release), or this dashboard's own package.json when deployed on its own.
+ */
+function rumiVersion() {
   try {
-    if (fs.existsSync(versionFile)) {
-      version = fs.readFileSync(versionFile, 'utf8').trim();
-    }
-  } catch (err) {
-    console.error('Error reading VERSION file:', err);
+    return require('../package.json').version;
+  } catch {
+    return require('./package.json').version;
   }
+}
+
+app.get('/health', (req, res) => {
+  const version = rumiVersion();
 
   res.json({
     status: 'healthy',
@@ -3644,17 +3646,7 @@ app.use((err, req, res, next) => {
 // ============================================================================
 
 app.listen(PORT, '0.0.0.0', () => {
-  const fs = require('fs');
-  const versionFile = path.join(__dirname, '../VERSION');
-  let version = '2.1.0';
-
-  try {
-    if (fs.existsSync(versionFile)) {
-      version = fs.readFileSync(versionFile, 'utf8').trim();
-    }
-  } catch (err) {
-    // Use default version
-  }
+  const version = rumiVersion();
 
   console.log(`\n${'='.repeat(70)}`);
   console.log(`📊 Rumi Dashboard v${version}`);

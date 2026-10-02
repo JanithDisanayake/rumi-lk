@@ -19,6 +19,7 @@ const path = require('path');
 const axios = require('axios');
 const supabase = require('../../config/supabase');
 const { logToFile } = require('../../utils/logger');
+const { displayName } = require('../../utils/display-name');
 const GPT5MiniService = require('../gpt5-mini.service');
 const ContentService = require('../content.service');
 const AudioService = require('../audio.service');
@@ -80,7 +81,7 @@ class ReportGeneratorService {
       }
 
       const from = payload.from || session.users.phone_number;
-      const teacherName = `${session.users.first_name} ${session.users.last_name}`.trim();
+      const teacherName = displayName(session.users);
       const isRetry = payload.attempt && payload.attempt > 1;
 
       // Guardrail: report generation should never run before analysis is available.
@@ -180,7 +181,7 @@ class ReportGeneratorService {
       }
 
       // Send PDF immediately with proper filename
-      await this.sendPDFReport(from, coachingSessionId, pdfBuffer, session.users.first_name, session.created_at);
+      await this.sendPDFReport(from, coachingSessionId, pdfBuffer, displayName(session.users, 'Teacher', { firstOnly: true }), session.created_at);
 
       // Lesson-plan fidelity: one line saying how the lesson compared with the plan, or exactly why it wasn't
       // compared. Only when the feature ran (analysis_data.lp_fidelity); never fails the report.

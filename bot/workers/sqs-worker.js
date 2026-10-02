@@ -33,6 +33,12 @@
 const { runWithCorrelation, generateCorrelationId } = require('../shared/utils/structured-logger');
 
 require('dotenv').config();
+// The bot process owns the Matrix sync connection (and its E2EE crypto store);
+// this worker sends to Matrix teachers through it rather than opening a second
+// one -- see shared/services/messaging/matrix-outbound-relay.js. Must run before
+// any job can reach the messaging layer. A no-op for deployments without Matrix.
+require('../shared/services/messaging/matrix-outbound-relay').useRelayForThisProcess();
+
 // The operator's RUMI_FEATURE_* switches, as the bot loads them: a job for a
 // feature switched off after it was queued is not run (see testpaper.worker).
 require('../shared/config/feature-availability').overrides.load(process.env);
