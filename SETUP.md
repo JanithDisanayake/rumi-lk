@@ -440,6 +440,22 @@ node bot/scripts/testpaper/import-curriculum-corpus.js path/to/curriculum-projec
 Printing needs Chromium on the bot's host (`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`), and papers are written by
 the background worker. Existing databases: apply `infrastructure/supabase/migrations/V2.4.0__test_papers.sql`.
 See [docs/features/test-papers.md](docs/features/test-papers.md).
+### Add staff attendance for a head teacher (optional)
+
+Class attendance needs nothing. For a head teacher's **staff** attendance and register:
+
+1. Apply the attendance migration on an existing database: `node infrastructure/scripts/migrate.js`
+   (fresh installs already have it from `00_complete-schema.sql`)
+2. Set the school's timezone: `ATTENDANCE_TZ=Africa/Nairobi` (any IANA name; default UTC)
+3. Link the school, its head teacher and staff (from `bot/`):
+   `node scripts/attendance/link-school.js --school "Your School" --head <phone or channel id> --staff <…> --staff-name "…"`
+4. The head teacher says "attendance". See [docs/features/attendance.md](docs/features/attendance.md).
+
+### Add teacher nudges (optional)
+
+1. Set `TEACHER_NUDGES_ENABLED=true` (and `TEACHER_NUDGES_TZ` to your timezone)
+2. Run the worker (`node bot/workers/sqs-worker.js`) — it sweeps every `TEACHER_NUDGES_SWEEP_MINUTES` — or
+   schedule `node bot/workers/teacher-nudges.worker.js` from cron. See [docs/features/teacher-nudges.md](docs/features/teacher-nudges.md).
 
 ### Add regional-language speech-to-text (optional)
 

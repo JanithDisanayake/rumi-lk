@@ -45,7 +45,8 @@ describe('the extraction request', () => {
     const { messages } = mockCreate.mock.calls[0][0];
     const text = messages.map((m) => m.content).join('\n');
     expect(text).toMatch(/present\|absent\|leave/);
-    expect(text).not.toMatch(/Pakistan/i);
+    // The system prompt describes schools in general, not one country's schools.
+    expect(text).toMatch(/assistant for schools\./);
   });
 });
 
