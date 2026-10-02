@@ -19,6 +19,7 @@
  * anything else: "Your teacher <name> sent you a quiz on <topic>."
  */
 
+const crypto = require('crypto');
 const supabase = require('../../config/supabase');
 const redisService = require('../cache/railway-redis.service');
 const WhatsAppService = require('../whatsapp.service');
@@ -47,6 +48,33 @@ const JOIN_LOCK_SECS = (() => {
   logToFile('⚠️ VIDEO_QUIZ_JOIN_LOCK_SECS is not a whole number of seconds up to 3600 — using 60', { raw }, 'warn');   // set-and-rejected is said, never silent
   return 60;
 })();
+
+// Wrong codes per sender. A guessed code files a child into another class's
+// report, so after JOIN_GUESS_LIMIT misses inside the window a sender's codes
+// are not looked up or answered until the window has passed. The counter
+// starts at the first miss (INCR, then EXPIRE when it is 1), so the window is
+// fixed, not sliding. Redis down: no counting, the join works as before.
+const JOIN_GUESS_LIMIT = 5;
+const JOIN_GUESS_WINDOW_SECS = 10 * 60;
+const JOIN_GUESS_KEY = (phone) => `videoquiz:${stripPlus(phone)}:badcodes`;
+
+async function guessesExhausted(phone) {
+  try {
+    const n = Number(await redisService.get(JOIN_GUESS_KEY(phone)));
+    return Number.isFinite(n) && n >= JOIN_GUESS_LIMIT;
+  } catch (err) {
+    return false;
+  }
+}
+
+async function countWrongGuess(phone) {
+  try {
+    const n = await redisService.incr(JOIN_GUESS_KEY(phone));
+    if (n === 1) await redisService.expire(JOIN_GUESS_KEY(phone), JOIN_GUESS_WINDOW_SECS);
+  } catch (err) {
+    logToFile('⚠️ share: could not count a wrong code', { phone: String(phone || '').slice(-4), error: err.message });
+  }
+}
 
 // Chrome a CHILD reads, in the quiz language.
 const ux = (key, language, params) => resolveUx(key, { language, params });
@@ -83,10 +111,12 @@ const CODE_RX = /\bQUIZ-([A-Z0-9]{6})\b/i;
 // happens to start with "join" is never taken for a code.
 const JOIN_RX = new RegExp(`^\\s*join\\s+(?:QUIZ-)?([${ALPHABET}]{6})[.!]?\\s*$`, 'i');
 
+// A code is the only key to a class: whoever holds it is filed into that
+// teacher's report. So it is drawn from the OS's CSPRNG, not Math.random.
 function randomCode() {
   let s = '';
   for (let i = 0; i < 6; i += 1) {
-    s += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
+    s += ALPHABET[crypto.randomInt(ALPHABET.length)];
   }
   return s;
 }
@@ -372,6 +402,13 @@ async function videoQuizzesAllowed(sc) {
 }
 
 async function beginFromCode(phone, code) {
+  // Too many wrong codes from this sender just now: silence. Ours (true), so
+  // the text does not go on to chat, but no lookup and no reply.
+  if (await guessesExhausted(phone)) {
+    logEvent('video_quiz.join_refused', { why: 'guess_limit', phone: String(phone || '').slice(-4) });
+    return true;
+  }
+
   // This may be a teacher's code OR a child's invite. resolveInvite collapses
   // both to "which teacher code does this belong to, and who sent them" — so
   // everything downstream, including the class report, is unchanged.
@@ -386,6 +423,7 @@ async function beginFromCode(phone, code) {
   }
 
   if (!sc || !sc.active || (sc.expires_at && new Date(sc.expires_at) < new Date())) {
+    await countWrongGuess(phone);
     await WhatsAppService.sendMessage(phone, ux('vqExpired', clampLanguage(sc && sc.language)));
     return true;
   }
@@ -688,5 +726,5 @@ module.exports = {
   mintCode, offerShare, handleShareButton, deliverClassLink, startForStudent,
   parseShareCode, beginFromCode, beginFromCodeLocked, consumeJoinReply, handleJoinFlowReply,
   SHARE_YES, SHARE_NO, JOIN_KEY, JOIN_LOCK_KEY, JOIN_LOCK_SECS, JOIN_FLOW_PREFIX, CODE_RX, randomCode, botNumber,
-  joinInvite, classMessage,
+  joinInvite, classMessage, JOIN_GUESS_LIMIT, JOIN_GUESS_WINDOW_SECS, JOIN_GUESS_KEY,
 };
