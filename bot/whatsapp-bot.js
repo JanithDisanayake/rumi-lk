@@ -309,6 +309,11 @@ app.get('/webhook', (req, res) => {
  * wireBaileysInboundIfSelected() below for where the Baileys path plugs in.
  */
 async function handleWebhookPost(req, res) {
+  // A branch that is done early (`return` out of the list_reply routes) must
+  // still answer Meta, or the request hangs until it times out and Meta
+  // re-delivers. `headersSent` makes this idempotent, so the existing acks
+  // can stay where they are.
+  const ack = () => { if (!res.headersSent) res.status(200).send('EVENT_RECEIVED'); };
   // Generate correlation ID for tracing this request across all logs
   const correlationId = generateCorrelationId();
 
@@ -902,12 +907,37 @@ async function handleWebhookPost(req, res) {
         // left as an answer id, so a new offer button placed after it would be
         // swallowed as a wrong answer.
         const VideoQuizInvite = require('./shared/services/quiz/video-quiz-invite.service');
+        // The watch-more offer (vq_more_*), chained after a declined invite.
+        // Same before-handleAnswer placement, same reason.
+        const VideoQuizBinge = require('./shared/services/quiz/video-quiz-binge.service');
         const handled = await VideoQuizService.handleOfferButton(buttonId, from)
           || await VideoQuizShare.handleShareButton(buttonId, from)
           || await VideoQuizInvite.handleInviteButton(buttonId, from)
+          || await VideoQuizBinge.handleMoreButton(buttonId, from)
           || await VideoQuizService.handleAnswer(from, buttonId);
         if (!handled) {
           logToFile('⚠️ unrouted vq_ button', { buttonId, from });
+        }
+      }
+      // Lesson quiz: which language the quiz should be written in
+      // (tq_lang_<code>_<quizId>, any configured quiz language). Matched
+      // BEFORE the generic `tq_` branch, which would otherwise take it.
+      else if (buttonId.startsWith('tq_lang_')) {
+        const TranscriptQuizOffer = require('./shared/services/quiz/transcript-quiz-offer.service');
+        if (!(await TranscriptQuizOffer.handleLanguageButton(buttonId, from, user))) {
+          logToFile('⚠️ unrouted tq_lang_ button', { buttonId, from });
+        }
+      }
+      // Lesson quiz: the post-coaching offer (tq_yes_/tq_no_) and the /quiz
+      // actions (tq_link_/tq_report_…). Its own prefix on purpose — never
+      // `quiz_` (parent quiz) or `vq_` (video quiz).
+      else if (buttonId.startsWith('tq_')) {
+        const TranscriptQuizOffer = require('./shared/services/quiz/transcript-quiz-offer.service');
+        const TranscriptQuizList = require('./shared/services/quiz/transcript-quiz-list.service');
+        const handled = await TranscriptQuizOffer.handleOfferButton(buttonId, from)
+          || await TranscriptQuizList.handleActionButton(buttonId, from);
+        if (!handled) {
+          logToFile('⚠️ unrouted tq_ button', { buttonId, from });
         }
       }
       // Edit-class multi-class picker: open the edit-class flow for the chosen class.
@@ -1234,7 +1264,16 @@ async function handleWebhookPost(req, res) {
       // accept no answer at all.
       if (listId.startsWith('vq_')) {
         const VideoQuizService = require('./shared/services/quiz/video-quiz.service');
-        if (await VideoQuizService.handleAnswer(from, listId)) return;
+        if (await VideoQuizService.handleAnswer(from, listId)) { ack(); return; }
+      }
+
+      // Lesson quiz: a row tapped in the /quiz list (a lesson, a plan, an
+      // existing quiz, the topic / classic / video rows) or its "older" page.
+      if (listId.startsWith('tq_pick_') || listId.startsWith('tq_page_')) {
+        const TranscriptQuizList = require('./shared/services/quiz/transcript-quiz-list.service');
+        await TranscriptQuizList.handleListPick(listId, from, user);
+        ack();
+        return;
       }
 
       // The lesson-plan picker of the coaching flow (lp_select_/lp_upload_/lp_none_).
@@ -1259,6 +1298,7 @@ async function handleWebhookPost(req, res) {
           logToFile('❌ quiz class selection failed', { classId, error: quizErr.message });
           await WhatsAppService.sendMessage(from, 'Sorry, something went wrong. Please try /quiz again.');
         }
+        ack();
         return;
       }
 

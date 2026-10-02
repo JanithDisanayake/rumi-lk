@@ -447,6 +447,62 @@ class SQSCoachingWorker {
         break;
       }
 
+      // Lesson quiz (a quiz written from the lesson a teacher taught or
+      // planned). Same v2 envelope: the producer's fields live under
+      // body.payload; the envelope groupId is the fallback id.
+      case 'quiz_offer': {
+        // Reads the coaching session, decides, sends the offer.
+        if (sourceQueue === 'quiz') {
+          await SQSQueueService.extendQuizJobTimeout(receiptHandle, 300);
+        } else {
+          await SQSQueueService.extendJobTimeout(receiptHandle, 300);
+        }
+        const TranscriptQuizOffer = require('../shared/services/quiz/transcript-quiz-offer.service');
+        const p = (body && body.payload) ? body.payload : (payload || {});
+        await TranscriptQuizOffer.processOffer(p.coachingSessionId || (body && body.groupId), p);
+        break;
+      }
+      case 'quiz_generate': {
+        // Two model calls + a PDF render + three sends: give it room.
+        if (sourceQueue === 'quiz') {
+          await SQSQueueService.extendQuizJobTimeout(receiptHandle, 600);
+        } else {
+          await SQSQueueService.extendJobTimeout(receiptHandle, 600);
+        }
+        const TranscriptQuizGenerate = require('../shared/services/quiz/transcript-quiz-generate.service');
+        const p = (body && body.payload) ? body.payload : (payload || {});
+        await TranscriptQuizGenerate.process(p.quizId || (body && body.groupId), p);
+        break;
+      }
+      // The videos offer for a child who never answered the friend invite.
+      // The handler re-reads the invite key and is a no-op when the invite was
+      // answered meanwhile, so redelivery is harmless.
+      case 'quiz_child_videos_offer': {
+        const Invite = require('../shared/services/quiz/video-quiz-invite.service');
+        const p = (body && body.payload) ? body.payload : (payload || {});
+        if (p.phone) await Invite.offerVideosIfUnanswered(p.phone);
+        break;
+      }
+      case 'quiz_nudge_teacher': {
+        const p = (body && body.payload) ? body.payload : (payload || {});
+        const quizId = p.quizId || (body && body.groupId);
+        const TranscriptQuizNudge = require('../shared/services/quiz/transcript-quiz-nudge.service');
+        // Two reasons to wait: the target has not arrived, or it has but the
+        // hour is one we do not message teachers in (quiet hours). SQS caps
+        // DelaySeconds at 900, so a long hold is a chain of short hops.
+        const decision = TranscriptQuizNudge.nudgeDispatch({ targetAt: p.targetAt });
+        if (decision.action === 'requeue') {
+          await SQSQueueService.queueJob(quizId, 'quiz_nudge_teacher',
+            { quizId, targetAt: decision.targetAt }, {
+              delaySeconds: decision.delaySeconds,
+              deduplicationId: `${quizId}-quiz_nudge_teacher-${Date.now()}`,
+            });
+          break;
+        }
+        await TranscriptQuizNudge.process(quizId);
+        break;
+      }
+
       default:
         throw new Error(`Unknown job type: ${jobType}`);
     }
