@@ -7,9 +7,16 @@
  *   waiting     — observations waiting on THEM: a form to check
  *                 (awaiting_observer_review), a debrief to do (form done,
  *                 debrief_status pending), a report to send (debrief done,
- *                 teacher_delivery not yet out)
+ *                 no report out — never sent, failed, or an invite the
+ *                 teacher never opened and the sweep gave up on)
+ *   delivering  — the report is on its way but the teacher does not have it
+ *                 yet: an invite waiting for the teacher to open it
+ *                 (awaitingTeacher), or a report with the review team
+ *                 (withReview). Nothing for the coach to do, not done either.
  *   inProgress  — still being transcribed / analysed (nothing to do yet)
  *   completed   — debrief done and the report reached the teacher
+ *                 (teacher_delivery.status = 'sent'; same rule as the bot's
+ *                 observe-completion.js)
  * and their teachers — the DERIVED roster (leader_schools x users.school_id,
  * the same join as bot/shared/services/observe/observe-roster.service.js) —
  * with each teacher's past observations.
@@ -25,18 +32,34 @@
  * (tests/observe/observe-portal-coach.service.test.js) requires both files and
  * fails if they ever disagree.
  *
+ * The same goes for the switch: the coach view exists only while observe is
+ * on (isObserveEnabled — OBSERVE_ENABLED=true and not paused from the console
+ * with RUMI_FEATURE_OBSERVE=off), mirrored from observe-gate.js and checked
+ * against it by the same drift-guard test. The dashboard reads its own
+ * environment, so the variable has to be set on the dashboard service too.
+ *
  * Every function takes the supabase client as `db`, so the route can pass the
- * dashboard's client and tests can pass an in-memory fake.
+ * dashboard's client and tests can pass an in-memory fake. A failed read
+ * throws: an empty answer would tell the coach "nothing waiting" when there
+ * may be, so the route turns it into a 500 and the page shows its error state.
  */
 
 // Mirror of observe-gate.js DEFAULT_LEADER_ROLES (drift-guarded by test).
 // The shared role vocabulary: principal / school_leader are read aliases of head_teacher.
 const DEFAULT_COACH_ROLES = Object.freeze(['head_teacher', 'principal', 'school_leader', 'coach', 'supervisor']);
 
-// Delivery states in which the report has left the coach's hands.
-const REPORT_OUT = ['sent', 'awaiting_teacher_tap', 'operator_review'];
 const TERMINAL = ['cancelled', 'abandoned'];
 const SESSION_LIMIT = 500;
+
+/**
+ * Mirror of observe-gate.js isObserveEnabled(): on only when OBSERVE_ENABLED
+ * is "true" (trimmed, any case) and the console has not paused it
+ * (RUMI_FEATURE_OBSERVE=off). Read at call time, like the bot.
+ */
+function isObserveEnabled() {
+  if (String(process.env.OBSERVE_ENABLED || '').trim().toLowerCase() !== 'true') return false;
+  return String(process.env.RUMI_FEATURE_OBSERVE || '').trim().toLowerCase() !== 'off';
+}
 
 /** The observe role family; OBSERVE_LEADER_ROLES replaces it, read at call time. */
 function coachRoles() {
@@ -45,9 +68,14 @@ function coachRoles() {
   return raw.split(',').map((r) => r.trim().toLowerCase()).filter(Boolean);
 }
 
-/** @param {{role?: string|null}|null} user users row */
+/** In the role family (whatever the switch says). @param {{role?: string|null}|null} user users row */
 function isCoach(user) {
   return !!user && typeof user.role === 'string' && coachRoles().includes(user.role.trim().toLowerCase());
+}
+
+/** Gets the coach view: observe is on AND the user is in the role family. */
+function canUseCoachView(user) {
+  return isObserveEnabled() && isCoach(user);
 }
 
 function isoDay(value) {
@@ -68,7 +96,12 @@ function stageOf(row) {
   if (status === 'observer_review_complete') {
     if (row.debrief_status !== 'done') return 'debrief';
     const delivery = ((row.analysis_data || {}).teacher_delivery) || {};
-    return REPORT_OUT.includes(delivery.status) ? 'completed' : 'report';
+    if (delivery.status === 'sent') return 'completed';
+    if (delivery.status === 'operator_review') return 'withReview';
+    // An invite the untapped sweep gave up on keeps its status; it is the
+    // coach's to send again.
+    if (delivery.status === 'awaiting_teacher_tap' && !delivery.gave_up_at) return 'awaitingTeacher';
+    return 'report';
   }
   return 'inProgress';
 }
@@ -105,17 +138,21 @@ async function loadObservations(db, coachId) {
   if (!sessions.length) return [];
 
   const bySession = new Map();
-  const { data: linked } = await db
+  const { data: linked, error: linkErr } = await db
     .from('observation_schedules')
     .select('session_id, teacher_ext_id, teacher_name, school_name')
     .eq('leader_user_id', coachId)
     .in('session_id', sessions.map((s) => s.id));
+  // Without the links, observations made through a visit lose their teacher
+  // and the roster under-counts — fail rather than show that.
+  if (linkErr) throw new Error(linkErr.message);
   for (const s of linked || []) if (s.session_id && !bySession.has(s.session_id)) bySession.set(s.session_id, s);
 
   const boundIds = [...new Set(sessions.map((s) => s.user_id).filter((id) => id && id !== coachId))];
   const names = new Map();
   if (boundIds.length) {
-    const { data: users } = await db.from('users').select('id, name, first_name').in('id', boundIds);
+    const { data: users, error: nameErr } = await db.from('users').select('id, name, first_name').in('id', boundIds);
+    if (nameErr) throw new Error(nameErr.message);
     for (const u of users || []) names.set(u.id, u.name || u.first_name || null);
   }
 
@@ -140,33 +177,28 @@ async function loadObservations(db, coachId) {
  * @param {object} db supabase client
  * @param {string} coachId portal session user id
  * @param {{today?: string}} [opts] today as YYYY-MM-DD (defaults to now, UTC)
+ * @throws when a read fails (the route answers 500)
  */
 async function getCoachObservations(db, coachId, opts = {}) {
   const today = opts.today || new Date().toISOString().slice(0, 10);
-  const empty = { upcoming: [], waiting: { form: [], debrief: [], report: [] }, inProgress: [], completed: [] };
-  try {
-    const [{ data: schedules, error }, observations] = await Promise.all([
-      db.from('observation_schedules')
-        .select('id, teacher_ext_id, teacher_name, school_name, scheduled_for, scheduled_slot, created_at')
-        .eq('leader_user_id', coachId)
-        .eq('status', 'upcoming')
-        .order('scheduled_for', { ascending: true })
-        .order('created_at', { ascending: true }),
-      loadObservations(db, coachId),
-    ]);
-    if (error) throw new Error(error.message);
-    const pick = (stage) => observations.filter((o) => o.stage === stage);
-    return {
-      upcoming: (schedules || []).map((r) => shapeSchedule(r, today)),
-      waiting: { form: pick('form'), debrief: pick('debrief'), report: pick('report') },
-      inProgress: pick('inProgress'),
-      completed: pick('completed'),
-    };
-  } catch (err) {
-    // The page must render even when this cannot — degrade, never throw.
-    console.error('coach-observations: resolver failed:', err.message);
-    return empty;
-  }
+  const [{ data: schedules, error }, observations] = await Promise.all([
+    db.from('observation_schedules')
+      .select('id, teacher_ext_id, teacher_name, school_name, scheduled_for, scheduled_slot, created_at')
+      .eq('leader_user_id', coachId)
+      .eq('status', 'upcoming')
+      .order('scheduled_for', { ascending: true })
+      .order('created_at', { ascending: true }),
+    loadObservations(db, coachId),
+  ]);
+  if (error) throw new Error(error.message);
+  const pick = (...stages) => observations.filter((o) => stages.includes(o.stage));
+  return {
+    upcoming: (schedules || []).map((r) => shapeSchedule(r, today)),
+    waiting: { form: pick('form'), debrief: pick('debrief'), report: pick('report') },
+    delivering: pick('awaitingTeacher', 'withReview'),
+    inProgress: pick('inProgress'),
+    completed: pick('completed'),
+  };
 }
 
 /** The derived roster: users in the coach's schools, minus fellow coaches. */
@@ -220,8 +252,10 @@ async function getCoachTeacher(db, coachId, teacherId) {
 
 module.exports = {
   DEFAULT_COACH_ROLES,
+  isObserveEnabled,
   coachRoles,
   isCoach,
+  canUseCoachView,
   stageOf,
   getCoachObservations,
   listCoachTeachers,

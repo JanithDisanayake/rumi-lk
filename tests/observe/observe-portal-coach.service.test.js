@@ -58,6 +58,50 @@ const Gate = require('../../bot/shared/services/observe/observe-gate');
 
 const ids = (list) => list.map((o) => o.id);
 
+// The client, with every query on the named tables answering a PostgREST error.
+function failingTables(mockDb, names) {
+  const failing = () => {
+    const q = new Proxy({}, {
+      get(_, prop) {
+        if (prop === 'then') {
+          return (resolve) => resolve({ data: null, error: { message: 'column coaching_sessions.observation_type does not exist' } });
+        }
+        return () => q;
+      },
+    });
+    return q;
+  };
+  return { ...mockDb.client, from: (name) => (names.includes(name) ? failing() : mockDb.client.from(name)) };
+}
+
+const ended = (status, delivery) => ({ status, debrief_status: 'done', analysis_data: { teacher_delivery: delivery } });
+
+describe('stageOf: completed means the teacher has the report', () => {
+  test('only a sent report is completed', () => {
+    expect(Coach.stageOf(ended('observer_review_complete', { status: 'sent' }))).toBe('completed');
+    expect(Coach.stageOf(ended('completed', { status: 'sent' }))).toBe('completed');
+  });
+
+  test('an invite the teacher has not tapped yet is waiting on the teacher, not done', () => {
+    expect(Coach.stageOf(ended('observer_review_complete', { status: 'awaiting_teacher_tap', template_sent_at: '2026-03-04T00:00:00Z' })))
+      .toBe('awaitingTeacher');
+  });
+
+  test('an invite the sweep gave up on goes back to "send the report"', () => {
+    expect(Coach.stageOf(ended('observer_review_complete', { status: 'awaiting_teacher_tap', gave_up_at: '2026-03-04T00:00:00Z' })))
+      .toBe('report');
+  });
+
+  test('a report routed to the review team is with them, not done', () => {
+    expect(Coach.stageOf(ended('observer_review_complete', { status: 'operator_review' }))).toBe('withReview');
+  });
+
+  test('a failed or missing delivery is still the coach\'s to send', () => {
+    expect(Coach.stageOf(ended('observer_review_complete', { status: 'failed' }))).toBe('report');
+    expect(Coach.stageOf({ status: 'observer_review_complete', debrief_status: 'done' })).toBe('report');
+  });
+});
+
 describe('coach role family', () => {
   afterEach(() => { delete process.env.OBSERVE_LEADER_ROLES; });
 
@@ -68,6 +112,27 @@ describe('coach role family', () => {
     for (const role of ['mentor', 'HEAD_TEACHER', 'coach', null, '', 'teacher']) {
       expect(Coach.isCoach({ role })).toBe(Gate.isSchoolLeader({ role }));
     }
+  });
+
+  test('the on/off switch mirrors the bot gate, console pause included (drift guard)', () => {
+    const overrides = require('../../bot/shared/config/feature-overrides');
+    const saved = { e: process.env.OBSERVE_ENABLED, f: process.env.RUMI_FEATURE_OBSERVE };
+    try {
+      for (const enabled of [undefined, '', 'true', ' TRUE ', '1', 'yes', 'false']) {
+        for (const paused of [undefined, 'off', 'OFF', 'on']) {
+          if (enabled === undefined) delete process.env.OBSERVE_ENABLED; else process.env.OBSERVE_ENABLED = enabled;
+          if (paused === undefined) delete process.env.RUMI_FEATURE_OBSERVE; else process.env.RUMI_FEATURE_OBSERVE = paused;
+          overrides.load(process.env);
+          expect([enabled, paused, Coach.isObserveEnabled()]).toEqual([enabled, paused, Gate.isObserveEnabled()]);
+          expect(Coach.canUseCoachView({ role: 'coach' })).toBe(Gate.isObserveEnabled());
+        }
+      }
+    } finally {
+      if (saved.e === undefined) delete process.env.OBSERVE_ENABLED; else process.env.OBSERVE_ENABLED = saved.e;
+      if (saved.f === undefined) delete process.env.RUMI_FEATURE_OBSERVE; else process.env.RUMI_FEATURE_OBSERVE = saved.f;
+      overrides.load(process.env);
+    }
+    expect(Coach.canUseCoachView({ role: 'teacher' })).toBe(false);
   });
 
   test('teachers and missing users are not coaches', () => {
@@ -94,6 +159,23 @@ describe('getCoachObservations', () => {
     expect(ids(out.waiting.report)).toEqual(['cs-report']);
     expect(ids(out.inProgress)).toEqual(['cs-busy']);
     expect(ids(out.completed)).toEqual(['cs-sent', 'cs-done', 'cs-sched']);
+  });
+
+  test('a report on its way (invite untapped, with the review team) is neither waiting on the coach nor completed', async () => {
+    const mockDb = seed();
+    const row = (id, delivery) => ({ id, observation_type: 'leader_observation', observer_user_id: 'coach-1', user_id: 't-1', status: 'observer_review_complete', debrief_status: 'done', created_at: '2026-03-03T09:00:00Z', analysis_data: { teacher_delivery: delivery } });
+    mockDb.tables.coaching_sessions.push(
+      row('cs-tap', { status: 'awaiting_teacher_tap', template_sent_at: '2026-03-03T10:00:00Z' }),
+      row('cs-gaveup', { status: 'awaiting_teacher_tap', template_sent_at: '2026-03-01T10:00:00Z', gave_up_at: '2026-03-04T00:00:00Z' }),
+      row('cs-review', { status: 'operator_review' }),
+    );
+    const out = await Coach.getCoachObservations(mockDb.client, 'coach-1', { today: TODAY });
+    expect(ids(out.delivering)).toEqual(['cs-tap', 'cs-review']);
+    expect(out.delivering.map((o) => o.stage)).toEqual(['awaitingTeacher', 'withReview']);
+    expect(ids(out.waiting.report)).toEqual(['cs-report', 'cs-gaveup']);
+    expect(ids(out.completed)).not.toEqual(expect.arrayContaining(['cs-tap']));
+    expect(ids(out.completed)).not.toContain('cs-review');
+    expect(ids(out.completed)).not.toContain('cs-gaveup');
   });
 
   test('never lists cancelled observations, other coaches\' work, or the coach\'s own lessons', async () => {
@@ -124,12 +206,14 @@ describe('getCoachObservations', () => {
     expect(text).not.toMatch(/talked over|Private note|observer_debrief|analysis_data|percentage|score/i);
   });
 
-  test('degrades to empty lists when the database fails', async () => {
-    jest.spyOn(console, 'error').mockImplementation(() => {});
-    const broken = { from: () => { throw new Error('db down'); } };
-    const out = await Coach.getCoachObservations(broken, 'coach-1', { today: TODAY });
-    expect(out).toEqual({ upcoming: [], waiting: { form: [], debrief: [], report: [] }, inProgress: [], completed: [] });
-    console.error.mockRestore();
+  test('a database failure rejects instead of passing for "nothing waiting"', async () => {
+    // An empty answer would tell the coach they are up to date when they may
+    // have forms, debriefs and reports pending (e.g. the dashboard deployed
+    // before its migration). The route turns the rejection into a 500.
+    const failing = failingTables(seed(), ['coaching_sessions']);
+    await expect(Coach.getCoachObservations(failing, 'coach-1', { today: TODAY })).rejects.toThrow(/does not exist/);
+    const failingSchedules = failingTables(seed(), ['observation_schedules']);
+    await expect(Coach.getCoachObservations(failingSchedules, 'coach-1', { today: TODAY })).rejects.toThrow(/does not exist/);
   });
 });
 
@@ -165,5 +249,13 @@ describe('roster', () => {
 
     expect(await Coach.getCoachTeacher(mockDb.client, 'coach-1', 't-9')).toBeNull();
     expect(await Coach.getCoachTeacher(mockDb.client, 'coach-1', 'coach-2')).toBeNull();
+  });
+
+  test('a database failure on any roster query rejects instead of returning a short or uncounted roster', async () => {
+    for (const table of ['leader_schools', 'users', 'coaching_sessions', 'observation_schedules']) {
+      const failing = failingTables(seed(), [table]);
+      await expect(Coach.listCoachTeachers(failing, 'coach-1')).rejects.toThrow(/does not exist/);
+      await expect(Coach.getCoachTeacher(failing, 'coach-1', 't-1')).rejects.toThrow(/does not exist/);
+    }
   });
 });

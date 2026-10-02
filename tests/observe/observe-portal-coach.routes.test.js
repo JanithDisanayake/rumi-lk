@@ -6,6 +6,10 @@
  *   GET /api/portal/coach/teacher/:id    one roster teacher's observations
  *
  * Coaches only (the observe role family): a teacher gets 403, no session 401.
+ * Only while observe is on (OBSERVE_ENABLED=true, not paused by
+ * RUMI_FEATURE_OBSERVE=off): off, the coach endpoints are 404 and nobody is a
+ * coach, exactly as before the feature. A database failure is a 500, never a
+ * 200 with empty lists ("Nothing waiting. You're up to date.").
  * /dashboard tells the client whether to show the nav item (user.isCoach).
  * And the teacher-facing endpoints never surface a leader observation — its
  * score is the coach's rating, so a teacher must not see it on their portal.
@@ -52,11 +56,35 @@ beforeAll((done) => {
   server = app.listen(0, () => { base = `http://127.0.0.1:${server.address().port}`; done(); });
 });
 afterAll((done) => { server.close(done); });
+const realFrom = mockDb.client.from;
 beforeEach(() => {
+  process.env.OBSERVE_ENABLED = 'true';
   jest.spyOn(console, 'log').mockImplementation(() => {});
   jest.spyOn(console, 'error').mockImplementation(() => {});
 });
-afterEach(() => jest.restoreAllMocks());
+afterEach(() => {
+  delete process.env.OBSERVE_ENABLED;
+  delete process.env.RUMI_FEATURE_OBSERVE;
+  mockDb.client.from = realFrom;
+  jest.restoreAllMocks();
+});
+
+// Every query on the named tables answers a PostgREST error, as a dashboard
+// deployed before its migration would see.
+function failTables(names) {
+  const failing = () => {
+    const q = new Proxy({}, {
+      get(_, prop) {
+        if (prop === 'then') {
+          return (resolve) => resolve({ data: null, error: { message: 'column coaching_sessions.observation_type does not exist' } });
+        }
+        return () => q;
+      },
+    });
+    return q;
+  };
+  mockDb.client.from = (name) => (names.includes(name) ? failing() : realFrom(name));
+}
 
 function get(path) {
   return new Promise((resolve, reject) => {
@@ -109,6 +137,74 @@ describe('coach endpoints', () => {
     expect(one.body.teacher.name).toBe('Sam Taylor');
     expect(one.body.observations.map((o) => o.id)).toEqual(['cs-obs']);
     expect((await get('/api/portal/coach/teacher/t-9')).status).toBe(404);
+  });
+});
+
+describe('a database failure is an error, not an empty answer', () => {
+  test('observations: 500 {success:false}, not 200 with empty lists', async () => {
+    sessionUser = 'coach-1';
+    failTables(['coaching_sessions']);
+    const res = await get('/api/portal/coach/observations');
+    expect(res.status).toBe(500);
+    expect(res.body).toMatchObject({ success: false });
+    expect(res.body.observations).toBeUndefined();
+  });
+
+  test('observations: a failing schedules read is a 500 too', async () => {
+    sessionUser = 'coach-1';
+    failTables(['observation_schedules']);
+    expect((await get('/api/portal/coach/observations')).status).toBe(500);
+  });
+
+  test('roster and teacher detail: 500 on any failing read, never a short or uncounted roster', async () => {
+    sessionUser = 'coach-1';
+    for (const table of ['leader_schools', 'coaching_sessions', 'observation_schedules']) {
+      failTables([table]);
+      const list = await get('/api/portal/coach/teachers');
+      expect([table, list.status, list.body.success]).toEqual([table, 500, false]);
+      const one = await get('/api/portal/coach/teacher/t-1');
+      expect([table, one.status, one.body.success]).toEqual([table, 500, false]);
+    }
+  });
+
+  test('the coach check itself failing is a 500, not "this area is for coaches"', async () => {
+    sessionUser = 'coach-1';
+    failTables(['users']);
+    const res = await get('/api/portal/coach/observations');
+    expect(res.status).toBe(500);
+    expect(res.body.success).toBe(false);
+  });
+});
+
+describe('OBSERVE_ENABLED gates the coach view on the dashboard too', () => {
+  test('unset: every coach endpoint is 404 and the coach is not a coach on /dashboard', async () => {
+    delete process.env.OBSERVE_ENABLED;
+    sessionUser = 'coach-1';
+    for (const p of ['/coach/observations', '/coach/teachers', '/coach/teacher/t-1']) {
+      const res = await get(`/api/portal${p}`);
+      expect([p, res.status]).toEqual([p, 404]);
+      expect(res.body.success).toBe(false);
+    }
+    expect((await get('/api/portal/dashboard')).body.user.isCoach).toBe(false);
+  });
+
+  test('anything but "true" is off; the console pause (RUMI_FEATURE_OBSERVE=off) is off', async () => {
+    sessionUser = 'coach-1';
+    for (const v of ['1', 'yes', 'false', '']) {
+      process.env.OBSERVE_ENABLED = v;
+      expect([v, (await get('/api/portal/coach/teachers')).status]).toEqual([v, 404]);
+    }
+    process.env.OBSERVE_ENABLED = ' TRUE ';
+    expect((await get('/api/portal/coach/teachers')).status).toBe(200);
+    process.env.RUMI_FEATURE_OBSERVE = 'off';
+    expect((await get('/api/portal/coach/teachers')).status).toBe(404);
+    expect((await get('/api/portal/dashboard')).body.user.isCoach).toBe(false);
+  });
+
+  test('set: the coach view is there, read at call time', async () => {
+    sessionUser = 'coach-1';
+    expect((await get('/api/portal/coach/observations')).status).toBe(200);
+    expect((await get('/api/portal/dashboard')).body.user.isCoach).toBe(true);
   });
 });
 
