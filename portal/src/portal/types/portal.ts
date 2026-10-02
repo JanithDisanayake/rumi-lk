@@ -141,7 +141,10 @@ export interface VideoDetail extends VideoRequest {
 
 // Coach's view ("My observations"). No scores and no coach-the-coach feedback
 // are ever sent to the portal for these.
-export type ObservationStage = 'form' | 'debrief' | 'report' | 'inProgress' | 'completed';
+// awaitingTeacher / withReview: the report is on its way but the teacher does
+// not have it yet (an unopened invite, or with the review team).
+export type ObservationStage =
+  | 'form' | 'debrief' | 'report' | 'awaitingTeacher' | 'withReview' | 'inProgress' | 'completed';
 
 export interface CoachVisit {
   id: string;
@@ -167,6 +170,8 @@ export interface CoachObservation {
 export interface CoachObservationsData {
   upcoming: CoachVisit[];
   waiting: { form: CoachObservation[]; debrief: CoachObservation[]; report: CoachObservation[] };
+  /** Reports on their way: nothing for the coach to do, not completed either. */
+  delivering?: CoachObservation[];
   inProgress: CoachObservation[];
   completed: CoachObservation[];
 }

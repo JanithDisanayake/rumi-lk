@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { CalendarDays, ClipboardList, CheckCircle2, Users, ChevronRight, Loader2 } from 'lucide-react';
+import { CalendarDays, ClipboardList, CheckCircle2, Users, ChevronRight, Loader2, Send } from 'lucide-react';
 import PortalLayout from '../components/PortalLayout';
 import LoadingState from '../components/LoadingState';
 import ObservationRow from '../components/ObservationRow';
@@ -12,7 +12,9 @@ import type { CoachObservationsData, CoachTeacher } from '../types/portal';
 /**
  * The coach's view — "My observations". Upcoming and overdue visits, what is
  * waiting on the coach (a form to check, a debrief to do, a report to send),
- * the finished observations, and their teachers. Read-only: recording,
+ * reports on their way to the teacher, the finished observations (the teacher
+ * has the report), and their teachers. A failed load shows the error state,
+ * never "Nothing waiting". Read-only: recording,
  * debriefing and sending happen in chat with /observe.
  */
 
@@ -57,6 +59,7 @@ const CoachObservations = () => {
   }, []);
 
   const waiting = data ? [...data.waiting.form, ...data.waiting.debrief, ...data.waiting.report] : [];
+  const delivering = data?.delivering ?? [];
 
   return (
     <PortalLayout>
@@ -124,6 +127,14 @@ const CoachObservations = () => {
                 </ul>
               )}
             </Section>
+
+            {delivering.length > 0 && (
+              <Section icon={Send} title="On its way to the teacher" count={delivering.length}>
+                <ul className="divide-y divide-border">
+                  {delivering.map((o) => <ObservationRow key={o.id} observation={o} />)}
+                </ul>
+              </Section>
+            )}
 
             {data.inProgress.length > 0 && (
               <Section icon={Loader2} title="Being prepared" count={data.inProgress.length}>

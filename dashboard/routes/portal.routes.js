@@ -34,7 +34,7 @@ const supabase = require('../config/supabase');
 const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { generatePresignedUrl, generatePresignedUrls, isValidR2Url } = require('../services/r2.service');
 const { createCoachRouter } = require('./portal-coach.routes');
-const { isCoach } = require('../services/coach-observations.service');
+const { canUseCoachView } = require('../services/coach-observations.service');
 
 // Configure R2 S3 client for private PDF access. Lazy — resolved on first
 // use, not at module load, so mounting these routes never depends on R2 env
@@ -797,8 +797,9 @@ router.get('/dashboard', requirePortalAuth, async (req, res) => {
         firstName: user.first_name,
         lastName: user.last_name,
         phoneNumber: user.phone_number,
-        // Shows the "Observations" nav item; the coach endpoints gate on the server.
-        isCoach: isCoach(user)
+        // Shows the "Observations" nav item (observe on + role family); the
+        // coach endpoints gate on the server.
+        isCoach: canUseCoachView(user)
       },
       stats: {
         totalLessonPlans: lessonPlansResult.status === 'fulfilled' ? (lessonPlansResult.value.count || 0) : 0,
