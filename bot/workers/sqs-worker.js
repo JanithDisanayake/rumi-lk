@@ -451,11 +451,13 @@ class SQSCoachingWorker {
       // planned). Same v2 envelope: the producer's fields live under
       // body.payload; the envelope groupId is the fallback id.
       case 'quiz_offer': {
-        // Reads the coaching session, decides, sends the offer.
+        // Reads the coaching session, digests it, sends the offer. The lease
+        // is never shortened below the queue's own receive lease (quiz 600 s,
+        // main 900 s): a shorter one hands a slow digest to a second worker.
         if (sourceQueue === 'quiz') {
-          await SQSQueueService.extendQuizJobTimeout(receiptHandle, 300);
+          await SQSQueueService.extendQuizJobTimeout(receiptHandle, 600);
         } else {
-          await SQSQueueService.extendJobTimeout(receiptHandle, 300);
+          await SQSQueueService.extendJobTimeout(receiptHandle, 900);
         }
         const TranscriptQuizOffer = require('../shared/services/quiz/transcript-quiz-offer.service');
         const p = (body && body.payload) ? body.payload : (payload || {});
@@ -463,11 +465,14 @@ class SQSCoachingWorker {
         break;
       }
       case 'quiz_generate': {
-        // Two model calls + a PDF render + three sends: give it room.
+        // Up to TRANSCRIPT_QUIZ_MAX_ATTEMPTS rounds of authoring, a blind
+        // solve, figures, a PDF and three sends. 30 minutes, the same window
+        // after which the step's run claim counts as dead
+        // (TRANSCRIPT_QUIZ_STALE_MINUTES): a redelivery inside it exits.
         if (sourceQueue === 'quiz') {
-          await SQSQueueService.extendQuizJobTimeout(receiptHandle, 600);
+          await SQSQueueService.extendQuizJobTimeout(receiptHandle, 1800);
         } else {
-          await SQSQueueService.extendJobTimeout(receiptHandle, 600);
+          await SQSQueueService.extendJobTimeout(receiptHandle, 1800);
         }
         const TranscriptQuizGenerate = require('../shared/services/quiz/transcript-quiz-generate.service');
         const p = (body && body.payload) ? body.payload : (payload || {});

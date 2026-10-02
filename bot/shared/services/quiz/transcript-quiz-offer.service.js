@@ -74,6 +74,40 @@ function enabled() {
   return require('../../config/feature-overrides').isEnabled('lesson_quiz');
 }
 
+/**
+ * How long a `generating` row may go without progress before it counts as
+ * dead (TRANSCRIPT_QUIZ_STALE_MINUTES, default 30 — the generate job's lease,
+ * see sqs-worker quiz_generate). A run that died, or a job that was never
+ * queued, leaves its row `generating`; after this window the generate step
+ * may take its claim over and /quiz offers to make the quiz again.
+ */
+const STALE_MINUTES = 30;
+function staleMs() {
+  const n = Number.parseInt(String(process.env.TRANSCRIPT_QUIZ_STALE_MINUTES || '').trim(), 10);
+  return (Number.isFinite(n) && n >= 1 ? n : STALE_MINUTES) * 60 * 1000;
+}
+
+/**
+ * The last sign of life on a `generating` row: the live run's claim
+ * (`meta.run_ms`), else the moment it was accepted or claimed.
+ */
+function lastProgressMs(quiz) {
+  const meta = (quiz && quiz.meta) || {};
+  const stamps = [Number(meta.run_ms) || 0];
+  for (const k of ['accepted_at', 'retried_at', 'claimed_at', 'remade_at']) {
+    const t = Date.parse(meta[k] || '');
+    if (Number.isFinite(t)) stamps.push(t);
+  }
+  return Math.max(...stamps);
+}
+
+/** A `generating` row nothing has touched for the stale window. */
+function isStaleGenerating(quiz, now = Date.now()) {
+  if (!quiz || quiz.status !== 'generating') return false;
+  const last = lastProgressMs(quiz);
+  return last > 0 && now - last >= staleMs();
+}
+
 function offerMode() {
   return (process.env.TRANSCRIPT_QUIZ_OFFER_MODE || 'once').trim().toLowerCase() === 'every' ? 'every' : 'once';
 }
@@ -571,7 +605,7 @@ async function handleLanguageButton(buttonId, phone, user) {
 }
 
 module.exports = {
-  enabled, offerMode, subjectAllowed, alreadyOffered,
+  enabled, offerMode, subjectAllowed, alreadyOffered, staleMs, isStaleGenerating, STALE_MINUTES,
   scheduleOffer, triggerEarly, processOffer, handleOfferButton, handleLanguageButton, claimRow, languageByPhone,
   sendLanguageAsk, startGenerating, tellAlready, queueLpQuiz, remakeLpQuiz,
   OFFER_YES, OFFER_NO, MIN_TRANSCRIPT_CHARS, OFFER_DELAY_SECONDS, MIN_CONFIDENCE, MIN_SLOS, FEATURE_KEY, SESSION_SELECT,

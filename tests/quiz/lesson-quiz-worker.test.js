@@ -62,7 +62,9 @@ describe('quiz_offer', () => {
     const body = v2(CSID, { coachingSessionId: CSID, userId: 'u-1', phone: '15550001111' });
     await w.executeJob(CSID, 'quiz_offer', body.payload, 'rh-1', 'quiz', body);
     expect(mocks.offer.processOffer).toHaveBeenCalledWith(CSID, expect.objectContaining({ userId: 'u-1' }));
-    expect(mocks.queue.extendQuizJobTimeout).toHaveBeenCalledWith('rh-1', 300);
+    // Never shorter than the quiz queue's receive lease (600 s): shortening it
+    // is what let a slow digest be handed to a second worker.
+    expect(mocks.queue.extendQuizJobTimeout).toHaveBeenCalledWith('rh-1', 600);
     expect(mocks.queue.extendJobTimeout).not.toHaveBeenCalled();
   });
 
@@ -71,17 +73,19 @@ describe('quiz_offer', () => {
     const body = v2(CSID, {});
     await w.executeJob(CSID, 'quiz_offer', {}, 'rh-2', 'main', body);
     expect(mocks.offer.processOffer).toHaveBeenCalledWith(CSID, {});
-    expect(mocks.queue.extendJobTimeout).toHaveBeenCalledWith('rh-2', 300);
+    expect(mocks.queue.extendJobTimeout).toHaveBeenCalledWith('rh-2', 900);
   });
 });
 
 describe('quiz_generate', () => {
-  test('runs the generate pipeline for the quiz id with a 10-minute lease', async () => {
+  test('runs the generate pipeline for the quiz id with a 30-minute lease', async () => {
     const w = load();
     const body = v2(QID, { quizId: QID, language: 'en' });
     await w.executeJob(QID, 'quiz_generate', body.payload, 'rh-3', 'quiz', body);
     expect(mocks.generate.process).toHaveBeenCalledWith(QID, expect.objectContaining({ language: 'en' }));
-    expect(mocks.queue.extendQuizJobTimeout).toHaveBeenCalledWith('rh-3', 600);
+    // Up to three authoring rounds, a blind solve, figures and a PDF: a lease
+    // shorter than the run hands the job to a second worker (review F-S2).
+    expect(mocks.queue.extendQuizJobTimeout).toHaveBeenCalledWith('rh-3', 1800);
   });
 });
 

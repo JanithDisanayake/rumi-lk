@@ -33,7 +33,7 @@ const { duplicateQuestionErrors, confirmsSameFact, solverDuplicateComplaint } = 
 const {
   teacherLanguageFor, quizLanguageFor, formatLessonDate, topicFor, lessonLabel, canonicalSubject,
 } = require('./transcript-quiz-language');
-const { SESSION_SELECT, MIN_TRANSCRIPT_CHARS } = require('./transcript-quiz-offer.service');
+const { SESSION_SELECT, MIN_TRANSCRIPT_CHARS, staleMs } = require('./transcript-quiz-offer.service');
 const {
   TRANSCRIPT, TOPIC, isPlanQuiz, lessonSessionFor, failureCopyKey, digestFailureReason,
 } = require('./quiz-sources');
@@ -1530,22 +1530,78 @@ async function runKeyVerify(api, {
   return finish({ failed: true });
 }
 
-/** The generate step (the `quiz_generate` job). */
-async function process(quizId, payload = {}) {
-  return processQuiz(quizId, payload || {});
+/**
+ * THE RUN CLAIM. A quiz_generate job can arrive twice — a Standard queue is
+ * at-least-once, and a run longer than its lease is handed to a second
+ * worker — and both runs would make the quiz: two share codes, two PDFs, two
+ * links. Before any work the run stamps `meta.run_ms` with a compare-and-set
+ * on the value it read (null, or a claim older than the stale window: a run
+ * that died). Whoever loses the race exits. `->>` reads text, so the stamp is
+ * stored as a string.
+ */
+async function claimRun(quiz) {
+  const meta = quiz.meta || {};
+  const held = meta.run_ms != null ? String(meta.run_ms) : null;
+  const now = Date.now();
+  if (held && now - Number(held) < staleMs()) return { claimed: false };
+  const ms = String(now);
+  const next = { ...meta, run_ms: ms };
+  let q = supabase.from('quizzes').update({ meta: next }).eq('id', quiz.id).eq('status', quiz.status);
+  q = held ? q.eq('meta->>run_ms', held) : q.is('meta->>run_ms', null);
+  const { data, error } = await q.select('id');
+  if (error) throw new Error(`transcript quiz: run claim failed: ${error.message}`);
+  if (Array.isArray(data) ? !data.length : !data) return { claimed: false };
+  return { claimed: true, ms, meta: next, tookOver: Boolean(held) };
 }
 
-async function processQuiz(quizId, payload) {
+/**
+ * Hand the claim back when the run ends — however it ends. A row still being
+ * made (a throw, which the queue redelivers) must not read as "a run is
+ * live", and a failed row that is later remade carries its meta over.
+ */
+async function releaseRun(quizId, ms) {
+  try {
+    const { data } = await supabase.from('quizzes').select('meta').eq('id', quizId).maybeSingle();
+    if (!data || !data.meta || String(data.meta.run_ms) !== ms) return;
+    const { run_ms: _done, ...rest } = data.meta;
+    await supabase.from('quizzes').update({ meta: rest }).eq('id', quizId).eq('meta->>run_ms', ms);
+  } catch (err) {
+    logToFile('⚠️ transcript quiz: run claim not released (it expires)', { quizId, error: err.message });
+  }
+}
+
+/** The generate step (the `quiz_generate` job). */
+async function process(quizId, payload = {}) {
+  const run = { ms: null };
+  try {
+    return await processQuiz(quizId, payload || {}, run);
+  } finally {
+    if (run.ms) await releaseRun(quizId, run.ms);
+  }
+}
+
+async function processQuiz(quizId, payload, run = {}) {
   const api = module.exports;
-  const { data: quiz, error } = await supabase.from('quizzes')
+  const { data: found, error } = await supabase.from('quizzes')
     .select('id, teacher_id, coaching_session_id, lesson_plan_id, quiz_source, topic, subject, language, status, meta, grade')
     .eq('id', quizId).maybeSingle();
+  let quiz = found;
   if (error || !quiz) {
     logToFile('⚠️ transcript quiz: generate — quiz not found', { quizId, error: error?.message });
     return { skipped: 'quiz_not_found' };
   }
   if (quiz.status === 'sent' || quiz.status === 'report_sent') return { skipped: 'already_sent' };
   if (!['generating', 'ready', 'offered'].includes(quiz.status)) return { skipped: `status_${quiz.status}` };
+
+  const claim = await claimRun(quiz);
+  if (!claim.claimed) {
+    logEvent('transcript_quiz.generate_skipped', { quizId, reason: 'already_running' });
+    return { skipped: 'already_running' };
+  }
+  run.ms = claim.ms;
+  // A copy: the row as claimed, never an edit of the object that was read.
+  quiz = { ...quiz, meta: claim.meta };
+  if (claim.tookOver) logToFile('⚠️ transcript quiz: a stale run was taken over', { quizId });
 
   // ── WHAT THE QUIZ IS WRITTEN FROM ─────────────────────────────────────────
   // A transcript quiz has a coaching session. A plan quiz (lp_generated) and a
