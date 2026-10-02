@@ -1,9 +1,8 @@
 /**
  * paper-generation — source material in, a test paper's question tree out.
  *
- * The model call is mocked at the openai SDK (the network boundary), so the
- * real llm-client, the model registry and every post-processing step run on
- * their live path. What is pinned:
+ * The model call is mocked at llm-client's client, so the model registry,
+ * prompt assembly and every post-processing step run on their live path. What is pinned:
  *   * the prompt is assembled in the right order (safety last) and carries the
  *     subject family's guidance, the paper's language and the teacher's counts;
  *   * the neutral prompt pack carries no single-country or gendered text;
@@ -71,9 +70,14 @@ beforeEach(() => {
   delete process.env.LLM_PROVIDER;
   jest.doMock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn() }));
   mockCreate = jest.fn();
-  jest.doMock('openai', () => jest.fn().mockImplementation(() => ({
-    chat: { completions: { create: mockCreate } },
-  })), { virtual: true });
+  // The model call is mocked at llm-client's client (a real file, mocked the
+  // same non-virtual way by every suite) rather than at the openai package,
+  // whose mixed virtual/real mocking across suites made results depend on
+  // which suites shared a Jest worker.
+  jest.doMock('../../bot/shared/services/llm-client', () => ({
+    getClient: () => ({ chat: { completions: { create: mockCreate } } }),
+    getDefaultModel: () => 'openai/gpt-4o',
+  }));
   Gen = require('../../bot/shared/services/testpaper/paper-generation.service');
 });
 

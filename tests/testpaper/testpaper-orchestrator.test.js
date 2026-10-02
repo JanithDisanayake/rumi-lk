@@ -8,8 +8,8 @@
  *
  * Real: the store, the sources, the session (memory fallback), question types,
  * the renderer and delivery. Mocked at the boundary: the database (in-memory
- * query builder), the channel facade, the queue, Redis, Chromium and the PDF
- * parser.
+ * query builder), the channel facade, the queue, Redis, Chromium (the html-to-pdf
+ * wrapper) and the PDF parser.
  */
 
 const { createFakeDb } = require('./helpers/fake-db');
@@ -69,9 +69,7 @@ function load(seedData = seed(), env = {}) {
   jest.doMock('../../bot/shared/services/queue', () => queue);
   mockPdfParse = jest.fn();
   jest.doMock('pdf-parse', () => mockPdfParse, { virtual: true });
-  const page = { setContent: jest.fn(), evaluate: jest.fn(), pdf: jest.fn().mockResolvedValue(Buffer.from('%PDF-1.4')) };
-  const context = { newPage: jest.fn().mockResolvedValue(page), close: jest.fn().mockResolvedValue() };
-  jest.doMock('playwright-core', () => ({ chromium: { launch: jest.fn().mockResolvedValue({ isConnected: () => true, newContext: jest.fn().mockResolvedValue(context), on: jest.fn(), close: jest.fn() }) } }), { virtual: true });
+  jest.doMock('../../bot/shared/utils/html-to-pdf', () => ({ htmlToPdf: jest.fn().mockResolvedValue(Buffer.from('%PDF-1.4')) }));
   // As whatsapp-bot.js does at startup: the operator's RUMI_FEATURE_* switches.
   require('../../bot/shared/config/feature-availability').overrides.load(process.env);
   O = require('../../bot/shared/services/testpaper/testpaper-orchestrator.service');

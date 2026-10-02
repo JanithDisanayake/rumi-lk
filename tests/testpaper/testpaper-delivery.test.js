@@ -2,9 +2,9 @@
  * testpaper-delivery — a stored paper version becomes two PDFs in the chat
  * (the paper, then its answer key) and a follow-up offering an edit.
  *
- * The real renderer and the real html-to-pdf run; Chromium is mocked at
- * playwright-core and the channel at the messaging facade, so whatever channel
- * the teacher is on, the same calls are made.
+ * The real renderer runs; printing is mocked at the repo's html-to-pdf
+ * wrapper (Chromium) and the channel at the messaging facade, so whatever
+ * channel the teacher is on, the same calls are made.
  */
 
 const fs = require('fs');
@@ -28,14 +28,16 @@ const REQUEST = { id: 'req-1', subject: 'math', grade: '2', language: 'en', sour
 function setup({ pdfFails = false } = {}) {
   jest.resetModules();
   pdfHtml = [];
-  const page = {
-    setContent: jest.fn(async (html) => { pdfHtml.push(html); }),
-    evaluate: jest.fn().mockResolvedValue(),
-    pdf: pdfFails ? jest.fn().mockRejectedValue(new Error('Executable doesn\'t exist')) : jest.fn().mockResolvedValue(Buffer.from('%PDF-1.4 fake')),
-  };
-  const context = { newPage: jest.fn().mockResolvedValue(page), close: jest.fn().mockResolvedValue() };
-  launch = jest.fn().mockResolvedValue({ isConnected: () => true, newContext: jest.fn().mockResolvedValue(context), on: jest.fn(), close: jest.fn() });
-  jest.doMock('playwright-core', () => ({ chromium: { launch } }), { virtual: true });
+  // The repo's html-to-pdf wrapper is the boundary here (its own suite covers
+  // Playwright). Mocking the wrapper — a real file — rather than playwright-core
+  // virtually keeps this suite independent of which other suites share its
+  // Jest worker.
+  launch = jest.fn(async (html) => {
+    pdfHtml.push(html);
+    if (pdfFails) throw new Error('Executable doesn\'t exist');
+    return Buffer.from('%PDF-1.4 fake');
+  });
+  jest.doMock('../../bot/shared/utils/html-to-pdf', () => ({ htmlToPdf: launch }));
   jest.doMock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn() }));
   WA = {
     sendDocument: jest.fn(async (to, filePath) => {

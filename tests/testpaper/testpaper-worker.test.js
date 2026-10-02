@@ -3,7 +3,7 @@
  *
  * End to end inside the process: the real store (on an in-memory query
  * builder), the real generator, renderer and delivery. Only the boundaries are
- * mocked — the model at the openai SDK, Chromium at playwright-core, the
+ * mocked — the model at llm-client's client, Chromium at the html-to-pdf wrapper, the
  * channel at the messaging facade.
  */
 
@@ -38,10 +38,15 @@ beforeEach(() => {
   jest.doMock('../../bot/shared/config/supabase', () => db);
   jest.doMock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn() }));
   mockCreate = jest.fn();
-  jest.doMock('openai', () => jest.fn().mockImplementation(() => ({ chat: { completions: { create: mockCreate } } })), { virtual: true });
-  const page = { setContent: jest.fn(), evaluate: jest.fn(), pdf: jest.fn().mockResolvedValue(Buffer.from('%PDF-1.4')) };
-  const context = { newPage: jest.fn().mockResolvedValue(page), close: jest.fn().mockResolvedValue() };
-  jest.doMock('playwright-core', () => ({ chromium: { launch: jest.fn().mockResolvedValue({ isConnected: () => true, newContext: jest.fn().mockResolvedValue(context), on: jest.fn(), close: jest.fn() }) } }), { virtual: true });
+  // The model call is mocked at llm-client's client (a real file, mocked the
+  // same non-virtual way by every suite) rather than at the openai package,
+  // whose mixed virtual/real mocking across suites made results depend on
+  // which suites shared a Jest worker.
+  jest.doMock('../../bot/shared/services/llm-client', () => ({
+    getClient: () => ({ chat: { completions: { create: mockCreate } } }),
+    getDefaultModel: () => 'openai/gpt-4o',
+  }));
+  jest.doMock('../../bot/shared/utils/html-to-pdf', () => ({ htmlToPdf: jest.fn().mockResolvedValue(Buffer.from('%PDF-1.4')) }));
   WA = {
     sendDocument: jest.fn().mockResolvedValue(true),
     sendMessage: jest.fn().mockResolvedValue(true),
