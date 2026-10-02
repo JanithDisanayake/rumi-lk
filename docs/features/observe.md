@@ -38,7 +38,7 @@ is a conversation everywhere, and an editable WhatsApp Flow on Meta when you pub
 
 | Variable | What |
 |---|---|
-| `OBSERVE_ENABLED` | `true` turns `/observe` on (the console switch `RUMI_FEATURE_OBSERVE=off` pauses it). Off, everything behaves exactly as before. |
+| `OBSERVE_ENABLED` | `true` turns `/observe` on (the console switch `RUMI_FEATURE_OBSERVE=off` pauses it). Off, everything behaves exactly as before. Set it on the **dashboard** service too: the portal's coach view reads its own environment and is off without it. |
 | `OBSERVE_FRAMEWORK` | `teach` (default — the public TEACH classroom observation tool), `hots`, or `mewaka` |
 | `OBSERVE_LEADER_ROLES` | who may use `/observe` (users.role, comma list). Default `head_teacher,principal,school_leader,coach,supervisor` (`principal` and `school_leader` are read as aliases of `head_teacher`, which is what the roster script writes) |
 | `OBSERVE_SELF_COACH_ROLES` | which of those also teach and may send their *own* lesson for self-coaching. Default `head_teacher,principal,school_leader` |
@@ -157,7 +157,7 @@ the answer is "already got this one". A bound recording becomes a normal
 capture: the teacher owns the session, the visit is marked done and the coach
 gets the capture ack.
 
-### Roster management (for the partner)
+### Roster management (for administrators)
 
 ```
 node bot/scripts/observe-roster.js grant-coach <phone> [role]
@@ -274,7 +274,7 @@ validator's error. If that also fails, the coach is told the debrief couldn't be
 analysed. The transcript is kept.
 
 The feedback is sent as an image card built from the shipped brand assets
-(`assets/rumi-mark-*.png`, `BOT_NAME`). If the card can't be rendered or sent,
+(`bot/shared/assets/rumi-mark-{navy,white}.png`, `BOT_NAME`). If the card can't be rendered or sent,
 the text card is sent instead. A harmful debrief never gets a card.
 
 ### Failures and retries
@@ -407,9 +407,17 @@ navigation. It opens **My observations** (`/portal/observe`):
 - **Waiting on you** — observations that need the coach next:
   **Check the form** (the AI's draft ratings are ready to review),
   **Do the debrief** (the form is done, the feedback conversation is not), and
-  **Send the report** (the debrief is done, the teacher has not had their report yet).
+  **Send the report** (the debrief is done and no report is out: never sent,
+  the send failed, or the teacher never opened the invite and Rumi stopped
+  waiting).
+- **On its way to the teacher** — sent, but the teacher does not have it yet:
+  **Invite sent, waiting for the teacher** (the invite outside the 24-hour
+  window has not been opened) or **With the review team** (review mode sent it
+  to the review number first). Nothing for the coach to do here.
 - **Being prepared** — recordings still being transcribed or analysed.
-- **Completed** — the debrief is done and the report has reached the teacher.
+- **Completed** — the debrief is done and the report has reached the teacher
+  (`teacher_delivery.status` is `sent`, the same rule as [Completion](#completion)).
+  An unopened invite or a report with the review team is never shown as done.
 - **My teachers** — the teachers in the coach's schools, with how many times
   the coach has observed each and when they last did. Opening a teacher
   (`/portal/observe/teacher/<id>`) lists the coach's past observations of them.
@@ -419,16 +427,29 @@ report all happen in chat with `/observe`; the portal shows where each one stand
 
 ### Who sees it
 
-Only users whose `users.role` is in the coach role family —
-`OBSERVE_LEADER_ROLES` (default `coach,school_leader,supervisor,principal`),
-the same setting the chat command uses. The portal API checks this on every
-request: anyone else gets `403` from `/api/portal/coach/*`, and the navigation
-item is not shown to them. A coach sees only their own visits and observations,
+Only while observe is on, and only users whose `users.role` is in the coach
+role family — `OBSERVE_LEADER_ROLES` (default
+`head_teacher,principal,school_leader,coach,supervisor`), the same setting the
+chat command uses. The portal API checks this on every request: anyone else
+gets `403` from `/api/portal/coach/*`, and the navigation item is not shown to
+them.
+
+The dashboard runs as its own service and reads `OBSERVE_ENABLED` (and the
+console pause `RUMI_FEATURE_OBSERVE=off`) from **its own** environment, at
+request time. Unless it is `true` there, `/api/portal/coach/*` answers `404`
+and no one is shown the Observations item, so set it on the dashboard as well
+as the bot. A coach sees only their own visits and observations,
 and only teachers in the schools assigned to them (`leader_schools`); asking for
 any other teacher returns `404`.
 
 Because the dashboard runs as its own service, it keeps a copy of the default
-role list; a test fails if it ever differs from the bot's.
+role list and of the on/off rule; a test fails if either ever differs from the
+bot's.
+
+If the database cannot be read (for example, the dashboard was deployed before
+the migration), the coach endpoints answer `500` and the page says the
+observations aren't available right now. It never shows an empty "Nothing
+waiting" in place of an error.
 
 ### What it never shows
 
@@ -444,10 +465,10 @@ role list; a test fails if it ever differs from the bot's.
 
 | Endpoint | Returns |
 |---|---|
-| `GET /api/portal/coach/observations` | `{ upcoming, waiting: { form, debrief, report }, inProgress, completed }` |
+| `GET /api/portal/coach/observations` | `{ upcoming, waiting: { form, debrief, report }, delivering, inProgress, completed }` (`delivering`: stage `awaitingTeacher` or `withReview`) |
 | `GET /api/portal/coach/teachers` | `{ teachers: [{ id, name, schoolName, observationCount, lastObservedAt }] }` |
 | `GET /api/portal/coach/teacher/:id` | `{ teacher, observations }`, or `404` if the teacher is not in the coach's schools |
-| `GET /api/portal/dashboard` | now also returns `user.isCoach`, which shows or hides the nav item |
+| `GET /api/portal/dashboard` | now also returns `user.isCoach` (observe on and in the role family), which shows or hides the nav item |
 
 Each observation carries `id, createdAt, stage, teacherUserId, teacherName,
 schoolName, reportStatus, reportSentAt`. The teacher is identified from the

@@ -463,6 +463,7 @@ Class attendance needs nothing. For a head teacher's **staff** attendance and re
 2. Existing database: apply `infrastructure/supabase/migrations/V2.6.0__observe_coach_assistant.sql`
    (fresh installs already have it from `00_complete-schema.sql`).
 3. Add to your environment: `OBSERVE_ENABLED=true` (optionally `OBSERVE_FRAMEWORK`, default `teach`).
+   Set `OBSERVE_ENABLED=true` on the dashboard service as well: the portal's coach view ("My observations") reads its own environment and stays off without it.
 4. Give your coaches their schools and teachers:
    `node bot/scripts/observe-roster.js import roster.csv` (columns `coach_phone,school_ext_id,school_name,teacher_phone,teacher_name`),
    or one at a time with `grant-coach`, `add-school` and `add-teacher`.
