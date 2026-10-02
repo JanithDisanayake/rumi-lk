@@ -562,6 +562,13 @@ describe('doctor on a WhatsApp-free deployment (CHANNEL_DRIVER=none)', () => {
     expect(text).toMatch(/answers only on: matrix/);
   });
 
+  it('does not list the WhatsApp Cloud API as a required service', async () => {
+    const env = { ...CORE, CHANNEL_DRIVER: 'none', MATRIX_HOMESERVER_URL: 'https://m.example.org', MATRIX_ACCESS_TOKEN: 't' };
+    const r = await runDoctor({ env, probes, setupState: null });
+    expect(r.probeResults.map((p) => p.name)).not.toContain('WhatsApp Cloud API');
+    expect(formatReport(r)).not.toMatch(/WhatsApp Cloud API/);
+  });
+
   it('fails when nothing at all can answer', async () => {
     const r = await runDoctor({ env: { ...CORE, CHANNEL_DRIVER: 'none' }, probes, setupState: null });
     expect(r.ok).toBe(false);

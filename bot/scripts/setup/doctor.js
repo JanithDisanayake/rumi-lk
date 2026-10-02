@@ -357,7 +357,8 @@ const REQUIRED_PROBES = [
   { name: 'Supabase', probe: 'supabase', needs: ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'] },
   { name: 'Rumi tables', probe: 'tables', needs: ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'] },
   { name: 'OpenRouter (LLM)', probe: 'openrouter', needs: ['OPENROUTER_API_KEY'] },
-  { name: 'WhatsApp Cloud API', probe: 'whatsapp', needs: ['PHONE_NUMBER_ID', 'WHATSAPP_TOKEN'] },
+  // Not required, and not listed, when CHANNEL_DRIVER=none: there is no WhatsApp.
+  { name: 'WhatsApp Cloud API', probe: 'whatsapp', needs: ['PHONE_NUMBER_ID', 'WHATSAPP_TOKEN'], skipOn: ['none'] },
   { name: 'Redis', probe: 'redis', needs: ['REDIS_URL'] },
 ];
 
@@ -388,7 +389,8 @@ async function runDoctor({
 
   // Run REQUIRED probes only for services whose vars are present.
   const probeResults = [];
-  for (const { name, probe, needs = [] } of REQUIRED_PROBES) {
+  for (const { name, probe, needs = [], skipOn = [] } of REQUIRED_PROBES) {
+    if (skipOn.includes(analysis.channel)) continue;
     const impl = probes[probe];
     if (!impl) { probeResults.push({ name, status: 'skip', detail: 'no probe' }); continue; }
     if (needs.some((k) => !isSet(env[k]))) {

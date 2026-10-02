@@ -37,6 +37,32 @@ describe('console channel cards', () => {
   });
 });
 
+// The extra channels can be the only channels (CHANNEL_DRIVER=none), so no
+// copy about them may promise that WhatsApp is there too.
+describe('channel copy does not assume WhatsApp exists', () => {
+  const ASSUMES_WHATSAPP = /as well as WhatsApp|WhatsApp is unaffected|alongside (?:your )?WhatsApp/i;
+
+  it('on the console cards, the group blurb and the "when off" lines', () => {
+    const catalog = buildCatalog({ CHANNEL_DRIVER: 'none' });
+    const group = catalog.groups.find((g) => g.id === 'channels');
+    expect(group.blurb).not.toMatch(ASSUMES_WHATSAPP);
+    for (const card of channelCards({ CHANNEL_DRIVER: 'none' })) expect(card.why).not.toMatch(ASSUMES_WHATSAPP);
+    for (const [id, text] of Object.entries(WHEN_OFF)) {
+      if (id.startsWith('channel_')) expect(text).not.toMatch(ASSUMES_WHATSAPP);
+    }
+  });
+
+  it('in the doctor notes and the .env.template channel headers', () => {
+    for (const f of FEATURES.filter((x) => x.id && x.id.startsWith('channel_'))) {
+      expect(f.notes || '').not.toMatch(ASSUMES_WHATSAPP);
+    }
+    const template = require('fs').readFileSync(require('path').join(__dirname, '../../.env.template'), 'utf8');
+    const headers = template.split('\n').filter((l) => /^# --- ENABLES: (?:Slack|Discord|Matrix) channel/.test(l));
+    expect(headers).toHaveLength(3);
+    for (const line of headers) expect(line).not.toMatch(ASSUMES_WHATSAPP);
+  });
+});
+
 describe('console overview: what Rumi is answering on', () => {
   const { answeringOn } = require('../../bot/console/env-catalog');
 

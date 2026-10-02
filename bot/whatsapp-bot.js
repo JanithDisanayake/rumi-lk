@@ -1978,6 +1978,8 @@ function startServer() {
   exitOnChannelLogout();
   return app.listen(constants.PORT, () => {
   const version = require('./shared/utils/version').rumiVersion();
+  // Only a Meta deployment has a Meta webhook to configure (see the module).
+  const { webhookInstructions } = require('./shared/utils/webhook-instructions');
 
   const startupMessage = `\n${'='.repeat(70)}
 🤖 Rumi v${version}
@@ -1992,27 +1994,7 @@ ${'='.repeat(70)}
    All webhook activity is logged to: ${LOGS_DIR}
    Log file: bot-${new Date().toISOString().split('T')[0]}.log
 
-${'='.repeat(70)}
-📋 NEXT STEP: Start ngrok in a NEW terminal window
-${'='.repeat(70)}
-
-   Run this command in a new terminal:
-
-   npx ngrok http ${constants.PORT}${process.env.NGROK_AUTHTOKEN ? ` --authtoken ${process.env.NGROK_AUTHTOKEN}` : ''}
-   ${process.env.NGROK_AUTHTOKEN ? '' : '(first time? add your own token from https://dashboard.ngrok.com → set NGROK_AUTHTOKEN in .env)'}
-
-${'='.repeat(70)}
-
-Then copy the ngrok URL and configure it in Meta:
-   1. Go to: https://developers.facebook.com/apps/
-   2. Navigate to: WhatsApp → Configuration → Webhook
-   3. Paste ngrok URL with /webhook (e.g., https://abc.ngrok-free.app/webhook)
-   4. Verify Token: ${constants.WEBHOOK_VERIFY_TOKEN}
-   5. Subscribe to: messages
-   6. Send a test message to your WhatsApp bot number
-
-${'='.repeat(70)}
-\n`;
+${webhookInstructions(process.env, { port: constants.PORT, verifyToken: constants.WEBHOOK_VERIFY_TOKEN }) || `${'='.repeat(70)}\n`}\n`;
 
   console.log(startupMessage);
   logToFile('🚀 Bot server started', { port: constants.PORT, logsDir: LOGS_DIR });

@@ -82,7 +82,7 @@ const GROUP_ORDER = [
   {
     id: 'channels',
     title: 'Extra channels',
-    blurb: 'Run alongside WhatsApp, not instead of it.',
+    blurb: 'Each runs on its own or alongside your other channels.',
   },
   {
     id: 'advanced',
@@ -271,7 +271,7 @@ function buildCatalog(env = process.env) {
     const card = CHANNEL_CARDS[name] || { title: name, where: null };
     groups.get('channels').abilities.push({
       title: card.title,
-      why: `Teachers can talk to Rumi in ${card.title} as well as WhatsApp.`,
+      why: `Teachers can talk to Rumi in ${card.title}, on its own or alongside your other channels.`,
       where: card.where,
       keys,
       rows,

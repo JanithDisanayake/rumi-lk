@@ -79,14 +79,14 @@ const FEATURES = [
     id: 'channel_slack',
     name: 'Slack channel (Bot + Events API)',
     keys: ['SLACK_BOT_TOKEN', 'SLACK_SIGNING_SECRET'],
-    notes: 'Runs alongside your WhatsApp driver, in both sandbox and production — set via `rumi setup`\'s messaging channels step.',
+    notes: 'Runs alongside your other channels, or on its own with CHANNEL_DRIVER=none, in both sandbox and production — set via `rumi setup`\'s messaging channels step.',
     probe: 'slack',
   },
   {
     id: 'channel_discord',
     name: 'Discord channel (Gateway)',
     keys: ['DISCORD_BOT_TOKEN', 'DISCORD_APPLICATION_ID'],
-    notes: 'Runs alongside your WhatsApp driver via a persistent Gateway connection — set via `rumi setup`\'s '
+    notes: 'Runs alongside your other channels, or on its own, via a persistent Gateway connection — set via `rumi setup`\'s '
       + 'messaging channels step. MESSAGE_CONTENT is a privileged intent; needs Discord\'s own Bot Verification '
       + 'once the bot is in 100+ servers.',
     probe: 'discord',
@@ -95,7 +95,7 @@ const FEATURES = [
     id: 'channel_matrix',
     name: 'Matrix channel (self-hosted homeserver)',
     keys: ['MATRIX_HOMESERVER_URL', 'MATRIX_ACCESS_TOKEN'],
-    notes: 'Runs alongside your WhatsApp driver via a persistent sync connection to your own homeserver, '
+    notes: 'Runs alongside your other channels, or on its own, via a persistent sync connection to your own homeserver, '
       + 'no third-party app review at all (self-hosted). End-to-end encryption is required by default and '
       + 'uses the native crypto module matrix-bot-sdk installs (Node 22+); if it cannot load the channel '
       + 'refuses to start unless MATRIX_E2EE=off. Worker sends are relayed through the bot over REDIS_URL.',
