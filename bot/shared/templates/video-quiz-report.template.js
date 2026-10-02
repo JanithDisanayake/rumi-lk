@@ -144,8 +144,13 @@ function esc(s) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-/** RTL (Perso-Arabic-script) quiz languages this report has chrome for. */
-const RTL_LANGS = new Set(['ur']);
+/**
+ * Right-to-left languages, from the language registry (not a hand-kept list):
+ * every RTL quiz language is laid out right to left. One with no chrome of its
+ * own reads the Urdu chrome (see `C` below).
+ */
+const { isRTL } = require('../config/supported-languages');
+const RTL_LANGS = { has: (code) => isRTL(code) };
 
 /** Chrome strings per language. */
 const CHROME = {

@@ -216,7 +216,11 @@ function clampWords(s, max) {
   return `${words.slice(0, max).join(' ')}…`;
 }
 
-const RTL_LANGS = new Set(['ur']);
+// Direction comes from the language registry, so every right-to-left quiz
+// language (Arabic, Pashto, …) is laid out right to left, not only Urdu. A
+// language with no chrome of its own reads the Urdu chrome when it is RTL.
+const { isRTL } = require('../config/supported-languages');
+const RTL_LANGS = { has: (code) => isRTL(code) };
 
 /**
  * The text's sentences, in order. A sentence ends at . ! ? ۔ ؟ followed by a

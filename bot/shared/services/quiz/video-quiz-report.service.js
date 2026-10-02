@@ -67,7 +67,7 @@ const LEGACY_JOB_TYPE = 'video_quiz_report';
  * catalogue languages (config/ux-strings CATALOGUE_LANGUAGES) that write right
  * to left. Any other quiz language reads the English report chrome.
  */
-const RTL_LANGS = new Set(['ur']);
+const RTL_LANGS = new Set(require('../../config/ux-strings').CATALOGUE_LANGUAGES.filter(require('../../config/supported-languages').isRTL));
 
 /** Scheduled report: this far after the first child joins. */
 const REPORT_DELAY_MS = 12 * 60 * 60 * 1000;
