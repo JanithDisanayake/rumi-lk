@@ -110,12 +110,77 @@ function fontFaces(language) {
   ].filter(Boolean).join('\n');
 }
 
-const INSTRUCTIONS = [
-  'Read all questions carefully before answering.',
-  'Answer all questions in the space provided.',
-  'Write clearly and legibly.',
-  'Time allowed: as specified by your teacher.',
-];
+/**
+ * The paper's own words — header, instructions, section headings — per paper
+ * language. A paper whose questions are in Urdu and whose header is in English
+ * reads as two documents stapled together, so a language with a label set gets
+ * its labels laid out in its own direction. A language without one keeps the
+ * English labels, isolated left to right inside the page.
+ *
+ * Urdu wording is the plain register of a school exam paper, with no gendered
+ * forms.
+ */
+const LABELS = {
+  en: {
+    rtl: false,
+    grade: 'Grade', pages: 'Pages', version: 'Version',
+    studentName: 'Student Name', rollNo: 'Roll No', date: 'Date',
+    totalMarks: 'Total Marks', obtainedMarks: 'Obtained Marks',
+    instructions: 'Instructions',
+    instructionLines: [
+      'Read all questions carefully before answering.',
+      'Answer all questions in the space provided.',
+      'Write clearly and legibly.',
+      'Time allowed: as specified by your teacher.',
+    ],
+    mark: 'mark', marks: 'marks',
+    answerKey: 'Answer Key',
+    teacherNote: (dash) => `For the teacher. Numbers match the question paper. ${dash} marks a question the generator gave no model answer for.`,
+    types: {},
+  },
+  ur: {
+    rtl: true,
+    grade: 'جماعت', pages: 'صفحات', version: 'ورژن',
+    studentName: 'نام', rollNo: 'رول نمبر', date: 'تاریخ',
+    totalMarks: 'کل نمبر', obtainedMarks: 'حاصل کردہ نمبر',
+    instructions: 'ہدایات',
+    instructionLines: [
+      'جواب دینے سے پہلے تمام سوالات غور سے پڑھیں۔',
+      'تمام سوالات کے جوابات دی گئی جگہ پر لکھیں۔',
+      'صاف اور خوش خط لکھیں۔',
+      'وقت: جیسا استاد بتائیں۔',
+    ],
+    mark: 'نمبر', marks: 'نمبر',
+    answerKey: 'جوابی کلید',
+    teacherNote: (dash) => `استاد کے لیے۔ نمبر سوالیہ پرچے کے مطابق ہیں۔ ${dash} اس سوال کی نشان دہی کرتا ہے جس کا نمونہ جواب نہیں دیا گیا۔`,
+    types: {
+      'MCQs': 'کثیر انتخابی سوالات',
+      'MSQs': 'ایک سے زیادہ درست جوابات',
+      'Fill in the Blanks': 'خالی جگہ پُر کریں',
+      'True/False': 'درست / غلط',
+      'Match the Column': 'کالم ملائیں',
+      'Circle the Correct Answer': 'درست جواب پر دائرہ لگائیں',
+      'Rewrite Sentences': 'جملے دوبارہ لکھیں',
+      'Short Questions': 'مختصر سوالات',
+      'Brief Answers': 'مختصر جوابات',
+      'Long Question': 'تفصیلی سوال',
+      'Word Problems': 'عبارتی سوالات',
+      'Comprehension Passage': 'تفہیمِ عبارت',
+      'Word Meanings': 'الفاظ کے معنی',
+      'Word Sentences': 'الفاظ کو جملوں میں استعمال کریں',
+    },
+  },
+};
+
+function labelsFor(language) {
+  return LABELS[_tag(language)] || LABELS[baseLanguage(language)] || LABELS.en;
+}
+
+/** A section heading in the paper's language, when it has one for this type. */
+function typeLabel(type, L) {
+  const key = Object.keys(L.types).find((k) => k.toLowerCase() === String(type || '').trim().toLowerCase());
+  return key ? L.types[key] : type;
+}
 
 // How much room a written answer needs. Multiple choice and matching get none —
 // the child marks the option or draws the line, and blank ruled lines under an MCQ
@@ -163,24 +228,24 @@ function isRtl(language) {
 }
 
 /** "Grade 2 · Math", or just "Math" when the source named no grade. */
-function headingOf(grade, subject) {
+function headingOf(grade, subject, L = LABELS.en) {
   const hasGrade = grade !== null && grade !== undefined && String(grade).trim() !== '';
-  return [hasGrade ? `Grade ${esc(grade)}` : '', esc(subjectName(subject))].filter(Boolean).join(' · ');
+  return [hasGrade ? `${L.grade} ${esc(grade)}` : '', esc(subjectName(subject))].filter(Boolean).join(' · ');
 }
 
 /** The line under the heading: chapter, pages, and (from v2 on) the version. */
-function subLineOf(chapterTitle, pageReference, version) {
+function subLineOf(chapterTitle, pageReference, version, L = LABELS.en) {
   const parts = [];
   if (chapterTitle) parts.push(esc(chapterTitle));
-  if (pageReference) parts.push(`Pages ${esc(pageReference)}`);
-  if (Number(version) > 1) parts.push(`Version ${Number(version)}`);
+  if (pageReference) parts.push(`${L.pages} ${esc(pageReference)}`);
+  if (Number(version) > 1) parts.push(`${L.version} ${Number(version)}`);
   return parts.join(' · ');
 }
 
-function marksLabel(marks) {
+function marksLabel(marks, L = LABELS.en) {
   const n = Number(marks);
   if (!Number.isFinite(n) || n <= 0) return '';
-  return `<span class="marks">[${n} ${n === 1 ? 'mark' : 'marks'}]</span>`;
+  return `<span class="marks">[${n} ${n === 1 ? L.mark : L.marks}]</span>`;
 }
 
 /**
@@ -261,7 +326,7 @@ function renderQuestion(question, number, questionType, opts) {
     return `<div class="q"><p><b>${number}.</b> ${esc(question)}</p></div>`;
   }
 
-  const marks = marksLabel(question.marks);
+  const marks = marksLabel(question.marks, opts.labels);
   const answer = includeAnswerKey && question.answer
     ? `<div class="answer"><b>Answer:</b> ${esc(question.answer)}</div>` : '';
 
@@ -295,7 +360,7 @@ function renderQuestion(question, number, questionType, opts) {
     question.questions.forEach((sub, i) => {
       const letter = String.fromCharCode(97 + i);
       const subText = typeof sub === 'string' ? sub : sub.question;
-      const subMarks = typeof sub === 'string' ? '' : marksLabel(sub.marks);
+      const subMarks = typeof sub === 'string' ? '' : marksLabel(sub.marks, opts.labels);
       out.push(`<p class="sub"><b>${letter})</b> ${esc(subText)} ${subMarks}</p>`);
       if (typeof sub === 'object' && Array.isArray(sub.options) && sub.options.length) {
         out.push('<div class="options">');
@@ -377,7 +442,10 @@ function renderPaper({ examJson, grade, subject, language = 'en', schoolName, pa
   const questions = collectQuestions(examJson);
   const rtl = isRtl(language);
   const lang = esc(baseLanguage(language));
-  const opts = { includeAnswerKey: false, answerLines };
+  const L = labelsFor(language);
+  const chromeDir = L.rtl ? 'rtl' : 'ltr';
+  const chromeAlign = L.rtl ? 'right' : 'left';
+  const opts = { includeAnswerKey: false, answerLines, labels: L };
 
   const body = [];
   let number = 1;
@@ -390,7 +458,7 @@ function renderPaper({ examJson, grade, subject, language = 'en', schoolName, pa
       // legitimately. "OTHER" printed as a section heading on a child's paper
       // says nothing — the shared instruction under it already does the work.
       if (type && !GENERIC_TYPES.has(String(type).trim().toLowerCase())) {
-        body.push(`<h3 class="type">${esc(type)}</h3>`);
+        body.push(`<h3 class="type">${esc(typeLabel(type, L))}</h3>`);
       }
       lastType = type;
       lastMain = null;
@@ -406,8 +474,8 @@ function renderPaper({ examJson, grade, subject, language = 'en', schoolName, pa
     number += 1;
   }
 
-  const heading = headingOf(grade, subject);
-  const sub = subLineOf(chapterTitle, pageReference, version);
+  const heading = headingOf(grade, subject, L);
+  const sub = subLineOf(chapterTitle, pageReference, version, L);
 
   return `<!DOCTYPE html>
 <html lang="${lang}"${rtl ? ' dir="rtl"' : ''}>
@@ -431,15 +499,15 @@ function renderPaper({ examJson, grade, subject, language = 'en', schoolName, pa
   .class-line { text-align: center; font-size: 11.5pt; margin: 2px 0 10px; }
   .chapter { text-align: center; font-size: 10.5pt; color: #333; margin-bottom: 10px; }
   table.marks-header { width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 11pt;
-    direction: ltr; unicode-bidi: isolate; text-align: left; }
-  table.marks-header td { border: 1px solid #333; padding: 5px 7px; height: 22px; text-align: left; }
+    direction: ${chromeDir}; unicode-bidi: isolate; text-align: ${chromeAlign}; }
+  table.marks-header td { border: 1px solid #333; padding: 5px 7px; height: 22px; text-align: ${chromeAlign}; }
   table.marks-header td.k { background: #f2f2f2; font-weight: 600; white-space: nowrap; width: 22%; }
   .instructions { border: 1px solid #999; padding: 7px 10px; font-size: 10.5pt; margin-bottom: 14px;
-    direction: ltr; unicode-bidi: isolate; text-align: left; }
-  .instructions ol { margin: 4px 0 0; padding-${rtl ? 'right' : 'left'}: 18px; }
+    direction: ${chromeDir}; unicode-bidi: isolate; text-align: ${chromeAlign}; }
+  .instructions ol { margin: 4px 0 0; padding-${L.rtl ? 'right' : 'left'}: 18px; }
   h3.type { font-size: 11.5pt; text-transform: uppercase; letter-spacing: .04em;
             border-bottom: 1.5px solid #000; padding-bottom: 3px; margin: 16px 0 9px;
-            direction: ltr; unicode-bidi: isolate; text-align: left; }
+            direction: ${chromeDir}; unicode-bidi: isolate; text-align: ${chromeAlign}; }
   .lead { font-weight: 600; margin: 8px 0 6px; }
   .q { margin-bottom: 11px; page-break-inside: avoid; }
   .q p { margin: 0 0 4px; }
@@ -464,12 +532,12 @@ ${schoolName ? `<div class="school">${esc(schoolName)}</div>` : ''}
 <div class="class-line">${heading}</div>
 ${sub ? `<div class="chapter">${sub}</div>` : ''}
 <table class="marks-header">
-  <tr><td class="k">Student Name</td><td colspan="3"></td></tr>
-  <tr><td class="k">Roll No</td><td></td><td class="k">Date</td><td></td></tr>
-  <tr><td class="k">Total Marks</td><td>${totalMarks(questions)}</td><td class="k">Obtained Marks</td><td></td></tr>
+  <tr><td class="k">${esc(L.studentName)}</td><td colspan="3"></td></tr>
+  <tr><td class="k">${esc(L.rollNo)}</td><td></td><td class="k">${esc(L.date)}</td><td></td></tr>
+  <tr><td class="k">${esc(L.totalMarks)}</td><td>${totalMarks(questions)}</td><td class="k">${esc(L.obtainedMarks)}</td><td></td></tr>
 </table>
-<div class="instructions"><b>Instructions</b>
-  <ol>${INSTRUCTIONS.map((i) => `<li>${esc(i)}</li>`).join('')}</ol>
+<div class="instructions"><b>${esc(L.instructions)}</b>
+  <ol>${L.instructionLines.map((i) => `<li>${esc(i)}</li>`).join('')}</ol>
 </div>
 ${body.join('\n')}
 </body></html>`;
@@ -492,6 +560,7 @@ function renderAnswerKey({ examJson, grade, subject, language = 'en', schoolName
   const questions = collectQuestions(examJson);
   const rtl = isRtl(language);
   const lang = esc(baseLanguage(language));
+  const L = labelsFor(language);
   const dash = '—';
 
   const rows = [];
@@ -500,7 +569,7 @@ function renderAnswerKey({ examJson, grade, subject, language = 'en', schoolName
   for (const { type, question } of questions) {
     if (type !== lastType) {
       if (type && !GENERIC_TYPES.has(String(type).trim().toLowerCase())) {
-        rows.push(`<tr class="type"><td colspan="3">${esc(type)}</td></tr>`);
+        rows.push(`<tr class="type"><td colspan="3">${esc(typeLabel(type, L))}</td></tr>`);
       }
       lastType = type;
     }
@@ -528,12 +597,12 @@ function renderAnswerKey({ examJson, grade, subject, language = 'en', schoolName
     number += 1;
   }
 
-  const heading = headingOf(grade, subject);
-  const sub = subLineOf(chapterTitle, pageReference, version);
+  const heading = headingOf(grade, subject, L);
+  const sub = subLineOf(chapterTitle, pageReference, version, L);
 
   return `<!DOCTYPE html>
 <html lang="${lang}"${rtl ? ' dir="rtl"' : ''}>
-<head><meta charset="utf-8"><title>${heading} · Answer Key</title>
+<head><meta charset="utf-8"><title>${heading} · ${esc(L.answerKey)}</title>
 <style>
   @page { size: A4; margin: 14mm 12mm; }
   ${fontFaces(language)}
@@ -542,7 +611,7 @@ function renderAnswerKey({ examJson, grade, subject, language = 'en', schoolName
     : "'PaperLatin',Arial,sans-serif"}; font-size: ${rtl ? '13pt' : '11.5pt'};
     color: #000; line-height: ${rtl ? 1.9 : 1.45}; margin: 0; padding: 0 2px; }
   .num, .marks { direction: ltr; unicode-bidi: isolate; }
-  .title, .teacher { direction: ltr; unicode-bidi: isolate; }
+  .title, .teacher { direction: ${L.rtl ? 'rtl' : 'ltr'}; unicode-bidi: isolate; }
   .school { text-align: center; font-weight: 700; font-size: 13pt; }
   .class-line { text-align: center; font-size: 11.5pt; margin: 2px 0 2px; }
   .title { text-align: center; font-size: 15pt; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; margin: 6px 0 2px; }
@@ -560,9 +629,9 @@ function renderAnswerKey({ examJson, grade, subject, language = 'en', schoolName
 <body>
 ${schoolName ? `<div class="school">${esc(schoolName)}</div>` : ''}
 <div class="class-line">${heading}</div>
-<div class="title">Answer Key</div>
+<div class="title">${esc(L.answerKey)}</div>
 ${sub ? `<div class="chapter">${sub}</div>` : ''}
-<div class="teacher">For the teacher. Numbers match the question paper. ${dash} marks a question the generator gave no model answer for.</div>
+<div class="teacher">${esc(L.teacherNote(dash))}</div>
 <table class="key">
 ${rows.join('\n')}
 </table>

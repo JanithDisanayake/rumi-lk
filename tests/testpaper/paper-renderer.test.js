@@ -164,3 +164,38 @@ describe('printing', () => {
     expect(html).toMatch(/body \{[^}]*padding: 0 2px;/);
   });
 });
+
+describe('the paper speaks its own language', () => {
+  // Found on a real Urdu paper: the questions were Urdu and the marks header,
+  // instructions and section headings were English.
+  const ur = R.renderPaper({ examJson: EXAM, grade: 2, subject: 'Math', language: 'ur' });
+  const urKey = R.renderAnswerKey({ examJson: EXAM, grade: 2, subject: 'Math', language: 'ur' });
+
+  it('an Urdu paper has Urdu header labels and instructions', () => {
+    expect(ur).toContain('رول نمبر');
+    expect(ur).toContain('کل نمبر');
+    expect(ur).toContain('ہدایات');
+    expect(ur).not.toContain('Student Name');
+    expect(ur).not.toContain('Read all questions carefully');
+  });
+
+  it('section headings and marks are in Urdu', () => {
+    expect(ur).toContain('<h3 class="type">کثیر انتخابی سوالات</h3>');
+    expect(ur).toContain('[1 نمبر]');
+  });
+
+  it('localised labels are laid out right to left', () => {
+    expect(ur).toMatch(/table\.marks-header \{[^}]*direction: rtl/);
+  });
+
+  it('the Urdu answer key is titled in Urdu', () => {
+    expect(urKey).toContain('جوابی کلید');
+    expect(urKey).not.toContain('For the teacher.');
+  });
+
+  it('a language with no label set keeps English labels, left to right', () => {
+    const ar = R.renderPaper({ examJson: EXAM, grade: 2, subject: 'Math', language: 'ar' });
+    expect(ar).toContain('Student Name');
+    expect(ar).toMatch(/table\.marks-header \{[^}]*direction: ltr/);
+  });
+});
