@@ -54,6 +54,14 @@ function fakeHomeserver() {
     if (call.method === 'GET' && /\/state\/m\.room\.history_visibility\/$/.test(call.path)) {
       return reply(200, { history_visibility: 'shared' });
     }
+    if (call.method === 'GET' && /\/members$/.test(call.path)) {
+      // The stored DM room is checked to be a 1:1 with the teacher before use.
+      const member = (userId) => ({
+        type: 'm.room.member', state_key: userId, sender: userId, event_id: `$member-${userId}`,
+        room_id: ROOM, content: { membership: 'join' },
+      });
+      return reply(200, { chunk: [member('@rumi:example.org'), member('@teacher:example.org')] });
+    }
     if (call.method === 'PUT' && /\/send\//.test(call.path)) return reply(200, { event_id: `$event${server.requests.length}` });
     if (call.method === 'POST' && /\/media\/v3\/upload/.test(call.path)) return reply(200, { content_uri: 'mxc://example.org/media1' });
     return reply(404, { errcode: 'M_UNRECOGNIZED', error: 'not faked' });

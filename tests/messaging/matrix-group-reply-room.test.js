@@ -63,6 +63,9 @@ async function boot({ storage = new Map(), reply = 'Here is a warm-up idea.' } =
   jest.resetModules();
   const redis = fakeRedisServer();
   process.env.REDIS_URL = 'redis://fake:6379';
+  // The relay signs and namespaces requests with keys derived from these.
+  process.env.MATRIX_ACCESS_TOKEN = 'test-token';
+  process.env.MATRIX_HOMESERVER_URL = 'https://matrix.example.org';
   jest.doMock('ioredis', () => redis.FakeRedis);
   jest.doMock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn() }));
   jest.doMock('../../bot/shared/storage/r2', () => ({ downloadFromR2: jest.fn(), extractKeyFromUrl: jest.fn() }));
@@ -118,15 +121,12 @@ async function boot({ storage = new Map(), reply = 'Here is a warm-up idea.' } =
   const say = (roomId, body) => handlers['room.message'](roomId, {
     sender: T, event_id: `$in${(n += 1)}${Math.random()}`, origin_server_ts: Date.now() + 1000, content: { msgtype: 'm.text', body },
   });
-  // A send the worker relays to this process (the coaching report, a register).
-  const relayed = (text) => new Promise((resolve) => {
-    const id = `req${Math.random()}`;
-    redis.lists.set('rumi:matrix:relay:requests', [JSON.stringify({ id, method: 'sendMessage', args: [T_ID, text], expiresAt: Date.now() + 60000 })]);
-    const poll = setInterval(() => {
-      const replies = redis.lists.get(`rumi:matrix:relay:reply:${id}`);
-      if (replies && replies.length) { clearInterval(poll); resolve(JSON.parse(replies[0])); }
-    }, 5);
-  });
+  // A send the worker relays to this process (the coaching report, a register),
+  // made through the relay's real, signed caller side.
+  const relayed = async (text) => {
+    const result = await relay.call('sendMessage', [T_ID, text]);
+    return { ok: result !== false, result };
+  };
   const roomsSentTo = () => client.sendMessage.mock.calls.map((c) => c[0]);
   return { service, adapter, client, dispatch, say, relayed, hooks, roomsSentTo, storage };
 }
@@ -134,6 +134,8 @@ async function boot({ storage = new Map(), reply = 'Here is a warm-up idea.' } =
 afterEach(() => {
   if (relay) relay._resetForTests();
   if (savedRedisUrl === undefined) delete process.env.REDIS_URL; else process.env.REDIS_URL = savedRedisUrl;
+  delete process.env.MATRIX_ACCESS_TOKEN;
+  delete process.env.MATRIX_HOMESERVER_URL;
   jest.restoreAllMocks();
 });
 
