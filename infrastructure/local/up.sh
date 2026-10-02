@@ -36,7 +36,7 @@ esac
 # ── 0. Tools ─────────────────────────────────────────────────────────────────
 step "Checking tools"
 
-command -v node >/dev/null 2>&1 || die "node is not on PATH. Install Node.js 20 or newer (nodejs.org)."
+command -v node >/dev/null 2>&1 || die "node is not on PATH. Install Node.js 22 or newer (nodejs.org)."
 
 find_pg_bin || die "Postgres binaries (initdb, pg_ctl, psql) were not found.
   macOS:  brew install postgresql@17

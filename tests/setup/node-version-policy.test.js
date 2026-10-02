@@ -47,4 +47,13 @@ describe('Node version policy', () => {
     const all = { ...pkg.dependencies, ...pkg.optionalDependencies };
     expect(all).not.toHaveProperty('@matrix-org/matrix-sdk-crypto-nodejs');
   });
+
+  // install.sh is the documented front door, and engines alone only warns, so
+  // these checks are what actually stop a Node 20 install.
+  it.each(['install.sh', 'infrastructure/local/up.sh'])('%s refuses Node older than 22', (rel) => {
+    const src = read(rel);
+    expect(src).not.toMatch(/20 or newer/);
+    expect(src).not.toMatch(/-lt 20\b/);
+    expect(src).toMatch(/22 or newer/);
+  });
 });
