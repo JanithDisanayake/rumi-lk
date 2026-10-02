@@ -1575,7 +1575,8 @@ async function handleDocumentMessage(message, from, user) {
         });
 
         // Check if audio is 15+ minutes (900 seconds) = classroom audio
-        const CLASSROOM_AUDIO_THRESHOLD = 900; // 15 minutes in seconds
+        // COACHING_MIN_AUDIO_SECONDS, default 900 (15 minutes)
+        const CLASSROOM_AUDIO_THRESHOLD = require('./shared/config/coaching-audio').classroomAudioThresholdSeconds();
 
         if (audioDurationRounded >= CLASSROOM_AUDIO_THRESHOLD) {
           logToFile('🎓 CLASSROOM AUDIO DETECTED (15+ minutes)', {
