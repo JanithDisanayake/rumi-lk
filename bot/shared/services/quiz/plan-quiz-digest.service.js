@@ -84,20 +84,6 @@ function isUsable(source) {
 }
 
 /**
- * A plan's text read from its delivered PDF. Throws when the PDF cannot be
- * fetched or parsed — the caller decides what that means (it falls back to
- * the plan's topic). `axios` and `pdf-parse` are required here, lazily, so
- * nothing that loads this module needs them.
- */
-async function planTextFromPdf(url) {
-  const axios = require('axios');
-  const res = await axios.get(url, { responseType: 'arraybuffer', timeout: 30000 });
-  const pdfParse = require('pdf-parse');
-  const parsed = await pdfParse(Buffer.from(res.data));
-  return clean((parsed && parsed.text) || '').slice(0, PLAN_TEXT_MAX);
-}
-
-/**
  * The block the AUTHOR pass reads where a transcript quiz reads the passages
  * around each SLO's evidence: the plan itself, capped, or one line naming the
  * topic. '' when there is nothing.
@@ -282,6 +268,5 @@ async function run({
 
 module.exports = {
   run, lessonExcerpts, buildPlanDigestPrompt, buildTopicDigestPrompt, isUsable, digestMode, planText, topicOf,
-  planTextFromPdf,
   PLAN_TEXT_MAX, EXCERPT_MAX, MIN_PLAN_CHARS,
 };

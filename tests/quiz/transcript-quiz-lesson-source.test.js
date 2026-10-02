@@ -11,9 +11,12 @@
  *
  * topic: no source text at all — the quiz's own topic, grade and subject.
  *
- * Only the database client and the PDF fetch (the network boundary) are doubled.
+ * Only the database client and the PDF fetch (axios + pdf-parse, the network
+ * boundary) are doubled. A plan's PDF is read through main's shared
+ * lesson-plan text helper — there is no second PDF reader in the quiz.
  */
 jest.mock('../../bot/shared/config/supabase', () => ({ from: jest.fn() }));
+jest.mock('pdf-parse', () => jest.fn(), { virtual: true });
 jest.mock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn() }));
 jest.mock('../../bot/shared/utils/structured-logger', () => ({ logEvent: jest.fn() }));
 
@@ -22,6 +25,8 @@ const { installFrom } = require('./helpers/supabase-chain');
 const Gen = require('../../bot/shared/services/quiz/transcript-quiz-generate.service');
 const PlanDigest = require('../../bot/shared/services/quiz/plan-quiz-digest.service');
 const LessonPlanText = require('../../bot/shared/services/coaching/fidelity/lesson-plan-text');
+const axios = require('axios');
+const pdfParse = require('pdf-parse');
 
 const PLAN_ID = '66666666-6666-4666-8666-666666666666';
 const PLAN_TEXT = 'Lesson objective: compare two fractions with the same denominator. '.repeat(10);
@@ -37,18 +42,19 @@ function wirePlan(row, error = null) {
 beforeEach(() => {
   jest.restoreAllMocks();
   supabase.from.mockReset();
+  axios.get.mockClear();
+  pdfParse.mockReset();
 });
 
 describe('lp_generated', () => {
   test('content.plan_text is the plan', async () => {
     wirePlan({ id: PLAN_ID, topic: 'Comparing fractions', grade: '4', subject: 'Mathematics', content: { plan_text: PLAN_TEXT, source: 'gamma_pdf' }, pdf_url: 'https://cdn.test/p.pdf' });
-    const pdf = jest.spyOn(PlanDigest, 'planTextFromPdf');
     const src = await Gen.resolveLessonSource(quizFor());
     expect(src).toEqual(expect.objectContaining({
       kind: 'plan', from: 'plan_text', title: 'Comparing fractions', grade: '4', lessonPlanId: PLAN_ID,
     }));
     expect(src.text).toContain(PLAN_TEXT.trim());
-    expect(pdf).not.toHaveBeenCalled();
+    expect(axios.get).not.toHaveBeenCalled();
     const sel = supabase.from.callsFor('lesson_plans')[0];
     expect(sel).toEqual(expect.arrayContaining([['eq', 'id', PLAN_ID]]));
   });
@@ -79,17 +85,28 @@ describe('lp_generated', () => {
     expect(src.text).not.toMatch(/[{}"]/);
   });
 
-  test('no content: the PDF is downloaded and its text extracted', async () => {
+  test('no content: the PDF is read through the shared helper, with a size cap on the download', async () => {
     wirePlan({ id: PLAN_ID, topic: 'Comparing fractions', content: null, pdf_url: 'https://cdn.test/plan.pdf' });
-    const pdf = jest.spyOn(PlanDigest, 'planTextFromPdf').mockResolvedValue(PLAN_TEXT);
+    const shared = jest.spyOn(LessonPlanText, 'renderLinkedPlanText');
+    axios.get.mockResolvedValueOnce({ data: Buffer.from('%PDF-1.4'), status: 200 });
+    pdfParse.mockResolvedValueOnce({ text: PLAN_TEXT });
     const src = await Gen.resolveLessonSource(quizFor());
-    expect(pdf).toHaveBeenCalledWith('https://cdn.test/plan.pdf');
-    expect(src).toEqual(expect.objectContaining({ kind: 'plan', from: 'pdf', text: PLAN_TEXT.trim() }));
+    expect(shared).toHaveBeenCalledWith(PLAN_ID, expect.anything());
+    expect(axios.get).toHaveBeenCalledWith('https://cdn.test/plan.pdf', expect.objectContaining({
+      maxContentLength: expect.any(Number),
+    }));
+    expect(axios.get.mock.calls[0][1].maxContentLength).toBeGreaterThan(0);
+    expect(src).toEqual(expect.objectContaining({ kind: 'plan', from: 'pdf' }));
+    expect(src.text).toContain(PLAN_TEXT.trim());
+  });
+
+  test('the quiz has no PDF reader of its own', () => {
+    expect(PlanDigest.planTextFromPdf).toBeUndefined();
   });
 
   test('a PDF that cannot be read falls back to the plan\'s topic', async () => {
     wirePlan({ id: PLAN_ID, topic: 'Comparing fractions', grade: '4', subject: 'maths', content: null, pdf_url: 'https://cdn.test/plan.pdf' });
-    jest.spyOn(PlanDigest, 'planTextFromPdf').mockRejectedValue(new Error('404'));
+    axios.get.mockRejectedValueOnce(new Error('404'));
     const src = await Gen.resolveLessonSource(quizFor());
     expect(src).toEqual(expect.objectContaining({ kind: 'plan', from: 'topic', text: null, title: 'Comparing fractions' }));
   });

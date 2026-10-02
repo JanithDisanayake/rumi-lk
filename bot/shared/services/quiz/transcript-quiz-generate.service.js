@@ -106,16 +106,15 @@ async function resolveLessonSource(quiz) {
     return { ...base, from, text: stored };
   }
   if (plan.pdf_url) {
-    try {
-      const text = String((await PlanDigest.planTextFromPdf(plan.pdf_url)) || '').trim();
-      if (text) return { ...base, from: 'pdf', text };
-    } catch (err) {
-      // Best effort: an unreachable or unreadable PDF is not a failure — the
-      // quiz is written from the plan's topic instead.
-      logToFile('⚠️ plan quiz: the plan PDF could not be read — writing from its topic', {
-        quizId: quiz.id, lessonPlanId: planId, error: err.message,
-      });
-    }
+    // The plan's delivered PDF, read by the same shared helper (it never
+    // throws). Best effort: an unreachable or unreadable PDF is not a failure —
+    // the quiz is written from the plan's topic instead.
+    const linked = await LessonPlanText.renderLinkedPlanText(plan.id, { db: supabase });
+    const text = String((linked && linked.text) || '').trim();
+    if (text) return { ...base, from: 'pdf', text };
+    logToFile('⚠️ plan quiz: the plan PDF could not be read — writing from its topic', {
+      quizId: quiz.id, lessonPlanId: planId,
+    });
   }
   // The row is there but holds no lesson and no topic: that plan is UNUSABLE
   // (the teacher is told it had too little in it), not missing.
