@@ -152,6 +152,51 @@ describe('getOrCreateUserByChannel', () => {
   });
 });
 
+// The portal signs teachers in by users.phone_number. A Matrix teacher whose
+// username IS their phone number (mtx:<digits>) used to get a users row with
+// no phone_number, so they could never sign in.
+describe('getOrCreateUserByChannel — Matrix phone-number identities', () => {
+  beforeEach(() => {
+    mockState.existingWhatsappUser = null;
+    mockState.existingChannelLink = null;
+    mockState.usersById = {};
+    mockState.calls = { userInserts: [], channelInserts: [], channelUpdates: [] };
+  });
+
+  it('records the phone number of a new phone-shaped Matrix teacher, so the portal can sign them in', async () => {
+    const user = await getOrCreateUserByChannel('matrix', '15550100001');
+    expect(mockState.calls.userInserts[0].phone_number).toBe('15550100001');
+    expect(user.phone_number).toBe('15550100001');
+  });
+
+  it('leaves it empty when another user already has that number (never two users on one number)', async () => {
+    mockState.existingWhatsappUser = { id: 'u-wa', phone_number: '15550100001' };
+    await getOrCreateUserByChannel('matrix', '15550100001');
+    expect(mockState.calls.userInserts[0].phone_number).toBeUndefined();
+  });
+
+  it('fills in the number for a Matrix teacher created before this was recorded', async () => {
+    mockState.existingChannelLink = { user_id: 'u-mtx' };
+    mockState.usersById['u-mtx'] = { id: 'u-mtx', phone_number: null };
+    const supabase = require('../../bot/shared/config/supabase');
+    const updates = [];
+    const realFrom = supabase.from;
+    jest.spyOn(supabase, 'from').mockImplementation((table) => {
+      const api = realFrom(table);
+      if (table === 'users') api.update = (row) => { updates.push(row); return { eq: () => Promise.resolve({ error: null }) }; };
+      return api;
+    });
+    const user = await getOrCreateUserByChannel('matrix', '15550100001');
+    expect(updates).toContainEqual({ phone_number: '15550100001' });
+    expect(user.phone_number).toBe('15550100001');
+  });
+
+  it('records nothing for a non-phone Matrix username', async () => {
+    await getOrCreateUserByChannel('matrix', '@teacher:example.org');
+    expect(mockState.calls.userInserts[0].phone_number).toBeUndefined();
+  });
+});
+
 describe('getSendTargetsForUser', () => {
   it('returns every channel identity row for the given user id', async () => {
     const supabase = require('../../bot/shared/config/supabase');
