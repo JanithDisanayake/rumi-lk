@@ -45,10 +45,34 @@ Lesson plans: when Rumi delivers a lesson-plan PDF, the worker extracts its text
 `lesson_plans.content.plan_text`, so a plan quiz is written from what was actually planned. A plan quiz's PDF
 says *What you planned* and a topic quiz says what topic it covers. Neither ever says *what you taught*.
 
-Answer keys are checked by a second model that solves each question blind. If that model is unreachable, the
-quiz still goes out and the row records it as unverified (`meta.key_verify`).
+Answer keys are checked by a second model that solves each question blind. If that model is unreachable, or
+answers nothing, the quiz still goes out and the row records it as unverified (`meta.key_verify`).
+
+**Children's answers.** Typed answers (`A`, `b.`, `2`, `۲`, `A C`) are read only during a lesson quiz
+(transcript, lesson plan or topic). A v1.2.0 video quiz is still answered by taps, and other text during it goes
+to chat as before. Anything that is not a letter, number or letter set goes to chat. `STOP` ends a lesson quiz.
+Reports count each child's **first** completed attempt, so a retake after seeing the reasons does not replace
+it. On Slack, Discord and Matrix a child is identified by their full channel id, on phone channels by their
+number. A friend who joins through a child's invite is counted in the teacher's report.
+
+**Share codes.** Codes are drawn from a cryptographic random source. A sender who sends 5 wrong or expired codes
+within 10 minutes gets no reply to further codes until the window has passed (this needs Redis; without Redis
+there is no limit). With video quizzes off for the region, a video quiz's code goes to ordinary chat as in
+v1.2.0; a lesson quiz's code still joins. Each class report goes to the chat its class link was sent to.
+
+**Class cards** (`CLASS_CARD_ENABLED`). Each child's card shows the top five children by first name, the rest
+as a count, and the child's own row. Family names never appear.
+
+**Rendering.** Figures, question cards, the teacher PDF, the class report and the cards are rendered by headless
+Chromium with JavaScript off and no network apart from `data:` and `about:` (`htmlToPdf`/`htmlToImage` with
+`{ untrusted: true }`). Every model-written or child-typed text is escaped, and figure colours are limited to the
+engine's tokens and hex values. If you customise these templates, inline every asset as a `data:` URI. The
+diagram engine and its third-party parts are listed in [`bot/vendor/lp-v9/README.md`](../../bot/vendor/lp-v9/README.md).
 
 ## Children on Matrix
+
+The `matrix.to` share link needs the Matrix channel driver (release 2.6.0 and later); before it, a Matrix
+deployment is not possible and the class message carries the join code only.
 
 On a Matrix deployment every child needs an account on the school's homeserver. **The school's admin creates
 these accounts**, as the Rumi Messenger guides describe. Children are not expected to self-register. The child
@@ -58,18 +82,39 @@ opens the `matrix.to` link (or starts a chat with the bot) and sends the code fr
 
 ```bash
 TRANSCRIPT_QUIZ_ENABLED=true          # the lesson quiz, its offer and the /quiz menu
-SCHOOL_TIMEZONE=Africa/Nairobi        # IANA zone: report time, quiet hours, "today" for the daily cap
+SCHOOL_TIMEZONE=UTC                   # IANA zone name: report time, quiet hours, "today" for the daily cap
 QUIZ_LANGUAGES=en                     # e.g. en,ur — more than one makes Rumi ask the quiz language
+SQS_QUIZ_QUEUE_URL=                   # a Standard SQS queue (or run QUEUE_DRIVER=bullmq)
 ```
 
+The quiz is made by the worker (the `worker` process in `bot/Procfile`, `node workers/sqs-worker.js`), so it
+must be running. Its delayed jobs (the offer after the report, the nudge, the class report) need a queue that
+honours delays: set `SQS_QUIZ_QUEUE_URL` to a Standard SQS queue, or run `QUEUE_DRIVER=bullmq`. On the FIFO main
+queue alone, the offer arrives at once and the nudge is skipped.
+
 With only `OPENROUTER_API_KEY` set, the default models run on OpenRouter: `TRANSCRIPT_QUIZ_MODEL` (author),
-`TRANSCRIPT_QUIZ_VERIFY_MODEL` (blind key check) and `QUIZ_REPORT_MODEL` (the reteach box). To build share
+`TRANSCRIPT_QUIZ_VERIFY_MODEL` (blind key check) and `QUIZ_REPORT_MODEL` (the reteach box), each defaulting to
+its job in the model registry (`bot/shared/config/model-registry.js`). Under `LLM_PROVIDER=openai` (with
+`OPENAI_API_KEY`) every quiz job uses its OpenAI default (`quiz.transcript` → `gpt-4.1-mini`). To build share
 links, set `WHATSAPP_BOT_NUMBER` on WhatsApp and `MATRIX_USER_ID` on Matrix. Without either, the message carries
 the join code and the bot's name. Every variable, with its default, is in the *Lesson quiz* block of
 [`.env.template`](../../.env.template).
 
 With `TRANSCRIPT_QUIZ_ENABLED` unset, `/quiz` is the classic quiz exactly as before, and video quizzes are
-unchanged.
+unchanged. `RUMI_FEATURE_LESSON_QUIZ=off` (the console switch) also stops lesson-quiz buttons and quizzes already
+queued: they exit quietly, and `/quiz` can make them again once it is back on.
+
+**Storage.** Question cards and figures are uploaded to object storage (R2) when `R2_*` is set. Without it they
+are kept on local disk under `bot/temp/transcript_quizzes/` and sent from there. That works on Baileys, Slack,
+Discord and Matrix when the worker and the bot run on the same host. The Meta Cloud API cannot fetch a local
+file, so on `CHANNEL_DRIVER=meta`, or with the worker and the bot on separate machines, set `R2_*`. Nothing
+clears that folder yet; prune it with your usual temp-file job.
+
+**Teacher-side behaviour.** With more than three `QUIZ_LANGUAGES` the language ask is a list; a channel that
+refuses it gets numbered text, and the teacher's typed number (or the language's name) answers it. If the offer
+job decides not to offer (low confidence, too few objectives, a subject filter), the coaching report's usual
+quiz-to-parents ask and next-feature suggestion are sent then. A quiz stuck in *being made* for
+`TRANSCRIPT_QUIZ_STALE_MINUTES` (default 30) can be made again.
 
 **Languages.** English copy ships for every deployment. An `ur` pack (copy, Nastaliq PDFs, Urdu validator
 rules) is included. A quiz language with no catalogue falls back to English copy, and the model still writes the
@@ -82,6 +127,11 @@ skipped`, and one-quiz-per-lesson unique indexes for transcript and lesson-plan 
 `infrastructure/supabase/00_complete-schema.sql` and the upgrade is
 `infrastructure/supabase/migrations/V2.9.0__lesson_quiz.sql` (additive). Children's answers use the same tables
 as video quizzes: `quiz_share_codes` (one code per class link), `quiz_sessions` (one per child) and `quiz_answers`.
+`quiz_share_codes` gains `teacher_to` (nullable): the chat each class link was sent to, where that code's class
+report goes. Existing codes keep going to the teacher's WhatsApp number.
+
+The migration is all-or-nothing and safe to re-run. If it prints `NOTICE: quizzes_one_lesson_plan_quiz not
+created`, keep one `lp_generated` quiz per lesson plan and run it again.
 
 ## Not in this release
 
