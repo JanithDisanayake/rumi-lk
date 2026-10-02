@@ -1,12 +1,8 @@
 // circuit — IEC-style electric circuit schematics for grade 6-12 physics.
 //
-// ENGINE DECISION (settled — do not re-litigate):
-//   default `engine:'svg'`  -> our own symbol set, drawn right here in Node.
-//   opt-in  `engine:'schemdraw'` -> shells out to ./.venv/bin/python. DEV ONLY.
-// The production renderer is Node, inside the bot; a python subprocess is
-// not acceptable on that path. The schemdraw branch exists so a human can
-// eyeball a second opinion while authoring; if the venv is absent it silently
-// falls back to the pure-SVG engine, so a spec never fails because of it.
+// Drawn by our own symbol set, right here in Node. The renderer runs inside
+// the bot on a model-written spec, so it never starts a process: there is no
+// second engine, and a spec's `engine` key is ignored.
 //
 // Symbol conventions are IEC (as the textbooks it was built for use), NOT US:
 //   resistor  = plain rectangle (never a zigzag)
@@ -486,103 +482,9 @@ function renderParallel(spec, cells) {
 }
 
 /* ------------------------------------------------------------------ */
-/* OPT-IN schemdraw engine — dev only, never on the production path.   */
-/* ------------------------------------------------------------------ */
-const SD_MAP = {
-  battery: "elm.Battery()",
-  cell: "elm.Cell()",
-  resistor: "elm.ResistorIEC()",
-  lamp: "elm.Lamp()",
-  bulb: "elm.Lamp()",
-  switch: "elm.Switch()",
-  ammeter: "elm.MeterA()",
-  voltmeter: "elm.MeterV()",
-  capacitor: "elm.Capacitor()",
-  fuse: "elm.Fuse()",
-  wire: "elm.Line()",
-};
-
-function schemdrawScript(spec, cells) {
-  const lines = [
-    "import schemdraw, sys",
-    "from schemdraw import elements as elm",
-    "schemdraw.use('svg')",
-    "d = schemdraw.Drawing(show=False)",
-  ];
-  const lbl = (c) => {
-    const parts = [c.label, c.value].filter((v) => v !== undefined && v !== null && String(v) !== "");
-    return parts.length ? `.label(${JSON.stringify(parts.join("  "))})` : "";
-  };
-  // one clean rectangular loop: k elements along the top, k along the bottom
-  const n = cells.length;
-  const k = Math.ceil(n / 2);
-  const top = cells.slice(0, k);
-  const bottom = cells.slice(k).reverse();
-  const sym = (c) => SD_MAP[c.kind] || "elm.ResistorIEC()";
-  top.forEach((c) => lines.push(`d += ${sym(c)}.right()${lbl(c)}`));
-  lines.push("d += elm.Line().down()");
-  bottom.forEach((c) => lines.push(`d += ${sym(c)}.left()${lbl(c)}`));
-  for (let i = bottom.length; i < k; i++) lines.push("d += elm.Line().left()");
-  lines.push("d += elm.Line().up()");
-  lines.push("sys.stdout.write(d.get_imagedata('svg').decode())");
-  return lines.join("\n");
-}
-
-function renderSchemdraw(spec, cells) {
-  let fs, cp, path;
-  try {
-    fs = require("fs");
-    cp = require("child_process");
-    path = require("path");
-  } catch (e) {
-    return null;
-  }
-  const py = path.join(__dirname, "..", ".venv", "bin", "python");
-  if (!fs.existsSync(py)) return null;
-  let raw;
-  try {
-    raw = cp.execFileSync(py, ["-c", schemdrawScript(spec, cells)], {
-      encoding: "utf8",
-      timeout: 20000,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-  } catch (e) {
-    return null;
-  }
-  const m = /<svg\b[^>]*>([\s\S]*)<\/svg>/.exec(raw || "");
-  if (!m) return null;
-  const head = /<svg\b[^>]*>/.exec(raw)[0];
-  const vb = /viewBox="([-\d.\s]+)"/.exec(head);
-  if (!vb) return null;
-  const [vx, vy, vw, vh] = vb[1].trim().split(/\s+/).map(Number);
-  if (!(vw > 0 && vh > 0)) return null;
-  // strip anything with a timestamp or generator note so the bytes stay stable
-  const inner = m[1].replace(/<!--[\s\S]*?-->/g, "").replace(/<(title|desc)>[\s\S]*?<\/\1>/g, "");
-  const bodyW = BODY_W;
-  const bodyH = Math.min(430, Math.max(180, Math.round((bodyW * vh) / vw)));
-  const svg = new Svg(bodyW, bodyH, {
-    title: spec.title,
-    caption: spec.caption,
-    source: spec.source,
-    note: spec.note,
-    lang: spec.lang,
-    spec,
-  });
-  svg.add(
-    `<svg x="0" y="0" width="${bodyW}" height="${bodyH}" viewBox="${vx} ${vy} ${vw} ${vh}" ` +
-      `preserveAspectRatio="xMidYMid meet">${inner}</svg>`
-  );
-  return svg.toString();
-}
-
-/* ------------------------------------------------------------------ */
 function render(spec) {
   const s = spec && typeof spec === "object" ? spec : {};
   const cells = normCells(s);
-  if (s.engine === "schemdraw") {
-    const out = renderSchemdraw(s, cells);
-    if (out) return out; // else: silent fall-through to the real engine
-  }
   const layout = s.layout === "parallel" ? "parallel" : "series";
   return layout === "parallel" ? renderParallel(s, cells) : renderSeries(s, cells);
 }

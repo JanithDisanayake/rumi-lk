@@ -169,8 +169,7 @@
       "optional": [
         "branches",
         "showCurrent",
-        "currentLabel",
-        "engine"
+        "currentLabel"
       ],
       "minimal_spec": {
         "type": "circuit",
@@ -193,8 +192,7 @@
       ],
       "limits": [
         "cells[].kind is battery | resistor | lamp | switch | ammeter | voltmeter. A voltmeter takes `across`.",
-        "Component VALUES stay LTR even on an Urdu page (\"6 V\", \"10 O\") -- that is how the textbooks set them. An Urdu value is now laid out correctly, but it is not the house style.",
-        "engine:\"schemdraw\" shells out to a Python venv that is NOT vendored into the serving repo; there it returns null and the built-in drawing is used, so a circuit looks different in the bot than in an authoring run."
+        "Component VALUES stay LTR even on an Urdu page (\"6 V\", \"10 O\") -- that is how the textbooks set them. An Urdu value is now laid out correctly, but it is not the house style."
       ]
     },
     {
