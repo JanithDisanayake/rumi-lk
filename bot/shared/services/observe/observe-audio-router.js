@@ -134,6 +134,15 @@ async function routeLeaderAudio({
       logToFile('🔭 observe: classroom recording captured', { userId: user.id, audioId });
       return true;
     }
+    if (state && state.state === 'awaiting_debrief_audio') {
+      // The coach was handed a debrief guide and asked to record the
+      // conversation: any length is that recording (a too-short one is caught
+      // by the worker, which re-arms and asks again).
+      const ObserveDebrief = require('./observe-debrief.service');
+      await ObserveDebrief.startDebriefFromAudio(user, from, audioId, state, { mimeType });
+      logToFile('🔭 observe: debrief recording received', { userId: user.id, audioId, sessionId: state.sessionId });
+      return true;
+    }
   } catch (err) {
     logToFile('❌ observe: leader audio capture failed', { userId: user.id, state: state && state.state, error: err.message });
     await WhatsAppService.sendMessage(from, t(lang, 'debrief_load_error'));

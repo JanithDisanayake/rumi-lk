@@ -13,5 +13,10 @@
     "from": "bot/workers/pic-lp-kieai.worker.js",
     "spec": "../shared/services/lp-feedback.service",
     "reason": "Same OSS-stripped service as homework-bundle; lazy-required inside the post-delivery branch."
+  },
+  {
+    "from": "bot/shared/services/observe/observe-debrief.service.js",
+    "spec": "./observe-send.service",
+    "reason": "TEMPORARY, r4-observe: the send-report step (S3) lands in the same release. Lazy-required inside a try/catch after the debrief is delivered; a missing module only skips the send offer (the /observe list still carries the unsent-report row). Remove this entry when observe-send.service.js merges — the 'still unresolved' check will flag it."
   }
 ]

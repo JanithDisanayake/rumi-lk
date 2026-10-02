@@ -12,6 +12,9 @@
  *   observe_cancel_<id>      "Cancel observation" — ask first
  *   observe_who_<id>_<n>     who was observed (bare capture)
  *   observe_form_<id>        reopen the coach's rating form (pending list)
+ *   observe_debrief_now_<id> "Debrief now" — build the guide, arm the recording
+ *   observe_debrief_later_<id> "Later" — leave it pending in the /observe list
+ *   observe_debrief_<id>     a pending-debrief row in the /observe list
  *
  * @returns {Promise<boolean>} true when the id was ours and has been handled
  */
@@ -24,6 +27,10 @@ const ROUTES = [
   ['observe_cancel_', (user, from, rest) => require('../services/observe/observe-capture.service').askCancel(user, from, rest)],
   ['observe_form_', (user, from, rest) => require('../services/observe/observe-form.service').resume(user, from, rest)],
   ['observe_who_', (user, from, rest, id) => require('../services/observe/observe-who.service').handleObservedTeacherPick(user, from, id)],
+  // Longest prefix first: the two buttons share the list row's prefix.
+  ['observe_debrief_now_', (user, from, rest) => require('../services/observe/observe-debrief.service').startDebrief(rest, from, user)],
+  ['observe_debrief_later_', (user, from, rest) => require('../services/observe/observe-debrief.service').handleDebriefLater(rest, from, user)],
+  ['observe_debrief_', (user, from, rest) => require('../services/observe/observe-debrief.service').startDebrief(rest, from, user)],
 ];
 
 async function handleObserveInteractive(user, from, id) {

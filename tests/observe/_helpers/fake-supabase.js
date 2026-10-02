@@ -4,8 +4,9 @@
  * The database is the network boundary, so this is what gets faked — the
  * observe code itself runs for real against it. It understands the subset of
  * PostgREST the observe modules use: select (with `table(cols)` /
- * `table!inner(cols)` joins on <table>_id or user_id), eq/neq/in/is/not/gte/
- * lte/lt/gt/ilike/or-free filters, order, limit, single/maybeSingle, insert,
+ * `table!inner(cols)` joins on <table>_id or user_id, `alias:col->path` JSON
+ * projections), eq/neq/in/is/not/gte/
+ * lte/lt/gt/ilike/or-free filters (JSON paths like `col->a->>b` too), order, limit, single/maybeSingle, insert,
  * update, upsert, delete, and `.select()` after a write.
  *
  * Usage:
@@ -23,6 +24,17 @@ const JOINS = {
   schools: ['school_id', 'schools'],
   coaching_sessions: ['session_id', 'coaching_sessions'],
 };
+
+// A PostgREST JSON path ("analysis_data->observer_debrief->>audio_id"): `->`
+// steps into JSON, a final `->>` reads the value as text.
+function readCol(row, c) {
+  if (!String(c).includes('->')) return row[c];
+  const parts = String(c).split(/->>?/);
+  let v = row[parts[0]];
+  for (const p of parts.slice(1)) v = v === null || v === undefined ? undefined : v[p];
+  if (/->>[^>]*$/.test(c) && v !== null && v !== undefined && typeof v === 'object') v = JSON.stringify(v);
+  return v === undefined ? null : v;
+}
 
 function parseInList(v) {
   return String(v).replace(/^\(|\)$/g, '').split(',').map((s) => s.trim().replace(/^"|"$/g, ''));
@@ -54,6 +66,9 @@ function createFakeSupabase(seed = {}) {
         const target = table(tname).find((r) => r.id === row[fk]);
         out[m[1]] = target ? { ...target } : null;
       }
+      // alias:column->json->path  (e.g. observer_debrief:analysis_data->observer_debrief)
+      const aliasRe = /(\w+):(\w+(?:->>?\w+)+)/g;
+      while ((m = aliasRe.exec(state.cols))) out[m[1]] = readCol(row, m[2]);
       return out;
     }
 
@@ -99,7 +114,7 @@ function createFakeSupabase(seed = {}) {
             return (a[col] < b[col] ? -1 : 1) * (asc ? 1 : -1);
           });
         }
-        if (state.limit !== null) result = result.slice(0, state.limit);
+        if (state.limit !== null) result = result.slice(state.offset || 0, (state.offset || 0) + state.limit);
       }
       const data = (state.op === 'select' || state.returning) ? result.map(project) : null;
       if (state.single) {
@@ -120,28 +135,28 @@ function createFakeSupabase(seed = {}) {
       upsert(p, opts = {}) { state.op = 'upsert'; state.payload = p; state.onConflict = opts.onConflict || null; return api; },
       update(p) { state.op = 'update'; state.payload = p; return api; },
       delete() { state.op = 'delete'; return api; },
-      eq(c, v) { state.filters.push((r) => r[c] === v); return api; },
-      neq(c, v) { state.filters.push((r) => r[c] !== v); return api; },
+      eq(c, v) { state.filters.push((r) => readCol(r, c) === v); return api; },
+      neq(c, v) { state.filters.push((r) => readCol(r, c) !== v); return api; },
       gt(c, v) { state.filters.push((r) => r[c] > v); return api; },
       gte(c, v) { state.filters.push((r) => r[c] >= v); return api; },
       lt(c, v) { state.filters.push((r) => r[c] < v); return api; },
       lte(c, v) { state.filters.push((r) => r[c] <= v); return api; },
-      in(c, vs) { state.filters.push((r) => vs.includes(r[c])); return api; },
-      is(c, v) { state.filters.push((r) => (v === null ? r[c] === null || r[c] === undefined : r[c] === v)); return api; },
+      in(c, vs) { state.filters.push((r) => vs.includes(readCol(r, c))); return api; },
+      is(c, v) { state.filters.push((r) => (v === null ? readCol(r, c) === null || readCol(r, c) === undefined : readCol(r, c) === v)); return api; },
       ilike(c, v) {
         const re = new RegExp(`^${String(v).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*')}$`, 'i');
         state.filters.push((r) => re.test(String(r[c] || '')));
         return api;
       },
       not(c, op, v) {
-        if (op === 'in') { const list = parseInList(v); state.filters.push((r) => !list.includes(String(r[c]))); }
-        else if (op === 'is') state.filters.push((r) => !(v === null ? r[c] === null || r[c] === undefined : r[c] === v));
-        else if (op === 'eq') state.filters.push((r) => r[c] !== v);
+        if (op === 'in') { const list = parseInList(v); state.filters.push((r) => !list.includes(String(readCol(r, c)))); }
+        else if (op === 'is') state.filters.push((r) => !(v === null ? readCol(r, c) === null || readCol(r, c) === undefined : readCol(r, c) === v));
+        else if (op === 'eq') state.filters.push((r) => readCol(r, c) !== v);
         return api;
       },
       order(col, opts = {}) { state.orders.push({ col, asc: opts.ascending !== false }); return api; },
       limit(n) { state.limit = n; return api; },
-      range(a, b) { state.limit = b - a + 1; return api; },
+      range(a, b) { state.offset = a; state.limit = b - a + 1; return api; },
       single() { state.single = 'one'; return api; },
       maybeSingle() { state.single = 'maybe'; return api; },
       then(resolve, reject) { try { resolve(run()); } catch (e) { if (reject) reject(e); else throw e; } },
