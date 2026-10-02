@@ -131,14 +131,28 @@ function mapAttachmentToMetaShape(from, id, timestamp, content) {
   const mimeType = content.info?.mimetype || 'application/octet-stream';
   const fileSize = content.info?.size;
 
+  const durationMs = content.info?.duration;
   matrixChannel._cacheIncomingMedia(mediaId, {
     url: mxcUrl,
     mime_type: mimeType,
     file_size: fileSize,
     ...(encryptedFile ? { file: encryptedFile } : {}),
+    // Seconds, where the voice handler looks for them on any driver.
+    ...(content.msgtype === AUDIO_MSGTYPE && typeof durationMs === 'number' ? { audio: { duration: Math.round(durationMs / 1000) } } : {}),
   });
 
   const base = { from, id, timestamp };
+  // A recorded voice message carries the MSC3245 flag. An m.audio without it
+  // is an audio FILE (a lesson recording from the phone's storage), which
+  // WhatsApp delivers as a document: that is the path that measures the
+  // recording and starts classroom coaching for a long one, and hands a
+  // short one to the voice handler.
+  if (content.msgtype === AUDIO_MSGTYPE && !content['org.matrix.msc3245.voice']) {
+    return {
+      ...base, type: 'document',
+      document: { id: mediaId, mime_type: mimeType, filename: content.filename || content.body || 'audio' },
+    };
+  }
   if (content.msgtype === AUDIO_MSGTYPE) {
     return { ...base, type: 'audio', audio: { id: mediaId, mime_type: mimeType } };
   }

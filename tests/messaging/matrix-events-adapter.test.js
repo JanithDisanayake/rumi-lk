@@ -120,7 +120,10 @@ describe('mapMessageToMetaShape', () => {
   it('delegates to attachment mapping when the message carries a media msgtype', async () => {
     const event = {
       sender: '@teacher:example.org', event_id: '$1', origin_server_ts: STARTED_AT + 1000,
-      content: { msgtype: 'm.audio', body: 'voice.ogg', url: 'mxc://example.org/F1', info: { mimetype: 'audio/ogg', size: 42 } },
+      content: {
+        msgtype: 'm.audio', body: 'voice.ogg', url: 'mxc://example.org/F1', info: { mimetype: 'audio/ogg', size: 42 },
+        'org.matrix.msc3245.voice': {},
+      },
     };
     const mapped = await adapter.mapMessageToMetaShape('!room:x', event, OWN_USER_ID, STARTED_AT);
     expect(mapped.type).toBe('audio');
@@ -204,7 +207,33 @@ describe('mapAttachmentToMetaShape', () => {
     });
     expect(matrixChannel._cacheIncomingMedia).toHaveBeenCalledWith('matrix:mxc://example.org/ENC1', {
       url: 'mxc://example.org/ENC1', mime_type: 'audio/ogg', file_size: 5120, file,
+      audio: { duration: 3 }, // info.duration is ms; the voice handler reads seconds, as on Meta
     });
+  });
+
+  // An audio FILE (a lesson recording picked from the phone) arrives as
+  // m.audio too, but without the voice-message flag. Mapped as audio, it took
+  // the voice-note path, which never reaches classroom coaching (that needs a
+  // 15-minute recording, detected on the document path by ffprobe). WhatsApp
+  // delivers a shared audio file as a document; so does this adapter now.
+  it('maps an audio FILE (m.audio without the voice-message flag) to a document, so a lesson recording reaches coaching', () => {
+    const mapped = adapter.mapAttachmentToMetaShape('mtx:15550100101', '$a1', 169100, {
+      msgtype: 'm.audio', body: 'lesson-recording.mp3', file: { url: 'mxc://example.org/ENC9' },
+      info: { mimetype: 'audio/mpeg', size: 9000000, duration: 960000 },
+    });
+    expect(mapped).toEqual({
+      from: 'mtx:15550100101', id: '$a1', timestamp: 169100,
+      type: 'document',
+      document: { id: 'matrix:mxc://example.org/ENC9', mime_type: 'audio/mpeg', filename: 'lesson-recording.mp3' },
+    });
+  });
+
+  it('keeps a voice message (MSC3245 flag) on the voice-note path', () => {
+    const mapped = adapter.mapAttachmentToMetaShape('mtx:15550100101', '$a2', 169100, {
+      msgtype: 'm.audio', body: 'Voice message', url: 'mxc://example.org/V2',
+      info: { mimetype: 'audio/ogg' }, 'org.matrix.msc3245.voice': {},
+    });
+    expect(mapped.type).toBe('audio');
   });
 
   it('maps an encrypted image the same way as a plaintext one (the E2EE shape was previously dropped as "no url")', () => {
