@@ -34,3 +34,17 @@ describe('flagOn — one reading of "on"', () => {
     expect(flagOn('TEACHER_NUDGES_TEST_FLAG')).toBe(true);
   });
 });
+
+describe('the feature list reads the switch the same way', () => {
+  const { availableFeatures, configuredFeatures } = require('../../bot/shared/config/feature-availability');
+  const NAME = 'Teacher nudges (check-ins with teachers who went quiet)';
+
+  it.each(['true', '1', 'yes'])('TEACHER_NUDGES_ENABLED=%s lists teacher nudges as available', (v) => {
+    expect(availableFeatures({ TEACHER_NUDGES_ENABLED: v })).toContain(NAME);
+  });
+
+  it.each(['false', '0', 'off', ''])('TEACHER_NUDGES_ENABLED=%j does not', (v) => {
+    expect(availableFeatures({ TEACHER_NUDGES_ENABLED: v })).not.toContain(NAME);
+    expect(configuredFeatures({ TEACHER_NUDGES_ENABLED: v })).not.toContain(NAME);
+  });
+});

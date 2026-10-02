@@ -93,7 +93,9 @@ const FEATURES = [
     id: 'teacher_nudges',
     name: 'Teacher nudges (check-ins with teachers who went quiet)',
     keys: ['TEACHER_NUDGES_ENABLED'],
-    notes: 'Set TEACHER_NUDGES_ENABLED=true; the SQS worker then sweeps every TEACHER_NUDGES_SWEEP_MINUTES, '
+    // An on/off switch, not a credential: present is not enough, it must say on.
+    flags: ['TEACHER_NUDGES_ENABLED'],
+    notes: 'Set TEACHER_NUDGES_ENABLED=true (or 1 / yes); the SQS worker then sweeps every TEACHER_NUDGES_SWEEP_MINUTES, '
       + 'or schedule bot/workers/teacher-nudges.worker.js from cron. On the Meta driver, sends only inside '
       + 'the 24-hour window.',
   },
@@ -145,6 +147,7 @@ const FEATURES = [
 // Placeholders the template ships: CHANGEME-*, your-project / your_ / YOUR_, and <…> angle stubs.
 // (REDIS_URL=redis://localhost:6379 is a legitimate local default and is intentionally NOT a placeholder.)
 const PLACEHOLDER_RE = /^CHANGEME|your-project|your_|^YOUR_|^<.*>$/i;
+const FLAG_ON_RE = /^(true|1|yes)$/i;
 const isSet = (v) => typeof v === 'string' && v.trim() !== '' && !PLACEHOLDER_RE.test(v.trim());
 
 /**
@@ -202,6 +205,11 @@ function isFeatureAvailable(feature, env = process.env, opts = {}) {
     const keys = Array.isArray(feature) ? feature : (entry && Array.isArray(entry.keys) ? entry.keys : null);
     if (!keys) return false;
     present = keys.every((k) => isSet(env[k]));
+  }
+  // An entry's `flags` are switches: set is not enough, the value must be on
+  // (`true`, `1` or `yes`), so `TEACHER_NUDGES_ENABLED=false` is not "available".
+  if (present && entry && Array.isArray(entry.flags)) {
+    present = entry.flags.every((k) => FLAG_ON_RE.test(String(env[k] || '').trim()));
   }
   if (!present) return false;
   // A feature gated on a flag (e.g. LP_FIDELITY_ENABLED) is present only when the flag is exactly "true".
