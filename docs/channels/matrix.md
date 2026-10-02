@@ -142,7 +142,6 @@ for that teacher go to their own DM. If Rumi cannot read a room's members, it tr
   commands, type it with two slashes: `//menu` is sent as `/menu`.
 - Element shows a small shield on Rumi's messages until the bot's device is cross-signed. It is cosmetic;
   messages are still encrypted.
-- Spoken replies arrive as an audio file you tap to play, not a voice-message bubble.
 
 ## What works on Matrix
 
@@ -156,7 +155,7 @@ on). "Degrades" means it works with a plainer experience; "breaks" means a teach
 | Registration | works | Name asked as a question, even when `REGISTRATION_FLOW_ID` is set for WhatsApp |
 | Menus and pickers | degrades | Numbered menu; reply with a number or the option's name |
 | Forms (reading setup, class setup, attendance) | degrades | One question per message; `cancel` leaves; commands still work |
-| Voice note in, spoken reply out | works | Reply is an audio file |
+| Voice note in, spoken reply out | works | Reply is a voice message |
 | Reading assessment | works | Passage image, recording, then the result, PDF report and audio feedback |
 | Classroom coaching | works | Send the recording as an audio file (15 minutes or longer). Report PDF, voice debrief and commitment card arrive from the worker. The "share a classroom photo?" Yes/No has no handler yet on any channel: send the photos (up to 3) to continue |
 | Attendance | works | Including the monthly register spreadsheet |
