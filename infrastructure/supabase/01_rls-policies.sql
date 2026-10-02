@@ -230,3 +230,11 @@ DROP POLICY IF EXISTS "service_role_quiz_share_codes" ON quiz_share_codes;
 CREATE POLICY "service_role_quiz_share_codes" ON quiz_share_codes FOR ALL USING (auth.role() = 'service_role');
 DROP POLICY IF EXISTS "service_role_video_quiz_deliveries" ON video_quiz_deliveries;
 CREATE POLICY "service_role_video_quiz_deliveries" ON video_quiz_deliveries FOR ALL USING (auth.role() = 'service_role');
+
+-- Test papers
+ALTER TABLE test_paper_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE test_papers ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "service_role_test_paper_requests" ON test_paper_requests;
+CREATE POLICY "service_role_test_paper_requests" ON test_paper_requests FOR ALL USING (auth.role() = 'service_role');
+DROP POLICY IF EXISTS "service_role_test_papers" ON test_papers;
+CREATE POLICY "service_role_test_papers" ON test_papers FOR ALL USING (auth.role() = 'service_role');
