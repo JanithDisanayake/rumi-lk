@@ -424,6 +424,15 @@ class SQSCoachingWorker {
         break;
       }
 
+      // Observe: the teacher's report (preview to the coach, delivery, or the
+      // teacher's tap on the invite). It records its own delivery state and
+      // tells the coach about failures, so it never throws for a send.
+      case 'observe_teacher_report': {
+        await SQSQueueService.extendJobTimeout(receiptHandle, 300); // hero render + sends
+        await require('../shared/services/observe/observe-send.service').processTeacherReport(sessionId, payload);
+        break;
+      }
+
       default:
         throw new Error(`Unknown job type: ${jobType}`);
     }
@@ -463,6 +472,14 @@ class SQSCoachingWorker {
       // Skip DB update for lesson_plan_generation - it handles its own error state
       if (jobType === 'lesson_plan_generation') {
         logToFile('Lesson plan generation failure handled by worker', { sessionId });
+        return;
+      }
+
+      // An observe report failure must not mark the OBSERVATION failed: the
+      // lesson, its ratings and its debrief are intact. The send service owns
+      // analysis_data.teacher_delivery and tells the coach.
+      if (jobType === 'observe_teacher_report') {
+        logToFile('Observe teacher-report failure — session left as is', { sessionId });
         return;
       }
 

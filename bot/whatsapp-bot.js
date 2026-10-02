@@ -969,6 +969,13 @@ async function handleWebhookPost(req, res) {
         userId: user?.id
       });
 
+      // Observe: a teacher tapped the report-invite template (observe_report_<id>).
+      // The tap may come from someone with no account yet, so it needs no user.
+      if (buttonPayload && buttonPayload.startsWith('observe_report_')) {
+        const { handleReportTap } = require('./shared/services/observe/observe-send.service');
+        if (await handleReportTap(from, buttonPayload)) return;
+      }
+
       // Handle style_* payloads from video style carousel
       if (buttonPayload && buttonPayload.startsWith('style_')) {
         if (user) {
