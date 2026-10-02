@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.1] - 2026-10-02
+
+**A fresh install works again.** 2.5.0 shipped a stray merge-conflict line (`=======`) in
+`infrastructure/supabase/00_complete-schema.sql`, so creating the schema on a new database stopped with a syntax
+error (and `01_rls-policies.sql` then failed on the missing `teacher_nudges` table). Deployments that upgrade through
+the versioned migrations were not affected. If you installed 2.5.0 from scratch, re-run the three schema files from
+2.5.1 on an empty database.
+
+### Fixed
+
+- `00_complete-schema.sql`: the stray conflict-marker line is removed; `00`, `01` and `02` apply cleanly to an empty
+  Postgres with `ON_ERROR_STOP`.
+
+### Added
+
+- `tests/setup/no-conflict-markers.test.js`: CI fails if any tracked text file (SQL, JS, Markdown, YAML, the env
+  template, …) contains a merge-conflict marker line.
+
 ## [2.5.0] - 2026-10-02
 
 **A register the school can file.** After every mark, Rumi sends back the month's attendance register — one
