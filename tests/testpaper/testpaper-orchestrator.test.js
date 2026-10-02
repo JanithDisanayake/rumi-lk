@@ -244,6 +244,18 @@ describe('from an uploaded chapter', () => {
     expect(rowsOf(lastList())[0].id).toBe('tp_mix_quick');
   });
 
+  it('after a refused subject, an uploaded chapter does not inherit that subject', async () => {
+    load();
+    await start('history'); // nothing for history → the upload is welcome
+    WA.downloadMedia.mockResolvedValue(Buffer.from('%PDF'));
+    mockPdfParse.mockResolvedValue({ text: TEXT('The water cycle: evaporation, condensation, precipitation.') });
+    await O.handleDocument({ user: TEACHER, from: FROM, language: 'en', message: { document: { id: 'm1', mime_type: 'application/pdf', filename: 'water.pdf' } } });
+    await pick('tp_mix_quick');
+    await pick('tp_lang_en');
+    // The model reads the subject from the chapter itself.
+    expect(db.tables.test_paper_requests[0].subject).toBeNull();
+  });
+
   it('a document nobody asked for is left to the other handlers', async () => {
     load();
     expect(await O.handleDocument({ user: TEACHER, from: FROM, language: 'en', message: { document: { id: 'm1', mime_type: 'application/pdf' } } })).toBe(false);

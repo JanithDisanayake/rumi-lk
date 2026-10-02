@@ -77,6 +77,14 @@ describe('generate', () => {
     expect(mockCreate.mock.calls[0][0].messages[1].content).toContain('345 has 3 hundreds');
   });
 
+  it('an upload with no stated subject gets the subject the model read from it', async () => {
+    mockCreate.mockResolvedValue(reply({ ...PAPER_JSON, subject: 'Science' }));
+    const { paper } = await queuedPaper({ sourceKind: 'upload', subject: null });
+    await Worker.process({ action: 'generate', paperId: paper.id, userId: TEACHER, to: '15550100001' });
+    expect(db.tables.test_paper_requests[0].subject).toBe('Science');
+    expect(WA.sendDocument.mock.calls[0][2]).toMatch(/^TestPaper_Science_/);
+  });
+
   it('is idempotent: a redelivered job for a ready paper does nothing', async () => {
     mockCreate.mockResolvedValue(reply(PAPER_JSON));
     const { paper } = await queuedPaper();

@@ -236,7 +236,9 @@ function _subjectOf(state) {
     const picked = (state.lessonPlans || []).filter((lp) => state.source.lessonPlanIds.includes(lp.id));
     return picked.find((lp) => lp.subject)?.subject || null;
   }
-  return state.subject || null;
+  // An upload's subject is read from the chapter by the model. The subject the
+  // teacher searched for may be exactly the one that had no material.
+  return null;
 }
 
 function _gradeOf(state) {
@@ -266,7 +268,7 @@ async function _loadSource(state, userId) {
   }
   return {
     text: src.text,
-    subject: state.subject || null,
+    subject: null,
     grade: null,
     chapterTitle: src.filename || null,
     label: src.filename ? `Uploaded: ${src.filename}` : 'Pasted chapter',

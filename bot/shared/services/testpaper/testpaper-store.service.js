@@ -104,6 +104,18 @@ async function markReady(paperId, { title, examJson, questionCount, totalMarks, 
   if (error) throw new Error(`test paper not saved: ${error.message}`);
 }
 
+/**
+ * Record the subject the model read from an upload that came with none. Only
+ * ever fills a blank: a subject the teacher's source named is never replaced.
+ */
+async function setSubject(requestId, subject) {
+  if (!requestId || !subject) return;
+  const { data: row } = await supabase.from('test_paper_requests').select('subject').eq('id', requestId).maybeSingle();
+  if (!row || row.subject) return;
+  const { error } = await supabase.from('test_paper_requests').update({ subject: String(subject).slice(0, 80) }).eq('id', requestId);
+  if (error) logToFile('⚠️ test paper subject not recorded', { requestId, error: error.message });
+}
+
 /** Only an in-flight row can fail; a ready paper keeps its status whatever happens later. */
 async function markFailed(paperId, code, detail) {
   const { error } = await supabase
@@ -205,5 +217,5 @@ async function listPapers(userId, limit = LIST_LIMIT) {
 }
 
 module.exports = {
-  createRequest, createPaper, markReady, markFailed, getPaper, latestReady, listPapers, LIST_LIMIT,
+  createRequest, createPaper, markReady, markFailed, setSubject, getPaper, latestReady, listPapers, LIST_LIMIT,
 };

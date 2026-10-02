@@ -84,7 +84,8 @@ async function run(job) {
     logToFile('⚠️ test paper job: paper not found for this teacher — skipped', { paperId, userId });
     return { skipped: 'not_found' };
   }
-  const { paper, request } = found;
+  const { paper } = found;
+  let { request } = found;
   if (paper.status !== 'generating') {
     logToFile('⏭️ test paper job: already handled', { paperId, status: paper.status });
     return { skipped: paper.status };
@@ -106,6 +107,11 @@ async function run(job) {
     await Store.markFailed(paperId, 'UNCHANGED', result.note);
     await WhatsAppService.sendMessage(to, t('editUnchanged', chatLanguage, { note: result.note }));
     return { unchanged: true };
+  }
+
+  if (!request.subject && result.subject) {
+    await Store.setSubject(request.id, result.subject);
+    request = { ...request, subject: result.subject };
   }
 
   const totalMarks = Generation.totalMarksOf(result.examJson);

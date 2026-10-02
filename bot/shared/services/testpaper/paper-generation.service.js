@@ -192,7 +192,7 @@ ${text}
 ${items.map((i) => `• ${i}`).join('\n')}
 • In total the paper must have exactly ${plan.total} questions — no more${budget ? `
 • The whole paper must be worth ${budget} marks in total — allocate the marks across the questions so they add up to ${budget} and NEVER exceed it` : ''}
-${languageRule(language)}
+${languageRule(language)}${subject ? '' : '• The subject was not stated: add a top-level "subject" key naming it in English (e.g. "Science", "Mathematics")\n'}
 **IMPORTANT NOTES:**
 • Every question must test something this source material actually teaches
 • For SEEN questions: take questions exactly as they appear in the source
@@ -616,8 +616,8 @@ async function generateExam(args) {
     answersGiven: coverage.answered, answersExpected: coverage.questions, marksRemoved, trimmed,
   });
 
-  return { examJson, title: _cleanTitle(json.title), questionCount: produced, tokenData, plan,
-    trimmed, marksRemoved, answerCoverage: coverage, elapsedMs };
+  return { examJson, title: _cleanTitle(json.title), subject: _cleanTitle(json.subject), questionCount: produced,
+    tokenData, plan, trimmed, marksRemoved, answerCoverage: coverage, elapsedMs };
 }
 
 /**

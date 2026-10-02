@@ -156,6 +156,13 @@ describe('generateExam', () => {
     expect(out.tokenData).toMatchObject({ inputTokens: 900, outputTokens: 400, model: 'google/gemini-2.5-pro' });
   });
 
+  it('when no subject was given, returns the subject the model read from the source', async () => {
+    mockCreate.mockResolvedValue(reply(JSON.stringify({ ...PAPER, subject: 'Science' })));
+    const out = await Gen.generateExam({ ...BASE_ARGS, subject: null });
+    expect(out.subject).toBe('Science');
+    expect(mockCreate.mock.calls[0][0].messages[1].content).toMatch(/top-level "subject"/);
+  });
+
   it('TESTPAPER_MODEL moves the model without a restart', async () => {
     mockCreate.mockResolvedValue(reply(JSON.stringify(PAPER)));
     process.env.TESTPAPER_MODEL = 'openai/gpt-4.1';
