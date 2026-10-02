@@ -168,7 +168,7 @@ works under the hood.
 **Or run Rumi on a messenger you own.** With [Rumi Messenger](https://github.com/Orenda-Project/rumi-messenger)
 (a Matrix homeserver plus a Rumi-branded Android and web app), teachers sign in with their phone number and
 find Rumi already there as a contact — end-to-end encrypted, self-hosted, with no per-message fee. Set
-`MATRIX_HOMESERVER_URL` + `MATRIX_ACCESS_TOKEN` (or run `rumi setup`). Needs Node 24+ for encryption. See
+`MATRIX_HOMESERVER_URL` + `MATRIX_ACCESS_TOKEN` (or run `rumi setup`). Encryption works on Node 22+. See
 [docs/channels/matrix.md](docs/channels/matrix.md), including what works on Matrix today.
 
 ---

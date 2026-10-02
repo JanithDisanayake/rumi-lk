@@ -704,7 +704,7 @@ describe('stepMatrixChannel', () => {
     const { stepMatrixChannel } = loadWizard({ probes: { matrix: matrixPass() } });
     const io = fakeIo({ confirm: [false] });
 
-    const result = await stepMatrixChannel(io, {}, () => {}, { nodeVersion: '24.1.0' });
+    const result = await stepMatrixChannel(io, {}, () => {});
 
     expect(io.asked.confirm[0]).toBe(WANT_MATRIX);
     expect(result).toEqual({ matrix: false });
@@ -719,7 +719,7 @@ describe('stepMatrixChannel', () => {
     const { env, saved, save } = recordingSaver();
     const io = fakeIo({ confirm: [true, false], ask: ['https://matrix.example.org/', 'syt_an_access_token'] });
 
-    const result = await stepMatrixChannel(io, env, save, { nodeVersion: '24.1.0' });
+    const result = await stepMatrixChannel(io, env, save);
 
     expect(saved.MATRIX_HOMESERVER_URL).toBe('https://matrix.example.org');
     expect(saved.MATRIX_ACCESS_TOKEN).toBe('syt_an_access_token');
@@ -736,7 +736,7 @@ describe('stepMatrixChannel', () => {
     const { stepMatrixChannel } = loadWizard({ probes: { matrix: matrixPass() } });
     const io = fakeIo({ confirm: [true, false], ask: ['https://matrix.example.org', 'syt_an_access_token'] });
 
-    await stepMatrixChannel(io, {}, () => {}, { nodeVersion: '24.1.0' });
+    await stepMatrixChannel(io, {}, () => {});
 
     expect(io.asked.ask[0].secret).toBeFalsy(); // Homeserver URL
     expect(io.asked.ask[1].secret).toBe(true); // Access token
@@ -746,7 +746,7 @@ describe('stepMatrixChannel', () => {
     const { stepMatrixChannel } = loadWizard({ probes: { matrix: matrixPass() } });
     const io = fakeIo({ confirm: [true, false], ask: ['matrix.example.org', 'syt_an_access_token'] });
 
-    await stepMatrixChannel(io, {}, () => {}, { nodeVersion: '24.1.0' });
+    await stepMatrixChannel(io, {}, () => {});
 
     expect(io.validationFailures.some((f) => /https?:\/\//.test(f.reason))).toBe(true);
   });
@@ -761,7 +761,7 @@ describe('stepMatrixChannel', () => {
     const { env, saved, save } = recordingSaver();
     const io = fakeIo({ confirm: [true, true], ask: [file] });
 
-    const result = await stepMatrixChannel(io, env, save, { nodeVersion: '24.1.0' });
+    const result = await stepMatrixChannel(io, env, save);
 
     expect(io.asked.ask).toHaveLength(1); // only the path, never the token
     expect(io.asked.ask[0].label).toMatch(/rumi-channel\.env/);
@@ -779,11 +779,11 @@ describe('stepMatrixChannel', () => {
     const { stepMatrixChannel } = loadWizard({ probes: { matrix: matrixPass() } });
 
     const missing = fakeIo({ confirm: [true, true], ask: [path.join(os.tmpdir(), 'no-such-dir', 'rumi-channel.env')] });
-    await stepMatrixChannel(missing, {}, () => {}, { nodeVersion: '24.1.0' });
+    await stepMatrixChannel(missing, {}, () => {});
     expect(missing.validationFailures.some((f) => /no file/i.test(f.reason))).toBe(true);
 
     const incomplete = fakeIo({ confirm: [true, true], ask: [noToken] });
-    await stepMatrixChannel(incomplete, {}, () => {}, { nodeVersion: '24.1.0' });
+    await stepMatrixChannel(incomplete, {}, () => {});
     expect(incomplete.validationFailures.some((f) => /MATRIX_ACCESS_TOKEN/.test(f.reason))).toBe(true);
   });
 
@@ -797,7 +797,7 @@ describe('stepMatrixChannel', () => {
       ask: ['https://matrix.example.org', 'syt_wrong', 'https://matrix.example.org', 'syt_right'],
     });
 
-    const result = await stepMatrixChannel(io, {}, () => {}, { nodeVersion: '24.1.0' });
+    const result = await stepMatrixChannel(io, {}, () => {});
 
     expect(check).toHaveBeenCalledTimes(2);
     expect(log.text).toContain('HTTP 401');
@@ -809,7 +809,7 @@ describe('stepMatrixChannel', () => {
     const { stepMatrixChannel } = loadWizard({ probes: { matrix: async () => ({ ok: false, detail: 'HTTP 401' }) } });
     const io = fakeIo({ confirm: [true, false, false], ask: ['https://matrix.example.org', 'syt_wrong'] });
 
-    const result = await stepMatrixChannel(io, {}, () => {}, { nodeVersion: '24.1.0' });
+    const result = await stepMatrixChannel(io, {}, () => {});
 
     expect(result).toEqual({ matrix: false });
   });
@@ -819,66 +819,27 @@ describe('stepMatrixChannel', () => {
     const env = { MATRIX_HOMESERVER_URL: 'https://matrix.example.org', MATRIX_ACCESS_TOKEN: 'syt_already_set' };
     const io = fakeIo();
 
-    const result = await stepMatrixChannel(io, env, () => {}, { nodeVersion: '24.1.0' });
+    const result = await stepMatrixChannel(io, env, () => {});
 
     expect(result).toEqual({ matrix: true });
     expect(io.asked.confirm).toHaveLength(0); // never even asked about Matrix
   });
 
-  it('on Node 24 or newer, never raises the encryption question', async () => {
+  // Encryption runs on the same Node 22 floor as everything else, so the step
+  // has no encryption question and always saves it as required.
+  it('never raises an encryption question, and saves encryption as required', async () => {
     const { stepMatrixChannel } = loadWizard({ probes: { matrix: matrixPass() } });
+    const { env, saved, save } = recordingSaver();
     const io = fakeIo({ confirm: [true, false], ask: ['https://matrix.example.org', 'syt_an_access_token'] });
 
-    await stepMatrixChannel(io, {}, () => {}, { nodeVersion: '24.1.0' });
+    await stepMatrixChannel(io, env, save);
 
     expect(io.asked.select).toHaveLength(0);
-    expect(log.text).not.toMatch(/needs\s+Node 24/);
+    expect(log.text).not.toMatch(/Node\s+24/);
+    expect(saved.MATRIX_E2EE).toBe('on');
   });
 
-  describe('on Node older than 24', () => {
-    it('warns that encryption needs Node 24+, and keeps it required by default', async () => {
-      const { stepMatrixChannel } = loadWizard({ probes: { matrix: matrixPass() } });
-      const { env, saved, save } = recordingSaver();
-      const io = fakeIo({ confirm: [true, false], ask: ['https://matrix.example.org', 'syt_an_access_token'] });
-
-      await stepMatrixChannel(io, env, save, { nodeVersion: '22.11.0' });
-
-      expect(log.text).toMatch(/needs\s+Node 24/);
-      expect(log.text).toContain('MATRIX_E2EE=off');
-      expect(io.asked.select).toHaveLength(1);
-      expect(io.asked.select[0].defaultValue).toBe('on');
-      expect(saved.MATRIX_E2EE).toBe('on');
-    });
-
-    it('turns encryption off only after an explicit confirm', async () => {
-      const { stepMatrixChannel } = loadWizard({ probes: { matrix: matrixPass() } });
-      const { env, saved, save } = recordingSaver();
-      const io = fakeIo({
-        select: ['off'],
-        confirm: [true, true, false], // connect, yes really send without encryption, type values
-        ask: ['https://matrix.example.org', 'syt_an_access_token'],
-      });
-
-      await stepMatrixChannel(io, env, save, { nodeVersion: '22.11.0' });
-
-      expect(io.asked.confirm[1]).toMatch(/without end-to-end encryption/i);
-      expect(saved.MATRIX_E2EE).toBe('off');
-    });
-
-    it('keeps encryption required if the user backs out of that confirm', async () => {
-      const { stepMatrixChannel } = loadWizard({ probes: { matrix: matrixPass() } });
-      const { env, saved, save } = recordingSaver();
-      const io = fakeIo({
-        select: ['off'],
-        confirm: [true, false, false], // connect, no — keep it encrypted, type values
-        ask: ['https://matrix.example.org', 'syt_an_access_token'],
-      });
-
-      await stepMatrixChannel(io, env, save, { nodeVersion: '22.11.0' });
-
-      expect(saved.MATRIX_E2EE).toBe('on');
-    });
-
+  describe('when the crypto module cannot load on this host', () => {
     it('saves a working login without re-asking for it when only encryption is what blocks the channel', async () => {
       const check = jest.fn().mockResolvedValue({
         ok: false,
@@ -888,13 +849,13 @@ describe('stepMatrixChannel', () => {
       const { env, saved, save } = recordingSaver();
       const io = fakeIo({ confirm: [true, false], ask: ['https://matrix.example.org', 'syt_an_access_token'] });
 
-      const result = await stepMatrixChannel(io, env, save, { nodeVersion: '22.11.0' });
+      const result = await stepMatrixChannel(io, env, save);
 
       expect(check).toHaveBeenCalledTimes(1);
       expect(io.asked.confirm).not.toContain('Try those values again?');
       expect(saved.MATRIX_ACCESS_TOKEN).toBe('syt_an_access_token');
       expect(result).toEqual({ matrix: false });
-      expect(log.text).toMatch(/Node\s+24/);
+      expect(log.text).toMatch(/MATRIX_E2EE=off/);
     });
   });
 });

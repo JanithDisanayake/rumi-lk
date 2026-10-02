@@ -16,7 +16,7 @@ form's questions one message at a time.
 |---|---|
 | A Matrix homeserver (Synapse) and the teacher apps | [rumi-messenger](https://github.com/Orenda-Project/rumi-messenger): a Docker or Railway deploy of Synapse, a branded Element Web, the Android app, calls and push. Its setup creates the `@rumi` account and writes the connection lines for you. |
 | This repo, running the bot **and** the worker | [SETUP.md](../../SETUP.md), or [a laptop setup](../local-stack.md) with no Supabase account |
-| **Node 24 or newer** | End-to-end encryption needs it (see [Encryption](#encryption)) |
+| **Node 22 or newer** | The same floor as the rest of Rumi; end-to-end encryption works on it (see [Encryption](#encryption)) |
 | **Redis** (`REDIS_URL`) | Already required. On Matrix it also carries the worker's sends to the bot (see [The relay](#the-relay)) |
 | Object storage (`R2_*`) | For coaching recordings, reading recordings and generated images, as on any non-Meta channel |
 
@@ -90,8 +90,8 @@ federation off. Never allow a server where people pick their own usernames.
 
 ## Encryption
 
-Encryption is on by default and **fails closed**. The bot needs the optional
-`@matrix-org/matrix-sdk-crypto-nodejs` package, which only installs on **Node 24 or newer**. If it cannot load,
+Encryption is on by default and **fails closed**. It uses the native `@matrix-org/matrix-sdk-crypto-nodejs`
+package that `matrix-bot-sdk` installs, on **Node 22 or newer**. If it cannot load (no prebuilt binary for the host),
 the Matrix channel refuses to start with an error saying why, the bot keeps serving its other channels, and
 `rumi doctor` reports it. Set `MATRIX_E2EE=off` only if plaintext is acceptable on your homeserver.
 
@@ -167,7 +167,7 @@ on). "Degrades" means it works with a plainer experience; "breaks" means a teach
 
 | Symptom | Cause and fix |
 |---|---|
-| `The matrix channel did not start: … refusing to start without encryption` | The crypto package did not load. Reinstall `bot/` dependencies under Node 24+, or set `MATRIX_E2EE=off` |
+| `The matrix channel did not start: … refusing to start without encryption` | The crypto package did not load. Reinstall `bot/` dependencies (`npm ci` in `bot/`) on Node 22+, or set `MATRIX_E2EE=off` |
 | `M_UNKNOWN_TOKEN` at start | The token was revoked or mistyped. Log the bot in again |
 | `One time key … already exists`, or messages Rumi cannot decrypt | Two processes share the device, or the store was lost. Stop extra processes; if the store is gone, use a new token and device |
 | The worker's PDFs and reports never arrive | `REDIS_URL` differs between bot and worker, or the bot is not running |

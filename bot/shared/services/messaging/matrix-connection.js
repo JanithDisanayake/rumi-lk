@@ -33,22 +33,22 @@
  * binary" message -- exactly backwards, since that was a code bug, not an
  * environment fact).
  *
- * `@matrix-org/matrix-sdk-crypto-nodejs` ships prebuilt binaries per
- * platform/Node ABI and has no source fallback, and its own package.json
- * declares `engines.node: ">=24"` (NOT >=22 -- a wrong claim in an earlier
- * version of this comment; verified against the actual installed
- * package.json) -- so it IS a genuine "can be absent on an older host"
- * dependency, just not the only failure mode. buildCryptoProvider()
+ * The enum is read from matrix-bot-sdk's OWN copy of that package (its nested
+ * hard dependency, 0.4.0, Node 22+, the copy that actually encrypts), never a
+ * top-level one -- see matrix-crypto-module.js. That package ships prebuilt
+ * binaries per platform/Node ABI with no source fallback, so it IS a genuine
+ * "can be absent on this host" dependency (no matching prebuild, a failed
+ * binary download), just not the only failure mode. buildCryptoProvider()
  * therefore distinguishes the two:
- *   - MODULE_NOT_FOUND (the package is genuinely absent, e.g. Node <24 or no
- *     matching prebuild) → logged as a warning, a real environment fact.
+ *   - MODULE_NOT_FOUND (the package or its binary is genuinely absent) →
+ *     logged as a warning, a real environment fact.
  *   - anything else (wrong API usage, a corrupted store, ...) → logged at
  *     ERROR level with the real message/code/stack, because that is a BUG,
  *     not an environment limitation, and must never look like the quiet
  *     "expected" case above.
  * In BOTH cases startup FAILS (throws) instead of downgrading: encryption
  * fails closed. An earlier "auto" default started in plaintext with only a
- * log line, which on any host without Node 24 meant every teacher's messages
+ * log line, which on any host without crypto meant every teacher's messages
  * crossed the homeserver unencrypted without anyone deciding that. Only an
  * explicit `MATRIX_E2EE=off` starts without encryption (and skips the
  * attempt entirely); "auto" and any other value now mean "on".
@@ -144,9 +144,9 @@ function buildCryptoProvider(dir) {
     // eslint-disable-next-line global-require -- lazy, optional native module (see file header)
     const { RustSdkCryptoStorageProvider } = require('matrix-bot-sdk');
     // StoreType lives on the crypto package itself, NOT on matrix-bot-sdk --
-    // see file header for the exact wrong-package bug this replaces.
+    // and on the SDK's own copy of it, not a top-level one (see file header).
     // eslint-disable-next-line global-require -- lazy: only touched when E2EE is actually requested
-    const { StoreType } = require('@matrix-org/matrix-sdk-crypto-nodejs');
+    const { StoreType } = require('./matrix-crypto-module').loadSdkCryptoModule();
     const provider = new RustSdkCryptoStorageProvider(path.join(dir, 'crypto'), StoreType.Sqlite);
     cryptoEnabled = true;
     return provider;
@@ -157,8 +157,8 @@ function buildCryptoProvider(dir) {
     if (moduleAbsent) {
       // A genuine environment fact, not a bug -- warn level.
       logToFile(
-        '⚠️ Matrix: E2EE crypto module (@matrix-org/matrix-sdk-crypto-nodejs) is not installed on this host -- '
-        + 'it needs Node >=24 with a matching prebuilt native binary.',
+        '⚠️ Matrix: E2EE crypto module (matrix-bot-sdk\'s @matrix-org/matrix-sdk-crypto-nodejs) is not installed on this host -- '
+        + 'it needs a prebuilt native binary matching this platform and Node version.',
         { error: error.message, code: error.code }
       );
     } else {
@@ -177,8 +177,8 @@ function buildCryptoProvider(dir) {
       'Matrix: end-to-end encryption is required, but the crypto provider could not be built '
       + `(${error.code || 'no error code'}: ${error.message}) -- refusing to start without encryption. `
       + (moduleAbsent
-        ? 'It needs Node 24 or newer with the optional @matrix-org/matrix-sdk-crypto-nodejs package installed '
-          + '(reinstall bot dependencies under Node 24). '
+        ? 'matrix-bot-sdk\'s @matrix-org/matrix-sdk-crypto-nodejs (Node 22 or newer) or its native binary is missing: '
+          + 'reinstall bot dependencies (npm ci in bot/) on this host. '
         : '')
       + 'Set MATRIX_E2EE=off only if plaintext is acceptable on this homeserver.'
     );

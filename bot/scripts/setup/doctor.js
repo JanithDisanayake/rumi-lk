@@ -284,11 +284,15 @@ const defaultProbes = {
    *
    * It also checks that end-to-end encryption can start, because the channel
    * fails closed: unless MATRIX_E2EE=off, the bot refuses to start Matrix when
-   * the optional crypto module can't load (matrix-connection.js). Same rule as
-   * matrix-connection.js#e2eeMode, restated here so doctor never has to load
-   * the bot's logger or SDK.
+   * matrix-bot-sdk's own crypto module can't load (matrix-connection.js). Same
+   * rule as matrix-connection.js#e2eeMode, restated here so doctor never has to
+   * load the bot's logger or SDK; the module is found the same way the bot
+   * finds it (matrix-crypto-module.js).
    */
-  async matrix(env, { loadCrypto = () => require('@matrix-org/matrix-sdk-crypto-nodejs'), nodeVersion = process.version } = {}) {
+  async matrix(env, {
+    loadCrypto = () => require('../../shared/services/messaging/matrix-crypto-module').loadSdkCryptoModule(),
+    nodeVersion = process.version,
+  } = {}) {
     const base = String(env.MATRIX_HOMESERVER_URL || '').replace(/\/+$/, '');
     const res = await fetch(`${base}/_matrix/client/v3/account/whoami`, {
       headers: { Authorization: `Bearer ${env.MATRIX_ACCESS_TOKEN}` },
@@ -308,8 +312,8 @@ const defaultProbes = {
         ok: false,
         detail: `connected as ${body.user_id}, but the channel will refuse to start: end-to-end encryption `
           + `is required and its crypto module can't load (${err.code || err.message}; this is Node ${nodeVersion}). `
-          + 'It needs Node 24 or newer: reinstall bot dependencies under Node 24, or set MATRIX_E2EE=off '
-          + 'if plaintext is acceptable on this homeserver.',
+          + 'It needs Node 22 or newer and the native binary matrix-bot-sdk installs: reinstall bot '
+          + 'dependencies (npm ci in bot/), or set MATRIX_E2EE=off if plaintext is acceptable on this homeserver.',
       };
     }
     return { ok: true, detail: `connected as ${body.user_id}, end-to-end encrypted` };

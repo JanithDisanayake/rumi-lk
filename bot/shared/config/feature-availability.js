@@ -97,7 +97,7 @@ const FEATURES = [
     keys: ['MATRIX_HOMESERVER_URL', 'MATRIX_ACCESS_TOKEN'],
     notes: 'Runs alongside your WhatsApp driver via a persistent sync connection to your own homeserver, '
       + 'no third-party app review at all (self-hosted). End-to-end encryption is required by default and '
-      + 'needs Node 24+ (the optional @matrix-org/matrix-sdk-crypto-nodejs module); without it the channel '
+      + 'uses the native crypto module matrix-bot-sdk installs (Node 22+); if it cannot load the channel '
       + 'refuses to start unless MATRIX_E2EE=off. Worker sends are relayed through the bot over REDIS_URL.',
     probe: 'matrix',
   },

@@ -489,12 +489,13 @@ describe('the Matrix probe also checks that end-to-end encryption can start', ()
   });
   afterEach(() => { global.fetch = realFetch; });
 
-  it('fails, naming Node 24 and the off switch, when the crypto module cannot load', async () => {
+  it('fails, naming the reinstall fix and the off switch, when the crypto module cannot load', async () => {
     const result = await defaultProbes.matrix(ENV, { loadCrypto: absent, nodeVersion: 'v22.11.0' });
     expect(result.ok).toBe(false);
     expect(result.detail).toMatch(/@rumi:example\.org/);
     expect(result.detail).toMatch(/refuse to start/);
-    expect(result.detail).toMatch(/Node 24/);
+    expect(result.detail).toMatch(/npm ci in bot\//);
+    expect(result.detail).not.toMatch(/Node 24/);
     expect(result.detail).toMatch(/v22\.11\.0/);
     expect(result.detail).toMatch(/MATRIX_E2EE=off/);
   });

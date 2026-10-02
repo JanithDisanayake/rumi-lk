@@ -909,11 +909,6 @@ async function stepDiscordChannel(io, env, save, opts = {}) {
 
 const RUMI_MESSENGER_REPO = 'https://github.com/Orenda-Project/rumi-messenger';
 
-/** True when this Node can run Matrix end-to-end encryption (24 or newer). */
-function nodeSupportsMatrixE2ee(nodeVersion) {
-  return Number(String(nodeVersion || '').replace(/^v/, '').split('.')[0]) >= 24;
-}
-
 /**
  * Reads the three lines rumi-messenger's scripts/setup.sh writes to
  * `deploy/rumi-channel.env`. Returns `{ok:false, reason}` rather than throwing,
@@ -939,41 +934,19 @@ function readRumiChannelEnv(filePath) {
 }
 
 /**
- * On Node older than 24 the encryption module can't load, and the channel
- * fails closed. Says so, and lets the person choose: keep encryption required
- * (the default — the channel waits for Node 24), or turn it off, which needs a
- * second, explicit yes.
- *
- * @returns {Promise<'on'|'off'>}
- */
-async function chooseMatrixE2ee(io, nodeVersion) {
-  if (nodeSupportsMatrixE2ee(nodeVersion)) return 'on';
-
-  console.log('');
-  console.log(ui.say(`This machine runs Node ${String(nodeVersion).replace(/^v/, '')}. End-to-end encryption on Matrix needs Node 24 or newer.`));
-  console.log(ui.aside('Without it, the Matrix channel refuses to start, unless you set MATRIX_E2EE=off. Off means messages between teachers and Rumi are not end-to-end encrypted.'));
-  const choice = await io.select('How should Matrix handle encryption?', [
-    { label: 'Keep encryption required', value: 'on', hint: 'Matrix starts once Rumi runs on Node 24 or newer' },
-    { label: 'Turn encryption off', value: 'off', hint: 'sets MATRIX_E2EE=off — Matrix starts now, unencrypted' },
-  ], 'on');
-  if (choice !== 'off') return 'on';
-  const sure = await io.confirm('Send Matrix messages without end-to-end encryption?', false);
-  return sure ? 'off' : 'on';
-}
-
-/**
  * Matrix's own confirm-then-configure-then-live-check block, the same shape
  * as stepDiscordChannel. Matrix runs on a homeserver the deployment owns, so
  * there is no app console to walk through: the bot account's access token
  * comes either from rumi-messenger's `deploy/rumi-channel.env` or from
  * whoever runs the homeserver.
  *
- * @param {{reconfigure?: boolean, nodeVersion?: string}} [opts]
- *   `nodeVersion` defaults to this process's Node.
+ * Encryption is saved as required (MATRIX_E2EE=on): it runs on the same Node
+ * 22 floor as the rest of Rumi, so there is nothing to choose here. The live
+ * check below reports it if the crypto module can't load on this host.
+ *
+ * @param {{reconfigure?: boolean}} [opts]
  */
 async function stepMatrixChannel(io, env, save, opts = {}) {
-  const nodeVersion = opts.nodeVersion || process.versions.node;
-
   const matrixConfigured = hasAll(env, ['MATRIX_HOMESERVER_URL', 'MATRIX_ACCESS_TOKEN']);
   if (matrixConfigured && !opts.reconfigure) {
     const check = await checkLive('Checking the Matrix connection you already have…', 'matrix', env, (d) => `Matrix already connected ${ui.dim(d)}`);
@@ -988,8 +961,6 @@ async function stepMatrixChannel(io, env, save, opts = {}) {
 
   const wantsMatrix = await io.confirm('Do you want teachers to reach Rumi on your own Matrix messenger?', false);
   if (!wantsMatrix) return { matrix: false };
-
-  const e2ee = await chooseMatrixE2ee(io, nodeVersion);
 
   for (;;) {
     let vars;
@@ -1025,7 +996,7 @@ async function stepMatrixChannel(io, env, save, opts = {}) {
       vars = { MATRIX_HOMESERVER_URL: homeserverUrl, MATRIX_ACCESS_TOKEN: accessToken };
     }
 
-    save({ ...vars, MATRIX_E2EE: e2ee });
+    save({ ...vars, MATRIX_E2EE: 'on' });
     const check = await checkLive('Checking the access token…', 'matrix', env, (d) => `Matrix connected ${ui.dim(d)}`);
     if (check.ok) {
       console.log(ui.aside('Keep MATRIX_STORAGE_DIR (default .matrix-storage) on storage that survives restarts and redeploys: its encryption keys belong to this token\'s device.'));
@@ -1037,7 +1008,7 @@ async function stepMatrixChannel(io, env, save, opts = {}) {
     // credentials would not change that, so don't ask for them again.
     if (/^connected as /.test(check.detail)) {
       console.log(ui.aside(check.detail));
-      console.log(ui.say('The login works and is saved. Matrix will start once encryption can load (Node 24 or newer), or with MATRIX_E2EE=off.'));
+      console.log(ui.say('The login works and is saved. Matrix will start once encryption can load (reinstall bot dependencies), or with MATRIX_E2EE=off.'));
       return { matrix: false };
     }
     console.log(ui.aside(check.detail));

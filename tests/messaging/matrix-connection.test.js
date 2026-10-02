@@ -50,24 +50,56 @@ function mockMatrixSdk({ startImpl, getUserIdImpl, joinRoomImpl } = {}) {
   return { MatrixClient, client, SimpleFsStorageProvider, RustSdkCryptoStorageProvider };
 }
 
-function mockCryptoAvailable() {
-  jest.doMock('@matrix-org/matrix-sdk-crypto-nodejs', () => ({ StoreType: { Sqlite: 0 } }), { virtual: true });
+// buildCryptoProvider() reads StoreType from matrix-crypto-module.js, which
+// finds the crypto package matrix-bot-sdk ITSELF loads (its nested copy). The
+// error-handling tests below stub that loader, so they also run in the root
+// CI pass, before bot/ dependencies are installed; the one test that needs the
+// real nested package runs only where bot/node_modules has it.
+const CRYPTO_MODULE = '../../bot/shared/services/messaging/matrix-crypto-module';
+const SDK_INSTALLED = require('fs').existsSync(require('path').join(__dirname, '../../bot/node_modules/matrix-bot-sdk/package.json'));
+
+function mockCryptoLoader(load) {
+  jest.doMock(CRYPTO_MODULE, () => ({ loadSdkCryptoModule: load }));
 }
 
-/** Simulates the package genuinely being absent (e.g. Node <24, no matching prebuild): a real MODULE_NOT_FOUND. */
+function mockCryptoAvailable() {
+  mockCryptoLoader(() => ({ StoreType: { Sqlite: 0 } }));
+}
+
+/** Simulates the package genuinely being absent (e.g. no matching prebuilt binary): a real MODULE_NOT_FOUND. */
 function mockCryptoModuleAbsent() {
-  jest.doMock('@matrix-org/matrix-sdk-crypto-nodejs', () => {
+  mockCryptoLoader(() => {
     const error = new Error('Cannot find module \'@matrix-org/matrix-sdk-crypto-nodejs\'');
     error.code = 'MODULE_NOT_FOUND';
     throw error;
-  }, { virtual: true });
+  });
+}
+
+/**
+ * Hides only the TOP-LEVEL @matrix-org/matrix-sdk-crypto-nodejs (what a test
+ * file, or bot code, resolves by bare name) -- matrix-bot-sdk's own nested
+ * copy stays real, exactly as on a host where npm skipped an optional copy.
+ * The loader itself is the real one.
+ */
+function mockTopLevelCryptoHidden() {
+  jest.dontMock(CRYPTO_MODULE); // a doMock from an earlier test outlives jest.resetModules()
+  const absent = () => {
+    const error = new Error('Cannot find module \'@matrix-org/matrix-sdk-crypto-nodejs\'');
+    error.code = 'MODULE_NOT_FOUND';
+    throw error;
+  };
+  // What bot code would get from a bare require: bot/node_modules' top-level
+  // copy, when an older install still has one.
+  const topLevel = require('path').join(__dirname, '../../bot/node_modules/@matrix-org/matrix-sdk-crypto-nodejs/index.js');
+  if (require('fs').existsSync(topLevel)) jest.doMock(require('fs').realpathSync(topLevel), absent);
+  jest.doMock('@matrix-org/matrix-sdk-crypto-nodejs', absent, { virtual: true });
 }
 
 /** Simulates a REAL bug (e.g. a wrong import, corrupted store) -- present, but broken for some other reason. */
 function mockCryptoModuleBroken() {
-  jest.doMock('@matrix-org/matrix-sdk-crypto-nodejs', () => {
+  mockCryptoLoader(() => {
     throw new TypeError('boom: some other failure, not a missing module');
-  }, { virtual: true });
+  });
 }
 
 beforeEach(() => {
@@ -108,8 +140,9 @@ describe('matrix-connection', () => {
     expect(result).toBe(client);
     expect(client.start).toHaveBeenCalledTimes(1);
     expect(RustSdkCryptoStorageProvider).toHaveBeenCalledTimes(1);
-    // StoreType.Sqlite (0) comes from @matrix-org/matrix-sdk-crypto-nodejs,
-    // NOT from matrix-bot-sdk -- the exact bug this pins down.
+    // StoreType.Sqlite (0) comes from @matrix-org/matrix-sdk-crypto-nodejs
+    // (matrix-bot-sdk's own copy), NOT from matrix-bot-sdk's exports -- the
+    // exact bug this pins down.
     expect(RustSdkCryptoStorageProvider.mock.calls[0][1]).toBe(0);
     // 4-arg constructor form (homeserverUrl, accessToken, storage, cryptoStore) when crypto is available.
     expect(MatrixClient.mock.calls[0]).toHaveLength(4);
@@ -117,16 +150,16 @@ describe('matrix-connection', () => {
   });
 
   // Encryption fails closed: with MATRIX_E2EE unset the channel used to start
-  // in plaintext with only a log line, on every host without Node 24. Now only
+  // in plaintext with only a log line, on every host without crypto. Now only
   // an explicit MATRIX_E2EE=off starts without encryption.
-  it('MATRIX_E2EE unset: REFUSES to start when the crypto module is genuinely absent, naming Node 24 and the off switch', async () => {
+  it('MATRIX_E2EE unset: REFUSES to start when the crypto module is genuinely absent, naming the off switch', async () => {
     const { client } = mockMatrixSdk();
     mockCryptoModuleAbsent();
     const logger = require('../../bot/shared/utils/logger');
     require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
     const conn = require('../../bot/shared/services/messaging/matrix-connection');
 
-    await expect(conn.getClient()).rejects.toThrow(/refusing to start without encryption.*Node 24.*MATRIX_E2EE=off/s);
+    await expect(conn.getClient()).rejects.toThrow(/refusing to start without encryption.*reinstall bot dependencies.*MATRIX_E2EE=off/s);
     expect(client.start).not.toHaveBeenCalled();
     expect(conn.isConnected()).toBe(false);
     expect(logger.logToFile).toHaveBeenCalledWith(
@@ -197,6 +230,20 @@ describe('matrix-connection', () => {
     const conn = require('../../bot/shared/services/messaging/matrix-connection');
 
     await expect(conn.getClient()).rejects.toThrow(/refusing to start without encryption/);
+  });
+
+  // matrix-bot-sdk@0.8.0 encrypts with its OWN nested copy of the crypto
+  // package (0.4.0, Node 22+). A top-level copy (an optional dependency some
+  // installs skip) must not decide whether encryption can start.
+  (SDK_INSTALLED ? it : it.skip)('builds the crypto provider from matrix-bot-sdk\'s own crypto package when no top-level copy is installed', async () => {
+    const { client, RustSdkCryptoStorageProvider } = mockMatrixSdk();
+    mockTopLevelCryptoHidden();
+    require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
+    const conn = require('../../bot/shared/services/messaging/matrix-connection');
+
+    await expect(conn.getClient()).resolves.toBe(client);
+    expect(RustSdkCryptoStorageProvider).toHaveBeenCalledWith(expect.stringMatching(/crypto$/), 0);
+    expect(conn.isE2eeActive()).toBe(true);
   });
 
   it('MATRIX_E2EE=off skips the crypto attempt entirely, without even trying to require the native module', async () => {
