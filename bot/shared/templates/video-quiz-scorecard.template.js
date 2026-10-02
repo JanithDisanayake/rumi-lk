@@ -106,7 +106,10 @@ function esc(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-const RTL_LANGS = new Set(['ur']);
+// Direction from the language registry, so a right-to-left language pack
+// added to the catalogue lays out right to left without a list to keep here.
+const { isRTL } = require('../config/supported-languages');
+const RTL_LANGS = { has: (code) => isRTL(code) };
 
 const BADGE_KEY = {
   mastered: 'vqBadgeMastered',
