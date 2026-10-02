@@ -15,7 +15,7 @@
  * touches the real `matrix-bot-sdk` package or opens a sync connection; only
  * connect()/getClient() do.
  *
- * E2EE (MATRIX_E2EE, default/"auto" = try, degrade quietly on failure):
+ * E2EE (MATRIX_E2EE, default "on" = required; only "off" starts without it):
  * matrix-bot-sdk only makes encryption functional when a crypto storage
  * provider is passed to the MatrixClient constructor (its own doc comment:
  * "If not supplied, end-to-end encryption will not be functional in this
@@ -46,11 +46,12 @@
  *     ERROR level with the real message/code/stack, because that is a BUG,
  *     not an environment limitation, and must never look like the quiet
  *     "expected" case above.
- * In BOTH cases, if MATRIX_E2EE was explicitly set to "on", startup FAILS
- * (throws) instead of silently downgrading -- an operator who explicitly
- * asked for encryption must be told it didn't happen, not handed a silent
- * plaintext fallback. Only MATRIX_E2EE unset/"auto" downgrades quietly.
- * `MATRIX_E2EE=off` skips the attempt entirely.
+ * In BOTH cases startup FAILS (throws) instead of downgrading: encryption
+ * fails closed. An earlier "auto" default started in plaintext with only a
+ * log line, which on any host without Node 24 meant every teacher's messages
+ * crossed the homeserver unencrypted without anyone deciding that. Only an
+ * explicit `MATRIX_E2EE=off` starts without encryption (and skips the
+ * attempt entirely); "auto" and any other value now mean "on".
  *
  * `events` is the one place to observe connection lifecycle, mirroring
  * discord-connection.js's/baileys-connection.js's own `events` emitter.
@@ -113,18 +114,12 @@ const connectionState = { connected: false };
 let shuttingDown = false;
 
 /**
- * "off" (explicit) | "on" (explicit) | "auto" (unset or any other value --
- * treated as "try, but never fail startup over it"). Kept as three states,
- * not a boolean, because "explicitly on" and "auto" now behave differently
- * on failure (see file header) -- collapsing them the way an earlier version
- * of this file did is exactly what made a real bug look like an expected
- * environment condition.
+ * "off" only when MATRIX_E2EE is exactly "off"; "on" otherwise (unset, "on",
+ * the retired "auto", or a typo) -- a typo must never be what turns
+ * encryption off. Exported so `rumi doctor` reads the same rule.
  */
 function e2eeMode() {
-  const raw = (process.env.MATRIX_E2EE || '').trim().toLowerCase();
-  if (raw === 'off') return 'off';
-  if (raw === 'on') return 'on';
-  return 'auto';
+  return (process.env.MATRIX_E2EE || '').trim().toLowerCase() === 'off' ? 'off' : 'on';
 }
 
 function storageDir() {
@@ -162,8 +157,7 @@ function buildCryptoProvider(dir) {
       // A genuine environment fact, not a bug -- warn level.
       logToFile(
         '⚠️ Matrix: E2EE crypto module (@matrix-org/matrix-sdk-crypto-nodejs) is not installed on this host -- '
-        + 'it needs Node >=24 with a matching prebuilt native binary. Set MATRIX_E2EE=off to silence this '
-        + 'warning if plaintext is expected, or install it under Node 24+ to enable encryption.',
+        + 'it needs Node >=24 with a matching prebuilt native binary.',
         { error: error.message, code: error.code }
       );
     } else {
@@ -178,14 +172,15 @@ function buildCryptoProvider(dir) {
       );
     }
 
-    if (mode === 'on') {
-      throw new Error(
-        `Matrix: MATRIX_E2EE=on was explicitly set, but the crypto provider could not be built `
-        + `(${error.code || 'no error code'}: ${error.message}) -- refusing to silently start in plaintext. `
-        + 'Set MATRIX_E2EE=off if plaintext is acceptable here, or fix the underlying issue.'
-      );
-    }
-    return null; // "auto" mode: downgrade quietly, already logged above
+    throw new Error(
+      'Matrix: end-to-end encryption is required, but the crypto provider could not be built '
+      + `(${error.code || 'no error code'}: ${error.message}) -- refusing to start without encryption. `
+      + (moduleAbsent
+        ? 'It needs Node 24 or newer with the optional @matrix-org/matrix-sdk-crypto-nodejs package installed '
+          + '(reinstall bot dependencies under Node 24). '
+        : '')
+      + 'Set MATRIX_E2EE=off only if plaintext is acceptable on this homeserver.'
+    );
   }
 }
 
@@ -445,6 +440,7 @@ module.exports = {
   getClient,
   isConnected,
   isE2eeActive,
+  e2eeMode,
   getCachedUserId,
   isJoinedToRoom,
   close,

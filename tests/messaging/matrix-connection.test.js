@@ -116,32 +116,33 @@ describe('matrix-connection', () => {
     expect(conn.isE2eeActive()).toBe(true);
   });
 
-  it('MATRIX_E2EE=auto (unset): falls back to plaintext when the crypto module is genuinely absent (MODULE_NOT_FOUND), logged as a warning', async () => {
-    const { MatrixClient } = mockMatrixSdk();
+  // Encryption fails closed: with MATRIX_E2EE unset the channel used to start
+  // in plaintext with only a log line, on every host without Node 24. Now only
+  // an explicit MATRIX_E2EE=off starts without encryption.
+  it('MATRIX_E2EE unset: REFUSES to start when the crypto module is genuinely absent, naming Node 24 and the off switch', async () => {
+    const { client } = mockMatrixSdk();
     mockCryptoModuleAbsent();
     const logger = require('../../bot/shared/utils/logger');
     require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
     const conn = require('../../bot/shared/services/messaging/matrix-connection');
 
-    await conn.getClient();
-    expect(MatrixClient.mock.calls[0]).toHaveLength(3);
-    expect(conn.isE2eeActive()).toBe(false);
+    await expect(conn.getClient()).rejects.toThrow(/refusing to start without encryption.*Node 24.*MATRIX_E2EE=off/s);
+    expect(client.start).not.toHaveBeenCalled();
+    expect(conn.isConnected()).toBe(false);
     expect(logger.logToFile).toHaveBeenCalledWith(
       expect.stringContaining('is not installed on this host'),
       expect.objectContaining({ error: expect.any(String), code: 'MODULE_NOT_FOUND' })
     );
   });
 
-  it('MATRIX_E2EE=auto (unset): a REAL bug (not module-absent) still falls back to plaintext, but is logged at error level with the real message/code', async () => {
-    const { MatrixClient } = mockMatrixSdk();
+  it('MATRIX_E2EE unset: a REAL bug (not module-absent) also refuses to start, logged at error level with the real message/code', async () => {
+    mockMatrixSdk();
     mockCryptoModuleBroken();
     const logger = require('../../bot/shared/utils/logger');
     require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
     const conn = require('../../bot/shared/services/messaging/matrix-connection');
 
-    await conn.getClient();
-    expect(MatrixClient.mock.calls[0]).toHaveLength(3);
-    expect(conn.isE2eeActive()).toBe(false);
+    await expect(conn.getClient()).rejects.toThrow(/refusing to start without encryption/);
     expect(logger.logToFile).toHaveBeenCalledWith(
       expect.stringContaining('this is a bug, not an environment limitation'),
       expect.objectContaining({
@@ -157,6 +158,26 @@ describe('matrix-connection', () => {
     );
   });
 
+  it('the old MATRIX_E2EE=auto value no longer downgrades quietly: it is treated as "on"', async () => {
+    mockMatrixSdk();
+    mockCryptoModuleAbsent();
+    process.env.MATRIX_E2EE = 'auto';
+    require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
+    const conn = require('../../bot/shared/services/messaging/matrix-connection');
+
+    await expect(conn.getClient()).rejects.toThrow(/refusing to start without encryption/);
+  });
+
+  it('e2eeMode() reports "on" unless MATRIX_E2EE is exactly "off"', () => {
+    const conn = require('../../bot/shared/services/messaging/matrix-connection');
+    for (const value of [undefined, '', 'on', 'auto', 'ON', 'yes']) {
+      if (value === undefined) delete process.env.MATRIX_E2EE; else process.env.MATRIX_E2EE = value;
+      expect(conn.e2eeMode()).toBe('on');
+    }
+    process.env.MATRIX_E2EE = ' Off ';
+    expect(conn.e2eeMode()).toBe('off');
+  });
+
   it('MATRIX_E2EE=on: FAILS startup (throws) instead of silently downgrading when the module is genuinely absent', async () => {
     mockMatrixSdk();
     mockCryptoModuleAbsent();
@@ -164,7 +185,7 @@ describe('matrix-connection', () => {
     require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
     const conn = require('../../bot/shared/services/messaging/matrix-connection');
 
-    await expect(conn.getClient()).rejects.toThrow(/MATRIX_E2EE=on was explicitly set/);
+    await expect(conn.getClient()).rejects.toThrow(/refusing to start without encryption/);
     expect(conn.isConnected()).toBe(false);
   });
 
@@ -175,7 +196,7 @@ describe('matrix-connection', () => {
     require('../../bot/shared/services/messaging/matrix-outbound-relay').ownConnectionInThisProcess(); // this test plays the bot, the connection owner
     const conn = require('../../bot/shared/services/messaging/matrix-connection');
 
-    await expect(conn.getClient()).rejects.toThrow(/MATRIX_E2EE=on was explicitly set/);
+    await expect(conn.getClient()).rejects.toThrow(/refusing to start without encryption/);
   });
 
   it('MATRIX_E2EE=off skips the crypto attempt entirely, without even trying to require the native module', async () => {

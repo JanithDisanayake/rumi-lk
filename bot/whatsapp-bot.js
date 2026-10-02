@@ -1890,12 +1890,12 @@ const PERSISTENT_CONNECTION_DRIVERS = {
  * never thrown — a connection problem must not crash server boot.
  */
 async function wireBaileysInboundIfSelected() {
-  for (const driver of Object.values(PERSISTENT_CONNECTION_DRIVERS)) {
+  for (const [channel, driver] of Object.entries(PERSISTENT_CONNECTION_DRIVERS)) {
     if (!driver.isActive(process.env)) continue;
     try {
       await driver.attachInbound(handleWebhookPost);
     } catch (error) {
-      logToFile('❌ Failed to attach persistent-connection inbound listener', { error: error.message, stack: error.stack });
+      logToFile(`❌ The ${channel} channel did not start: ${error.message}`, { channel, error: error.message, stack: error.stack });
     }
   }
 }

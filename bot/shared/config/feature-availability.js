@@ -95,9 +95,9 @@ const FEATURES = [
     name: 'Matrix channel (self-hosted homeserver)',
     keys: ['MATRIX_HOMESERVER_URL', 'MATRIX_ACCESS_TOKEN'],
     notes: 'Runs alongside your WhatsApp driver via a persistent sync connection to your own homeserver, '
-      + 'no third-party app review at all (self-hosted). MATRIX_E2EE defaults to "auto" (tries E2EE, falls '
-      + 'back to plaintext if the optional @matrix-org/matrix-sdk-crypto-nodejs native module can\'t load on '
-      + 'this host, e.g. Node <24 or no matching prebuilt binary); set MATRIX_E2EE=on to require it instead.',
+      + 'no third-party app review at all (self-hosted). End-to-end encryption is required by default and '
+      + 'needs Node 24+ (the optional @matrix-org/matrix-sdk-crypto-nodejs module); without it the channel '
+      + 'refuses to start unless MATRIX_E2EE=off. Worker sends are relayed through the bot over REDIS_URL.',
     probe: 'matrix',
   },
   {

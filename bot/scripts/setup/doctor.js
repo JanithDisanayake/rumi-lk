@@ -280,9 +280,15 @@ const defaultProbes = {
    * Confirms the access token authenticates against the homeserver's own
    * whoami endpoint, the Matrix equivalent of Discord's applications/@me
    * check above. No scopes to verify (an access token is all-or-nothing on
-   * Matrix), so this is deliberately the simplest probe in the file.
+   * Matrix).
+   *
+   * It also checks that end-to-end encryption can start, because the channel
+   * fails closed: unless MATRIX_E2EE=off, the bot refuses to start Matrix when
+   * the optional crypto module can't load (matrix-connection.js). Same rule as
+   * matrix-connection.js#e2eeMode, restated here so doctor never has to load
+   * the bot's logger or SDK.
    */
-  async matrix(env) {
+  async matrix(env, { loadCrypto = () => require('@matrix-org/matrix-sdk-crypto-nodejs'), nodeVersion = process.version } = {}) {
     const base = String(env.MATRIX_HOMESERVER_URL || '').replace(/\/+$/, '');
     const res = await fetch(`${base}/_matrix/client/v3/account/whoami`, {
       headers: { Authorization: `Bearer ${env.MATRIX_ACCESS_TOKEN}` },
@@ -292,7 +298,21 @@ const defaultProbes = {
     const body = await res.json();
     if (!body.user_id) return { ok: false, detail: 'homeserver accepted the request but returned no user_id' };
 
-    return { ok: true, detail: `connected as ${body.user_id}` };
+    if (String(env.MATRIX_E2EE || '').trim().toLowerCase() === 'off') {
+      return { ok: true, detail: `connected as ${body.user_id} (end-to-end encryption OFF: MATRIX_E2EE=off)` };
+    }
+    try {
+      loadCrypto();
+    } catch (err) {
+      return {
+        ok: false,
+        detail: `connected as ${body.user_id}, but the channel will refuse to start: end-to-end encryption `
+          + `is required and its crypto module can't load (${err.code || err.message}; this is Node ${nodeVersion}). `
+          + 'It needs Node 24 or newer: reinstall bot dependencies under Node 24, or set MATRIX_E2EE=off '
+          + 'if plaintext is acceptable on this homeserver.',
+      };
+    }
+    return { ok: true, detail: `connected as ${body.user_id}, end-to-end encrypted` };
   },
   async redis(env) {
     // Lazy require so the bot's redis lib is optional at doctor time.
@@ -372,7 +392,10 @@ async function runDoctor({
   const featureResults = [];
   for (const f of analysis.features) {
     const keyMeta = { requiredKeys: f.requiredKeys, missingKeys: f.missingKeys, notes: f.notes };
-    if (f.probe && probes[f.probe]) {
+    // Probe only what is configured: a channel with no keys would otherwise be
+    // "checked" against an empty URL/token and report a confusing error. (A
+    // keyless feature has available === null: only its probe can tell.)
+    if (f.probe && probes[f.probe] && f.available !== false) {
       try {
         const { ok, detail } = await probes[f.probe](env);
         featureResults.push({ name: f.name, status: ok ? 'on' : 'off', detail, ...keyMeta });

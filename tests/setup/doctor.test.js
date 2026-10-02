@@ -471,3 +471,61 @@ describe('the real OpenRouter probe — a valid key is not the same as a usable 
     await expect(defaultProbes.openrouter(ENV)).resolves.toEqual({ ok: true, detail: 'HTTP 200' });
   });
 });
+
+// Encryption fails closed on Matrix: the bot refuses to start the channel when
+// the crypto module can't load and MATRIX_E2EE isn't "off". Doctor says so
+// before the operator finds out from a boot log.
+describe('the Matrix probe also checks that end-to-end encryption can start', () => {
+  const { defaultProbes } = require('../../bot/scripts/setup/doctor');
+  const ENV = { MATRIX_HOMESERVER_URL: 'https://matrix.example.org', MATRIX_ACCESS_TOKEN: 'test-token' };
+  const absent = () => { const e = new Error("Cannot find module '@matrix-org/matrix-sdk-crypto-nodejs'"); e.code = 'MODULE_NOT_FOUND'; throw e; };
+
+  let realFetch;
+  beforeEach(() => {
+    realFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ user_id: '@rumi:example.org' }) });
+  });
+  afterEach(() => { global.fetch = realFetch; });
+
+  it('fails, naming Node 24 and the off switch, when the crypto module cannot load', async () => {
+    const result = await defaultProbes.matrix(ENV, { loadCrypto: absent, nodeVersion: 'v22.11.0' });
+    expect(result.ok).toBe(false);
+    expect(result.detail).toMatch(/@rumi:example\.org/);
+    expect(result.detail).toMatch(/refuse to start/);
+    expect(result.detail).toMatch(/Node 24/);
+    expect(result.detail).toMatch(/v22\.11\.0/);
+    expect(result.detail).toMatch(/MATRIX_E2EE=off/);
+  });
+
+  it('treats the retired MATRIX_E2EE=auto like the default: encryption required', async () => {
+    const result = await defaultProbes.matrix({ ...ENV, MATRIX_E2EE: 'auto' }, { loadCrypto: absent, nodeVersion: 'v22.11.0' });
+    expect(result.ok).toBe(false);
+  });
+
+  it('passes and says encryption is off when the operator chose MATRIX_E2EE=off', async () => {
+    const loadCrypto = jest.fn(absent);
+    const result = await defaultProbes.matrix({ ...ENV, MATRIX_E2EE: 'off' }, { loadCrypto });
+    expect(result.ok).toBe(true);
+    expect(result.detail).toMatch(/encryption OFF/);
+    expect(loadCrypto).not.toHaveBeenCalled();
+  });
+
+  it('passes and says messages are encrypted when the crypto module loads', async () => {
+    const result = await defaultProbes.matrix(ENV, { loadCrypto: () => ({ StoreType: { Sqlite: 0 } }) });
+    expect(result.ok).toBe(true);
+    expect(result.detail).toMatch(/end-to-end encrypted/);
+  });
+});
+
+describe('doctor only probes a channel whose keys are set', () => {
+  const { runDoctor } = require('../../bot/scripts/setup/doctor');
+
+  it('reports an unconfigured Matrix channel by its missing keys, without calling the homeserver', async () => {
+    const matrix = jest.fn(async () => ({ ok: false, detail: 'HTTP 401' }));
+    const r = await runDoctor({ env: {}, probes: { matrix }, setupState: null });
+    const row = r.featureResults.find((f) => /Matrix/.test(f.name));
+    expect(matrix).not.toHaveBeenCalled();
+    expect(row.status).toBe('off');
+    expect(row.detail).toBe('set: MATRIX_HOMESERVER_URL, MATRIX_ACCESS_TOKEN');
+  });
+});
