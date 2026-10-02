@@ -207,6 +207,7 @@ key(s) that switch it on.
 | 🗣️ **[Voice Messages](docs/features/voice.md)** | Full spoken interaction in many languages | `SONIOX_API_KEY` + `ELEVENLABS_API_KEY` |
 | 🎬 **[Video Generation](docs/features/video.md)** | A topic → a short narrated educational video | `VIDEO_GENERATION_ENABLED` + `KIE_API_KEY` |
 | ✅ **[Attendance](docs/features/attendance.md)** | Mark attendance by voice or by tapping names — works the same way on WhatsApp, Slack, and Discord | _always on (core)_ |
+| 👋 **[Teacher Nudges](docs/features/teacher-nudges.md)** | A teacher who has gone quiet for about a day gets one short, friendly check-in — once per quiet spell, on whichever channel they last used | `TEACHER_NUDGES_ENABLED` |
 | 🧮 **[Exam Checker](docs/features/exam-checker.md)** | Photograph answer sheets → vision OCR + AI grading | `MISTRAL_API_KEY` |
 | 🌅 **[Morning Brief](docs/features/morning-brief.md)** | Every morning, one thread that tells your team how the programme is doing — registration, lesson plans, coaching, scores, reading, every school worst-first — on WhatsApp, Slack or Discord, with a live page | `BRIEF_RECIPIENTS` + a read-only `BRIEF_DATABASE_URL` |
 

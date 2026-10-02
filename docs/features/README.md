@@ -20,6 +20,7 @@ Run **`npm run doctor`** at any time to see which features are live for your cur
 | 🗣️ [Voice Messages](voice.md) | Full spoken interaction in many languages | `SONIOX_API_KEY` + `ELEVENLABS_API_KEY` |
 | 🎬 [Video Generation](video.md) | Topic → short narrated educational video | `VIDEO_GENERATION_ENABLED` + `KIE_API_KEY` |
 | ✅ [Attendance](attendance.md) | Tap-based attendance via WhatsApp Flows | _core — always on_ |
+| 👋 [Teacher Nudges](teacher-nudges.md) | A teacher who went quiet gets one short, friendly check-in on the channel they last used | `TEACHER_NUDGES_ENABLED` |
 | 🧮 [Exam Checker](exam-checker.md) | Photograph answer sheets → vision OCR + AI grading | `MISTRAL_API_KEY` |
 | 🌅 [Morning Brief](morning-brief.md) | Every morning, one thread of programme-health panels to your team on WhatsApp/Slack/Discord, plus a live dashboard page | `BRIEF_RECIPIENTS` + a read-only `BRIEF_DATABASE_URL` |
 

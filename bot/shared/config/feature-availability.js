@@ -89,6 +89,14 @@ const FEATURES = [
     keys: ['BRIEF_RECIPIENTS'],
     notes: 'Needs BRIEF_DATABASE_URL or DATABASE_URL and python3 with matplotlib; schedule bot/workers/brief.worker.js daily.',
   },
+  {
+    id: 'teacher_nudges',
+    name: 'Teacher nudges (check-ins with teachers who went quiet)',
+    keys: ['TEACHER_NUDGES_ENABLED'],
+    notes: 'Set TEACHER_NUDGES_ENABLED=true; the SQS worker then sweeps every TEACHER_NUDGES_SWEEP_MINUTES, '
+      + 'or schedule bot/workers/teacher-nudges.worker.js from cron. On the Meta driver, sends only inside '
+      + 'the 24-hour window.',
+  },
   { id: 'tts_elevenlabs', name: 'Spoken replies (text-to-speech, ElevenLabs)', keys: ['ELEVENLABS_API_KEY'] },
   { id: 'tts_uplift', name: 'Urdu / regional voices (Uplift)', keys: ['UPLIFT_API_KEY'] },
   { id: 'lesson_plans_gamma', name: 'Lesson-plan generation (Gamma)', keys: ['GAMMA_API_KEY'] },
