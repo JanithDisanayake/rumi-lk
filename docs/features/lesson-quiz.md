@@ -86,7 +86,8 @@ as a count, and the child's own row. Family names never appear.
 
 **Rendering.** Figures, question cards, the teacher PDF, the class report and the cards are rendered by headless
 Chromium with JavaScript off and no network apart from `data:` and `about:` (`htmlToPdf`/`htmlToImage` with
-`{ untrusted: true }`). Every model-written or child-typed text is escaped, and figure colours are limited to the
+`{ untrusted: true }`: the browser context is offline, behind a proxy nothing listens on, and aborts every other
+request, so not even a prefetch or an iframe leaves the machine). Every model-written or child-typed text is escaped, and figure colours are limited to the
 engine's tokens and hex values. If you customise these templates, inline every asset as a `data:` URI. The
 diagram engine and its third-party parts are listed in [`bot/vendor/lp-v9/README.md`](../../bot/vendor/lp-v9/README.md).
 
