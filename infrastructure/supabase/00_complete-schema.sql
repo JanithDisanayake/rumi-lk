@@ -3701,6 +3701,15 @@ CREATE INDEX IF NOT EXISTS idx_quizzes_teacher_id ON quizzes(teacher_id);
 ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS coaching_session_id UUID REFERENCES coaching_sessions(id) ON DELETE SET NULL;
 ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS language TEXT;
 ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS meta JSONB NOT NULL DEFAULT '{}'::jsonb;
+-- Re-running this file over a database built before 2.9.0 skips the inline CHECK above (CREATE TABLE IF NOT
+-- EXISTS), so the full status list is re-applied here, as V2.9.0 does.
+ALTER TABLE quizzes DROP CONSTRAINT IF EXISTS quizzes_status_check;
+ALTER TABLE quizzes ADD CONSTRAINT quizzes_status_check CHECK (
+    status = ANY (ARRAY[
+      'generating', 'ready', 'sent', 'report_sent', 'failed', 'cancelled',
+      'offered', 'declined', 'skipped'
+    ])
+);
 -- /quiz lists a teacher's recent quizzes newest-first.
 CREATE INDEX IF NOT EXISTS quizzes_teacher_recent ON quizzes(teacher_id, created_at DESC);
 -- One transcript quiz per coaching session, one lesson-plan quiz per plan: the
