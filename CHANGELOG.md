@@ -78,6 +78,15 @@ next morning the teacher gets a class report saying what to reteach.
   when `SQS_QUIZ_QUEUE_URL` was also set.
 - **The classic quiz resumes only its own sessions** after a Redis miss; a child in a class quiz who typed a
   word was told to "Reply Start Quiz".
+- **`migrate.js` no longer reports an applied migration as failed.** V1.0.0, V2.4.0 and V2.9.0 record their own
+  version; migrate.js then recorded it again, hit the key, and exited 1 on a fresh database although every
+  migration had applied. It now records with an upsert that ignores a duplicate.
+- **Re-running `00_complete-schema.sql`** over a database built before 2.9.0 now widens the quiz status check;
+  before, it kept the old one and rejected the new quiz statuses.
+- **On Slack and Discord, list rows show their description**, so a video quiz with long options shows the
+  options, not just "A / B / C / D".
+- **Right-to-left quiz languages.** A child's question card and figure take their direction from the language
+  registry, so every right-to-left language is laid out right to left, not only Urdu.
 - **`.env.template` on the quiz queue.** Without `SQS_QUIZ_QUEUE_URL`, delayed quiz jobs are not dropped: on the
   FIFO main queue they run at once. The note now says so.
 
