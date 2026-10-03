@@ -39,6 +39,7 @@ const { logEvent } = require('../../utils/structured-logger');
 // 'ur' or 'en' and nothing else, and the decision of which one a language code
 // falls to belongs to the catalog, never to an inline ternary here.
 const { clampLanguage } = require('../../config/ux-strings');
+const { isRTL } = require('../../config/supported-languages');
 
 /**
  * The types that survive a 1080px-wide picture on a mid-range Android phone AND
@@ -1442,7 +1443,7 @@ const tokenCss = () => Object.entries(QUIZ_TOKENS).map(([k, v]) => `--${k}:${v};
 function figureHtml(svg, language, { questionNumber = null, total = null } = {}) {
   const { css, missing } = fontCss({ urdu: true });
   if (missing.length) logToFile('⚠️ transcript quiz figure: font face missing', { missing });
-  const ur = language === 'ur';
+  const rtl = isRTL(language);
   const Chrome = require('./quiz-picture-chrome');
   const counter = questionNumber && total
     ? `<div class="counter">${escHtml(Chrome.paintedCounter(questionNumber, total, language))}</div>`
@@ -1450,10 +1451,10 @@ function figureHtml(svg, language, { questionNumber = null, total = null } = {})
   const mark = Chrome.markB64() ? `<div class="mark"><img src="data:image/png;base64,${Chrome.markB64()}"></div>` : '';
   // The question card's own counter type (26px Latin, 30px Nastaliq on the same
   // 1080px canvas), so the two kinds of question picture print the number alike.
-  const counterFont = ur
+  const counterFont = rtl
     ? "font-family:'Noto Nastaliq Urdu','NastaliqUrdu','Noto Naskh Arabic',serif;font-size:30px;letter-spacing:0;"
     : "font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:26px;letter-spacing:.08em;text-transform:uppercase;";
-  return `<html lang="${ur ? 'ur' : 'en'}"><head><meta charset="utf-8"><style>
+  return `<html lang="${escHtml(language || 'en')}"><head><meta charset="utf-8"><style>
 ${css}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{background:#FFFFFF}
@@ -1476,7 +1477,7 @@ html,body{background:#FFFFFF}
 .fig [lang="ur"]{font-family:'Noto Nastaliq Urdu','Noto Naskh Arabic',serif;line-height:normal}
 </style></head><body><div class="fig">
 <svg class="lattice" viewBox="0 0 1080 1400" preserveAspectRatio="xMidYMid slice"><g fill="none" stroke="#47BA7D" stroke-width="1.5">${Chrome.latticePaths()}</g></svg>
-<div class="top" dir="${ur ? 'rtl' : 'ltr'}">${counter}${mark}</div>
+<div class="top" dir="${rtl ? 'rtl' : 'ltr'}">${counter}${mark}</div>
 <div class="box">${svg}</div>
 </div></body></html>`;
 }

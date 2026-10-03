@@ -29,6 +29,7 @@ const { needsQuestionCard, richNotation, unicodeNotation, esc, NOTATION_RE, BUTT
 const { mathHtml, mathCss, usesMath } = require('./quiz-math');
 const { letterListLabel } = require('./video-quiz-render.service');
 const { resolveUx } = require('../../config/ux-strings');
+const { isRTL } = require('../../config/supported-languages');
 // The Urdu line pitch every quiz surface shares, measured from Nastaliq's ink,
 // and its kill switch.
 const { NASTALIQ, urduSpacingV2 } = require('../../templates/quiz-brand');
@@ -62,7 +63,7 @@ const tokenCss = () => {
  * @param {string[]} d.options       stored order
  * @param {number[]} d.displayOrder  display position -> stored index (the sender's order)
  * @param {string|null} [d.figureSvg]
- * @param {'ur'|'en'} d.language     the quiz language (script + direction of the text)
+ * @param {string} d.language          the quiz language (script; direction from isRTL)
  * @param {number} [d.questionNumber]
  * @param {number} [d.total]
  * @param {'single'|'multi'} [d.answerMode] 'multi' = "select all that apply": a cue
@@ -81,10 +82,10 @@ function svgAspect(svg) {
 function renderQuestionCardHtml({ stem, options, displayOrder, figureSvg = null, language = 'en', questionNumber = null, total = null, answerMode = 'single' }) {
   const { css, missing } = fontCss({ urdu: true });
   if (missing.length) logToFile('⚠️ transcript quiz card: font face missing', { missing });
-  const ur = language === 'ur';
-  const dir = ur ? 'rtl' : 'ltr';
+  const rtl = isRTL(language);
+  const dir = rtl ? 'rtl' : 'ltr';
   const multi = answerMode === 'multi';
-  const fam = ur ? "'Noto Nastaliq Urdu','NastaliqUrdu','Noto Naskh Arabic','Inter',serif" : "'Inter','Helvetica Neue',Arial,sans-serif";
+  const fam = rtl ? "'Noto Nastaliq Urdu','NastaliqUrdu','Noto Naskh Arabic','Inter',serif" : "'Inter','Helvetica Neue',Arial,sans-serif";
   const order = Array.isArray(displayOrder) && displayOrder.length === options.length ? displayOrder : options.map((_, i) => i);
   // An option with no letter of any script (a fraction, "12 ÷ 3 = 4", a number)
   // has no direction of its own: under dir="auto" it resolves left-to-right, and
@@ -100,7 +101,7 @@ function renderQuestionCardHtml({ stem, options, displayOrder, figureSvg = null,
   // The footer names the letters THIS card actually draws — a two-option card
   // must never tell the child to tap a C that is not there, and a four-option
   // card must name D. Built from options.length, not a hardcoded three.
-  const lang = ur ? 'ur' : 'en';
+  const lang = language;
   const letters = letterListLabel(options.length, {
     separator: resolveUx('vqLetterSep', { language: lang }),
     conjunction: resolveUx('vqLetterOr', { language: lang }),
@@ -115,14 +116,14 @@ function renderQuestionCardHtml({ stem, options, displayOrder, figureSvg = null,
   // correct). Both strings come from the catalog (language protocol). Rendered
   // only in the multi path so the single-answer card stays byte-identical.
   const cueSide = dir === 'rtl' ? 'right' : 'left';
-  const cueCss = multi ? `.cue{font-family:${fam};font-size:${ur ? '30px' : '26px'};font-weight:600;color:#333748;background:rgba(71,186,125,.12);border-${cueSide}:6px solid #47BA7D;border-radius:12px;padding:14px 22px;margin-bottom:24px;line-height:${ur ? '1.9' : '1.4'};text-align:start;direction:${dir};position:relative}` : '';
+  const cueCss = multi ? `.cue{font-family:${fam};font-size:${rtl ? '30px' : '26px'};font-weight:600;color:#333748;background:rgba(71,186,125,.12);border-${cueSide}:6px solid #47BA7D;border-radius:12px;padding:14px 22px;margin-bottom:24px;line-height:${rtl ? '1.9' : '1.4'};text-align:start;direction:${dir};position:relative}` : '';
   const cue = multi ? `<div class="cue" dir="${dir}">${esc(resolveUx('vqMultiSelectAll', { language }))}</div>` : '';
   // A multi-answer card must not name letters to tap at all: the child ticks
   // checkboxes in the Flow. The single-answer foot stays the dynamic letter
   // list built above, which names exactly the buttons this card's question
   // will send.
   const footText = multi ? resolveUx('vqMultiCardFoot', { language }) : footer;
-  return `<html lang="${ur ? 'ur' : 'en'}" dir="${dir}"><head><meta charset="utf-8"><style>
+  return `<html lang="${esc(language || 'en')}" dir="${dir}"><head><meta charset="utf-8"><style>
 ${css}${maths ? `\n${mathCss()}` : ''}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{background:#FFFFFF}
@@ -130,20 +131,20 @@ html,body{background:#FFFFFF}
   font-family:${fam};color:#232735;direction:${dir}}
 .lattice{position:absolute;inset:0;opacity:.07;pointer-events:none}
 .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;position:relative}
-.counter{font-family:'Inter','Noto Nastaliq Urdu','Noto Naskh Arabic',sans-serif;font-size:${ur ? '30px' : '26px'};font-weight:600;color:#47BA7D;letter-spacing:${ur ? '0' : '.08em'};${ur ? '' : 'text-transform:uppercase;'}direction:${dir};line-height:1.8}
+.counter{font-family:'Inter','Noto Nastaliq Urdu','Noto Naskh Arabic',sans-serif;font-size:${rtl ? '30px' : '26px'};font-weight:600;color:#47BA7D;letter-spacing:${rtl ? '0' : '.08em'};${rtl ? '' : 'text-transform:uppercase;'}direction:${dir};line-height:1.8}
 .mark{width:60px;height:60px;background:#333748;border-radius:14px;display:flex;align-items:center;justify-content:center;overflow:hidden}
 .mark img{width:52px;height:52px;display:block}
 .figure{background:#F5F7F6;border-radius:18px;padding:26px 30px;margin-bottom:26px;position:relative;direction:ltr}
 .figure svg{display:block;width:100%;height:auto;max-height:${figMax}px}
-.stem{font-size:${ur ? '44px' : '42px'};line-height:${ur ? '2' : '1.35'};font-weight:${ur ? '400' : '600'};margin-bottom:26px;position:relative;text-align:start}
+.stem{font-size:${rtl ? '44px' : '42px'};line-height:${rtl ? '2' : '1.35'};font-weight:${rtl ? '400' : '600'};margin-bottom:26px;position:relative;text-align:start}
 .stem sup,.opt-text sup{font-size:.62em;vertical-align:super;line-height:0}
 .stem sub,.opt-text sub{font-size:.62em;vertical-align:sub;line-height:0}
 .opt{display:flex;align-items:center;gap:22px;background:#FFFFFF;border:2.5px solid #D7DEDB;border-radius:18px;padding:20px 26px;margin-bottom:16px;position:relative}
 .dia{width:54px;height:54px;flex-shrink:0;position:relative}
 .dia::before{content:'';position:absolute;inset:6px;background:#47BA7D;transform:rotate(45deg);border-radius:6px}
 .dia span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#0B1A12;font-family:'Inter',sans-serif;font-weight:800;font-size:26px}
-.opt-text{font-size:${ur ? '38px' : '36px'};line-height:${ur ? '1.9' : '1.35'};flex:1;text-align:start;unicode-bidi:isolate}
-.foot{margin-top:18px;font-family:'Inter','Noto Nastaliq Urdu','Noto Naskh Arabic',sans-serif;font-size:${ur ? '26px' : '22px'};line-height:1.8;color:#6B7280;direction:${dir};text-align:start;position:relative}${cueCss}${ur && urduSpacingV2() ? urduSpacingCss(multi) : ''}
+.opt-text{font-size:${rtl ? '38px' : '36px'};line-height:${rtl ? '1.9' : '1.35'};flex:1;text-align:start;unicode-bidi:isolate}
+.foot{margin-top:18px;font-family:'Inter','Noto Nastaliq Urdu','Noto Naskh Arabic',sans-serif;font-size:${rtl ? '26px' : '22px'};line-height:1.8;color:#6B7280;direction:${dir};text-align:start;position:relative}${cueCss}${rtl && urduSpacingV2() ? urduSpacingCss(multi) : ''}
 </style></head><body><div class="card">
 <svg class="lattice" viewBox="0 0 1080 1400" preserveAspectRatio="xMidYMid slice"><g fill="none" stroke="#47BA7D" stroke-width="1.5">${latticePaths()}</g></svg>
 <div class="top">${counter}<div class="mark">${markB64() ? `<img src="data:image/png;base64,${markB64()}">` : ''}</div></div>

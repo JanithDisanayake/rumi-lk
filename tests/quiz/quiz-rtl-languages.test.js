@@ -48,3 +48,41 @@ describe('an English quiz stays left to right', () => {
     expect(report('en')).toMatch(/^<!doctype html><html dir="ltr"/);
   });
 });
+
+// The picture the child answers from: the question card and the figure frame.
+// They follow the same registry, and set right-to-left text in the Nastaliq-
+// first stack the teacher sheet uses, not in Inter.
+const { renderQuestionCardHtml } = require('../../bot/shared/services/quiz/transcript-quiz-card');
+const { figureHtml } = require('../../bot/shared/services/quiz/transcript-quiz-figure');
+
+const card = (language) => renderQuestionCardHtml({
+  stem: 'ما الذي يأتي بعد البذرة؟', options: ['البرعم', 'الثمرة', 'الجذر'], language,
+  questionNumber: 1, total: 5,
+});
+const frame = (language) => figureHtml('<svg viewBox="0 0 10 10"></svg>', language, { questionNumber: 1, total: 5 });
+
+describe.each(['ar', 'ps-PK', 'ur'])('a %s child card is right to left', (language) => {
+  test('the question card', () => {
+    const html = card(language);
+    expect(html).toContain(`<html lang="${language}" dir="rtl">`);
+    expect(html).toMatch(/\.card\{[^}]*font-family:'Noto Nastaliq Urdu'[^}]*direction:rtl\}/);
+    expect(html).toMatch(/\.counter\{[^}]*direction:rtl/);
+  });
+
+  test('the figure frame', () => {
+    const html = frame(language);
+    expect(html).toContain(`<html lang="${language}"`);
+    expect(html).toMatch(/font-family:'Noto Nastaliq Urdu'[^;]*;font-size:30px/);
+  });
+});
+
+describe('an English child card stays left to right', () => {
+  test('the question card', () => {
+    const html = card('en');
+    expect(html).toContain('<html lang="en" dir="ltr">');
+    expect(html).toMatch(/\.card\{[^}]*font-family:'Inter'[^}]*direction:ltr\}/);
+  });
+  test('the figure frame', () => {
+    expect(frame('en')).toContain('<html lang="en"');
+  });
+});
