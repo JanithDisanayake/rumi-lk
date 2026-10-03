@@ -181,6 +181,12 @@ const defaultProbes = {
    * live on exactly this setup: chat replies worked, quiz generation did not.
    */
   async openrouter(env) {
+    const endpoint = require('../../shared/config/llm-endpoint').resolveEndpoint(env);
+    if (endpoint.provider === 'roar') {
+      // Roar's gateway: listing models proves the key works; spend is capped per key, not per account.
+      const r = await fetch(`${endpoint.baseURL}/models`, { headers: { Authorization: `Bearer ${endpoint.apiKey}` } });
+      return { ok: r.ok, detail: r.ok ? `Roar AI gateway · HTTP ${r.status}` : `Roar AI gateway · HTTP ${r.status}` };
+    }
     const headers = { Authorization: `Bearer ${env.OPENROUTER_API_KEY}` };
     const res = await fetch('https://openrouter.ai/api/v1/key', { headers });
     if (!res.ok) return { ok: false, detail: `HTTP ${res.status}` };

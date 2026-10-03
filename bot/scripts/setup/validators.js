@@ -128,6 +128,7 @@ function supabaseServiceKey(input) {
 function openrouterKey(input) {
   const value = clean(input);
   if (!value) return no("The key can't be empty.");
+  if (value.startsWith('roar_live_')) return value.length < 20 ? no('That key looks truncated — copy the whole thing.') : ok(value);
   if (value.startsWith('sk-or-')) {
     return value.length < 20 ? no('That key looks truncated — copy the whole thing.') : ok(value);
   }

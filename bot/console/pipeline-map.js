@@ -92,12 +92,13 @@ function listening(env) {
  * @param {object} env
  */
 function thinking(env) {
-  const provider = (env.LLM_PROVIDER || 'openrouter').toLowerCase();
+  const endpoint = require('../shared/config/llm-endpoint').resolveEndpoint(env);
+  const provider = endpoint.provider;
   return {
     provider,
-    baseUrl: provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1',
-    keyVar: provider === 'openrouter' ? 'OPENROUTER_API_KEY' : 'OPENAI_API_KEY',
-    on: isSet(provider === 'openrouter' ? env.OPENROUTER_API_KEY : env.OPENAI_API_KEY),
+    baseUrl: endpoint.baseURL,
+    keyVar: endpoint.keyVar,
+    on: isSet(endpoint.apiKey),
     settings: [
       {
         key: 'LLM_MODEL',

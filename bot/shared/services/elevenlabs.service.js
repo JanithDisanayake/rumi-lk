@@ -29,6 +29,12 @@ class ElevenLabsService {
   static _openai = null;
   static get openai() {
     if (!ElevenLabsService._openai) {
+      const llmEndpoint = require('../config/llm-endpoint');
+      const ep = llmEndpoint.resolveEndpoint(process.env);
+      if (ep.provider === 'roar' && ep.apiKey) {
+        ElevenLabsService._openai = new OpenAI({ apiKey: ep.apiKey, baseURL: ep.baseURL });
+        return ElevenLabsService._openai;
+      }
       if (!OPENAI_API_KEY) {
         throw new Error(
           'OPENAI_API_KEY is required for the ElevenLabs OpenAI-TTS fallback. ' +

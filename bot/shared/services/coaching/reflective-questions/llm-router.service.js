@@ -57,11 +57,14 @@ const PROVIDER_ROUTING = { sort: 'throughput', allow_fallbacks: true };
 // Lazy-initialised: OPENROUTER_API_KEY is in REQUIRED_VARS so the bot won't pass
 // `doctor` without it, but we don't want module-load to crash before doctor's
 // friendly missing-key matrix runs.
-const getOpenRouter = lazyClient(OpenAI, ['OPENROUTER_API_KEY'], (env) => ({
-  apiKey: env.OPENROUTER_API_KEY,
-  baseURL: 'https://openrouter.ai/api/v1',
-  maxRetries: 0,
-}));
+const endpointOf = require('../../../config/llm-endpoint');
+
+// Under LLM_PROVIDER=roar the key is ROAR_API_KEY (or OPENROUTER_API_KEY) and the
+// model names below are replaced by the gateway client's model mapping.
+const getOpenRouter = lazyClient(OpenAI, ['OPENROUTER_API_KEY'], (env) => {
+  const ep = endpointOf.resolveEndpoint(env);
+  return { apiKey: ep.apiKey, baseURL: ep.baseURL, maxRetries: 0 };
+});
 
 const PRIMARY_MODEL = 'deepseek/deepseek-v3.2';
 const FALLBACK_MODEL = 'openai/gpt-5.4';
@@ -90,7 +93,8 @@ async function callReflective(messages, { maxTokens = 2000, temperature = 0.7, t
         messages,
         response_format: { type: 'json_object' },
         max_tokens: maxTokens,
-        provider: PROVIDER_ROUTING,
+        // Provider routing is an OpenRouter feature; the Roar gateway has no use for it.
+        ...(endpointOf.providerOf(process.env) === 'roar' ? { model: endpointOf.roarModel(process.env) } : { provider: PROVIDER_ROUTING }),
         ...extra,
       },
       { timeout: timeoutMs },

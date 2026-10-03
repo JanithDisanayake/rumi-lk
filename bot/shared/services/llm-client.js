@@ -19,10 +19,15 @@
  */
 
 const OpenAI = require('openai');
+const endpoint = require('../config/llm-endpoint');
 
-const PROVIDER = (process.env.LLM_PROVIDER || 'openrouter').toLowerCase();
-const DEFAULT_MODEL = process.env.LLM_MODEL || 'openai/gpt-4o';
-const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+const PROVIDER = endpoint.providerOf(process.env);
+const DEFAULT_MODEL = PROVIDER === 'roar' ? endpoint.roarModel(process.env) : (process.env.LLM_MODEL || 'openai/gpt-4o');
+const OPENROUTER_BASE_URL = endpoint.OPENROUTER_BASE_URL;
+
+// Request fields only OpenRouter understands. Roar's gateway and direct OpenAI
+// reject or ignore them, so they are dropped on those providers.
+const GATEWAY_STRIPPED_PARAMS = ['usage', 'reasoning', 'provider'];
 
 let _client = null;
 
@@ -31,6 +36,8 @@ let _client = null;
  * For OpenRouter, wraps chat.completions.create to auto-prefix model names.
  */
 function createLLMClient() {
+  if (PROVIDER === 'roar') return createRoarClient();
+
   if (PROVIDER === 'openai') {
     // Direct OpenAI — no baseURL override
     return new OpenAI({
@@ -57,6 +64,32 @@ function createLLMClient() {
     return originalCreate(params, options);
   };
 
+  return client;
+}
+
+/**
+ * Roar AI gateway (OpenAI-compatible). Every deployment runs on one in-country
+ * model, so whatever model a call site names ('gpt-4o-mini', 'google/gemini-…')
+ * is replaced here, at the single choke point: text calls go to LLM_MODEL
+ * (default qwen3.8-27b-lk), calls that carry an image go to LLM_VISION_MODEL
+ * (default qwen3.8-27b, since image input on the -lk model is not confirmed).
+ */
+function createRoarClient() {
+  const ep = endpoint.resolveEndpoint(process.env);
+  const client = new OpenAI({
+    apiKey: ep.apiKey,
+    baseURL: ep.baseURL,
+    defaultHeaders: { 'X-Title': 'Rumi Teaching Assistant' },
+  });
+  const originalCreate = client.chat.completions.create.bind(client.chat.completions);
+  client.chat.completions.create = (params, options) => {
+    const clean = { ...params };
+    for (const k of GATEWAY_STRIPPED_PARAMS) delete clean[k];
+    clean.model = endpoint.hasImageInput(clean.messages)
+      ? endpoint.roarVisionModel(process.env)
+      : endpoint.roarModel(process.env);
+    return originalCreate(clean, options);
+  };
   return client;
 }
 
@@ -145,7 +178,7 @@ function getProviderInfo() {
   return {
     provider: PROVIDER,
     model: DEFAULT_MODEL,
-    baseURL: PROVIDER === 'openrouter' ? OPENROUTER_BASE_URL : 'https://api.openai.com/v1',
+    baseURL: endpoint.resolveEndpoint(process.env).baseURL,
   };
 }
 

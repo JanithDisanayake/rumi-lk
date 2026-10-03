@@ -53,17 +53,14 @@ async function testRedis() {
 }
 
 async function testLLM() {
-  const provider = (process.env.LLM_PROVIDER || 'openrouter').toLowerCase();
-  const key = provider === 'openai'
-    ? process.env.OPENAI_API_KEY
-    : process.env.OPENROUTER_API_KEY;
+  const endpoint = require('../../bot/shared/config/llm-endpoint').resolveEndpoint(process.env);
+  const provider = endpoint.provider;
+  const key = endpoint.apiKey;
 
   if (!key) return { service: `LLM (${provider})`, status: 'SKIP', message: 'Not configured' };
 
   try {
-    const baseURL = provider === 'openrouter'
-      ? 'https://openrouter.ai/api/v1'
-      : 'https://api.openai.com/v1';
+    const baseURL = endpoint.baseURL;
 
     const response = await fetch(`${baseURL}/models`, {
       headers: { Authorization: `Bearer ${key}` },

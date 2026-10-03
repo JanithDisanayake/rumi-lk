@@ -410,9 +410,13 @@ class AudioService {
       logToFile('🎙️ Starting OpenAI Whisper transcription...', { audioPath });
 
       // Initialize OpenAI client
-      const openai = new OpenAI({
-        apiKey: OPENAI_API_KEY
-      });
+      // Under LLM_PROVIDER=roar the Whisper fallback goes through the Roar gateway.
+      const llmEndpoint = require('../config/llm-endpoint');
+      const ep = llmEndpoint.resolveEndpoint(process.env);
+      const viaRoar = ep.provider === 'roar';
+      const openai = new OpenAI(viaRoar
+        ? { apiKey: ep.apiKey, baseURL: ep.baseURL }
+        : { apiKey: OPENAI_API_KEY });
 
       // Read the audio file
       const audioFile = fs.createReadStream(audioPath);
@@ -430,7 +434,7 @@ class AudioService {
       const startTime = Date.now();
       const transcription = await openai.audio.transcriptions.create({
         file: audioFile,
-        model: "whisper-1",
+        model: viaRoar ? llmEndpoint.ROAR_STT_MODEL : "whisper-1",
         language: undefined, // Let Whisper auto-detect the language
         response_format: "verbose_json", // Get detailed response with language info
         prompt: "This is a classroom observation recording from Pakistan. The recording contains a teacher teaching a lesson to students. Languages may include Urdu, English, Punjabi, or a mix."

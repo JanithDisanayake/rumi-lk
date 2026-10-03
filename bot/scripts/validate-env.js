@@ -30,6 +30,12 @@ function validateEnv(env = process.env) {
     if (!isSet(env.OPENAI_API_KEY)) missing.push('OPENAI_API_KEY');
   }
 
+  if (provider === 'roar') {
+    // The Roar gateway key lives in ROAR_API_KEY, or in the OPENROUTER_API_KEY slot.
+    missing = missing.filter((v) => v !== 'OPENROUTER_API_KEY');
+    if (!isSet(env.ROAR_API_KEY) && !isSet(env.OPENROUTER_API_KEY)) missing.push('ROAR_API_KEY');
+  }
+
   const warnings = [];
   if (!env.NODE_ENV) warnings.push('NODE_ENV not set (defaults to undefined)');
   if (!env.PORT) warnings.push('PORT not set (defaults to 3000)');
