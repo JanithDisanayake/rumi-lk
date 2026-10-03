@@ -71,8 +71,8 @@ diagram engine and its third-party parts are listed in [`bot/vendor/lp-v9/README
 
 ## Children on Matrix
 
-The `matrix.to` share link needs the Matrix channel driver (release 2.6.0 and later); before it, a Matrix
-deployment is not possible and the class message carries the join code only.
+Setting up the Matrix channel itself is covered in [`docs/channels/matrix.md`](../channels/matrix.md); the share
+link also needs `MATRIX_USER_ID` (the bot's account).
 
 On a Matrix deployment every child needs an account on the school's homeserver. **The school's admin creates
 these accounts**, as the Rumi Messenger guides describe. Children are not expected to self-register. The child
