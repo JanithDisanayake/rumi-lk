@@ -5,6 +5,105 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.0] - 2026-10-03
+
+**The lesson quiz.** A teacher has no time to write homework, and no time to mark forty copies of it. Rumi
+now writes a quiz on the lesson just taught (from the coaching recording), on a lesson plan Rumi made, or on
+any topic. It comes with a one-page PDF for the teacher that explains every question, and one message the
+teacher forwards to the class. Each child answers in their own chat and gets a reason after every answer. The
+next morning the teacher gets a class report saying what to reteach.
+
+
+> **Upgrade notes.** Existing Supabase deployments: run `node infrastructure/scripts/migrate.js` (migration
+> `V2.9.0__lesson_quiz.sql`, additive and safe to re-run). Set `SCHOOL_TIMEZONE` so the nudge and the next-morning
+> report land in school time. Tested end to end on Rumi Messenger with real models: 11 of 12 scenarios pass; in
+> 8 real quizzes the default model never wrote a "select all that apply" question (typed multi-select answers
+> do score correctly).
+### Added
+
+- **The offer after a coaching report.** A few minutes after the report, Rumi asks once whether the teacher
+  wants a quiz on that lesson. On yes, Rumi asks for the quiz language (only when the deployment offers more
+  than one), then sends the teacher PDF and the forwardable class message. While the offer is on its way, the
+  classic Trigger-3 quiz offer and the "what next" suggestion are held back.
+- **`/quiz` is the lesson-quiz menu.** It lists recent lessons and Rumi lesson plans with their quiz state
+  (*no quiz yet*, *being made*, *sent · N started*, *report sent*), *Quiz on any topic*, *Video quizzes*, and the
+  classic *Quiz to parents' phones*. On channels without native lists it is a numbered list. `/quiz <topic>`
+  starts a topic quiz directly.
+- **Children join on every channel.** On WhatsApp the class message carries a `wa.me` link. On Matrix it
+  carries a `matrix.to` link to the bot plus the join code. Elsewhere it carries the code alone. Any channel
+  accepts `join <CODE>`. Children answer by typed letters (`B`, `b.`, `2`, `A C` for "select all that apply"),
+  and `STOP` ends the quiz. Score cards and class cards are sent as images through `sendImage`. A report counts
+  each child's first completed attempt. Class cards show other children by first name only.
+- **The authoring pipeline.** A lesson digest; an author whose output is validated and repaired; a blind
+  answer-key check on a second model (it fails open, and the row records the quiz as unverified); question
+  pictures from a vendored diagram engine; KaTeX maths (required lazily); and the teacher PDF. A plan quiz
+  says *What you planned* and a topic quiz says what it covers. Neither ever says *what you taught*.
+- **The 6-hour nudge.** If fewer than five children have started after six hours, the teacher gets one nudge.
+  It is never sent twice and never in quiet hours. **The class report** arrives next morning in school time,
+  with a *For tomorrow* reteach box.
+- **Deployment settings, not constants.**
+  - `SCHOOL_TIMEZONE` and `QUIET_HOURS` (new `bot/shared/config/school-clock.js`).
+  - `QUIZ_LANGUAGES`: an English catalogue plus an `ur` pack. A language without a catalogue falls back to
+    English copy.
+  - `QUIZ_DAILY_CAP`, counted per school day.
+  - The three quiz models (`TRANSCRIPT_QUIZ_MODEL`, `TRANSCRIPT_QUIZ_VERIFY_MODEL`, `QUIZ_REPORT_MODEL`) are
+    jobs in the model registry. Their defaults run on one OpenRouter key, with OpenAI ids under
+    `LLM_PROVIDER=openai`.
+  - `TRANSCRIPT_QUIZ_STALE_MINUTES` (default 30): a quiz stuck in *being made* can be made again.
+- **Works without object storage.** Without `R2_*`, question cards and figures are kept on local disk and sent
+  from there (Baileys, Slack, Discord, Matrix; the Meta driver needs R2).
+- **A `lesson_quiz` feature entry** with a console switch (`RUMI_FEATURE_LESSON_QUIZ=off`), a *Lesson quiz*
+  block in `.env.template`, `docs/features/lesson-quiz.md` and a README row.
+
+### Changed
+
+- **Video quizzes (v1.2.0)** keep their region gate, which now applies only to quizzes with a video, so a
+  lesson-quiz code joins on any deployment. With video quizzes off for the region, a video quiz's code goes to
+  ordinary chat as before. Typed letters are read only during a lesson quiz; a video quiz is answered as
+  before, and other text during it goes to chat.
+- **Share codes** are drawn from `crypto.randomInt`, and a sender who sends 5 wrong codes in 10 minutes gets
+  no reply to further codes until the window passes (needs Redis). Each class report goes to the chat recorded
+  on its own share code (`quiz_share_codes.teacher_to`).
+- **Quiz renders** (figures, cards, the teacher PDF, the class report) run in headless Chromium with JavaScript
+  off and no network apart from `data:` and `about:` (`htmlToPdf`/`htmlToImage` gain an opt-in
+  `{ untrusted: true }`; other callers are unchanged).
+- **Schema (additive).** `quizzes` gains `coaching_session_id`, `language` and `meta jsonb`, the statuses
+  `offered | declined | skipped`, and one-quiz-per-lesson unique indexes for transcript and lesson-plan
+  quizzes; `quiz_share_codes` gains `teacher_to`. The upgrade is
+  `infrastructure/supabase/migrations/V2.9.0__lesson_quiz.sql`: all or nothing, safe to re-run.
+
+### Fixed
+
+- **The worker polls the quiz queue on `QUEUE_DRIVER=bullmq`.** Before, quiz jobs queued on BullMQ ran only
+  when `SQS_QUIZ_QUEUE_URL` was also set.
+- **The classic quiz resumes only its own sessions** after a Redis miss; a child in a class quiz who typed a
+  word was told to "Reply Start Quiz".
+- **`migrate.js` no longer reports an applied migration as failed.** V1.0.0, V2.4.0 and V2.9.0 record their own
+  version; migrate.js then recorded it again, hit the key, and exited 1 on a fresh database although every
+  migration had applied. It now records with an upsert that ignores a duplicate.
+- **Re-running `00_complete-schema.sql`** over a database built before 2.9.0 now widens the quiz status check;
+  before, it kept the old one and rejected the new quiz statuses.
+- **On Slack and Discord, list rows show their description**, so a video quiz with long options shows the
+  options, not just "A / B / C / D".
+- **Right-to-left quiz languages.** A child's question card and figure take their direction from the language
+  registry, so every right-to-left language is laid out right to left, not only Urdu.
+- **`.env.template` on the quiz queue.** Without `SQS_QUIZ_QUEUE_URL`, delayed quiz jobs are not dropped: on the
+  FIFO main queue they run at once. The note now says so.
+
+### Security
+
+- A model-chosen figure colour and a child-typed class name could inject markup into pages the server's
+  browser renders. Both are now escaped, colours are limited to the engine's tokens and hex values, and quiz
+  renders run with no script and no network.
+- Lesson transcripts, plan text and typed topics go into prompts fenced as data, with an instruction never to
+  follow what is inside.
+- Logs carry the last four digits of a phone number, not the number, on the quiz join and student-video paths.
+
+### Removed
+
+- `molecule` as a lesson-quiz figure type (it needs an optional chemistry library that is not installed); the
+  vendored diagram engine's default currency symbol and its dev-only `engine: "schemdraw"` circuit option.
+
 ## [2.8.0] - 2026-10-03
 
 **Your programme's own app.** A school system can now publish its own Android apps under its own name, rather

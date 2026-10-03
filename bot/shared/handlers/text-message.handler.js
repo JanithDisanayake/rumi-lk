@@ -97,6 +97,99 @@ const { detectEditClassIntent } = require('./edit-class-trigger');
 const { routeTestPaperText } = require('./testpaper-trigger');
 const { ownCoaching } = require('../services/coaching/own-coaching');
 
+/**
+ * May this share code join on this deployment? True unless video quizzes are
+ * switched off for the region AND the code is a video quiz's or names nothing.
+ * The same rule as video-quiz-share's videoQuizzesAllowed; asked here so the
+ * answer is known before the join is acked. A failed read says yes: the join
+ * itself then decides, as before.
+ */
+async function shareCodeAdmitted(from, code) {
+  try {
+    const { isVideoQuizzesEnabled } = require('../services/region-features.service');
+    const { detectRegion } = require('../utils/region');
+    if (await isVideoQuizzesEnabled(detectRegion())) return true;
+    // This lookup is a code check too, so it counts wrong codes like the join
+    // does: past the limit a sender's codes are not looked up at all.
+    const VideoQuizShare = require('../services/quiz/video-quiz-share.service');
+    if (await VideoQuizShare.guessesExhausted(from)) return false;
+    const sc = await require('../services/quiz/video-quiz-invite.service').resolveInvite(code);
+    if (!sc) await VideoQuizShare.countWrongGuess(from);
+    return !!(sc && !sc.video_id);
+  } catch (err) {
+    logToFile('⚠️ video-quiz: share-code region check failed — the join decides', { error: err.message });
+    return true;
+  }
+}
+
+/**
+ * Runs before the quiz-state intercepts below, so a `QUIZ-<code>` text always
+ * reaches the join, even when the sender already has a post-quiz chat state or
+ * an active/invited session from an earlier quiz (a child tapping a SECOND
+ * teacher's forwarded link). Only the code-parse branch sits up here;
+ * `consumeJoinReply` (which claims the next two free-text messages as a child's
+ * name and class) stays further down so it never eats a quiz answer.
+ * Returns true when it short-circuited the message.
+ */
+async function tryShareCodeJoin(from, messageBody, typingController) {
+  try {
+    const VideoQuizShare = require('../services/quiz/video-quiz-share.service');
+    const code = VideoQuizShare.parseShareCode(messageBody);
+    if (!code) return false;
+
+    // The region gate, decided BEFORE the ack. With video quizzes off for this
+    // region a video code (or a code that names nothing) is not ours: on main
+    // beginFromCode returned false and the message went on to ordinary chat.
+    // Acked first, that false would reach nobody and the text would be
+    // swallowed. A lesson quiz's code (no video) still joins. The common case
+    // (video quizzes on) costs no extra read.
+    if (!(await shareCodeAdmitted(from, code))) return false;
+
+    // ACK FIRST. A class tapping a forwarded link within the same minute would
+    // otherwise run every join (identity lookup, share-code resolution, the
+    // first question) inline before this webhook answers; the channel retries
+    // the slow ones and the retries collide. The join runs after the handler
+    // returns, under a per-phone+code lock so a retry cannot start a second
+    // session.
+    typingController.stop();
+    setImmediate(() => VideoQuizShare.beginFromCodeLocked(from, code)
+      .catch((err) => logToFile('❌ video-quiz join failed', { phoneTail: String(from).slice(-4), code, error: err.message }, 'error')));
+    return true;
+  } catch (vqErr) {
+    logToFile('Video Quiz share: routing error', { error: vqErr.message });
+    return false;
+  }
+}
+
+/**
+ * One step of the quiz-state intercept, failing on its own: a throw is logged at
+ * error and the message goes on to the next step, instead of skipping every
+ * step after it. Returns what the step returned (true = the message was
+ * handled), or false when it threw.
+ */
+async function quizInterceptStep(name, fn) {
+  try {
+    return Boolean(await fn());
+  } catch (err) {
+    logToFile(`❌ quiz intercept: the ${name} threw — going on to the next step`, { error: err.message }, 'error');
+    return false;
+  }
+}
+
+/**
+ * Is the lesson quiz (TRANSCRIPT_QUIZ_ENABLED) switched on? Asked of the offer
+ * service, which owns the flag. If that service cannot even load, the answer
+ * is no: /quiz then stays on the classic path rather than failing outright.
+ */
+function lessonQuizEnabled() {
+  try {
+    return require('../services/quiz/transcript-quiz-offer.service').enabled() === true;
+  } catch (err) {
+    logToFile('❌ lesson quiz: the offer service failed to load — /quiz stays on the classic path', { error: err.message }, 'error');
+    return false;
+  }
+}
+
 async function handleTextMessage(message, from, messageBody, user = null) {
   logToFile(`Processing TEXT message: ${messageBody}`);
 
@@ -104,60 +197,91 @@ async function handleTextMessage(message, from, messageBody, user = null) {
   const typingController = WhatsAppService.startContinuousTypingIndicator(from, message.id);
 
   try {
+    // The share-code JOIN itself runs before anything else, including the
+    // quiz-state intercept below, so a second teacher's link is never
+    // swallowed by a stale post-quiz/active-session state.
+    if (messageBody && await tryShareCodeJoin(from, messageBody, typingController)) {
+      return;
+    }
+
     // ============================================================
-    // QUIZ STATE INTERCEPT — runs BEFORE user creation so parents (who may
-    // not have a Rumi account) can answer quizzes. Post-quiz AI chat is checked
-    // FIRST (it is the most-recent state; running getActiveState first could
-    // recover a stale 'invited' session and send the wrong nudge), then an
-    // active quiz session.
+    // QUIZ STATE INTERCEPT — runs BEFORE user creation so parents and children
+    // (who may not have a Rumi account) can answer quizzes. Post-quiz AI chat is
+    // checked FIRST (it is the most-recent state; running getActiveState first
+    // could recover a stale 'invited' session and send the wrong nudge), then a
+    // STOP or a letter typed during a class quiz (video or lesson quiz), then
+    // the adaptive quiz's active session.
+    //
+    // Each step fails ON ITS OWN (quizInterceptStep): with one try/catch around
+    // them all, a throw in one step skipped every step after it.
     // ============================================================
     if (messageBody) {
-      try {
-        const QuizSessionService = require('../services/quiz/quiz-session.service');
+      const QuizSessionService = require('../services/quiz/quiz-session.service');
 
+      const postQuizHandled = await quizInterceptStep('post-quiz chat', async () => {
         const postQuizState = await QuizSessionService.getPostQuizState(from);
-        if (postQuizState) {
-          const lowerQ = (messageBody || '').trim().toLowerCase();
-          if (lowerQ === 'stop' || lowerQ === 'done') {
-            await QuizSessionService.endPostQuizChat(from);
-          } else {
-            await QuizSessionService.handlePostQuizChat(from, messageBody, postQuizState);
-          }
-          typingController.stop();
-          return;
+        if (!postQuizState) return false;
+        const lowerQ = (messageBody || '').trim().toLowerCase();
+        if (lowerQ === 'stop' || lowerQ === 'done') {
+          await QuizSessionService.endPostQuizChat(from);
+        } else {
+          await QuizSessionService.handlePostQuizChat(from, messageBody, postQuizState);
         }
+        return true;
+      });
+      if (postQuizHandled) { typingController.stop(); return; }
 
+      // STOP typed during a class quiz ends it, unfinished, and says so in the
+      // quiz's language. Asked before the typed letter so a stop is never read
+      // as an answer.
+      const quizStopped = await quizInterceptStep('class quiz stop', () => {
+        const VideoQuizService = require('../services/quiz/video-quiz.service');
+        return VideoQuizService.stopTyped(from, messageBody);
+      });
+      if (quizStopped) { typingController.stop(); return; }
+
+      // A letter TYPED during a class quiz ("b", or "A C" for a pick-every-right-
+      // answer question) answers the question it is waiting on, as the option
+      // the child saw under that letter. On text channels (Baileys, Matrix) the
+      // question arrives as lettered text and a typed letter never matches a
+      // pending menu, so this is the only way such a child can answer. Class
+      // quizzes run on the video engine and its own state; the adaptive quiz
+      // below never sees them.
+      const typedAnswer = await quizInterceptStep('typed quiz answer', () => {
+        const VideoQuizService = require('../services/quiz/video-quiz.service');
+        return VideoQuizService.answerTypedLetter(from, messageBody);
+      });
+      if (typedAnswer) { typingController.stop(); return; }
+
+      const activeQuizHandled = await quizInterceptStep('adaptive quiz answer', async () => {
         const quizState = await QuizSessionService.getActiveState(from);
         // A slash command is never a quiz answer. Without this, ANY user with a
         // live quiz session could not run a single command — every /menu, /video
         // or /quiz came back as "Tap one of the answer buttons above". A teacher
         // is often also a parent on the same number, so this is not a corner case.
-        if (quizState && !messageBody.trim().startsWith('/')) {
-          const trimmedQ = messageBody.trim();
-          const lowerQ = trimmedQ.toLowerCase();
-          if (/^(start quiz|start_quiz|کوئز شروع کریں)$/i.test(trimmedQ)) {
-            await QuizSessionService.startQuizFromInvite(from);
-          } else if (lowerQ === 'stop' || trimmedQ === 'روکیں') {
-            await QuizSessionService.endSession(from, quizState, 'incomplete');
-          } else if (/^[abc]$/i.test(trimmedQ) && quizState.currentQuestionId) {
-            await QuizSessionService.handleAnswer(from, trimmedQ, quizState);
-          } else if (quizState.currentQuestionId) {
-            await WhatsAppService.sendMessage(from,
-              '❓ Tap one of the answer buttons above, or type A, B, or C.\n\nType STOP to exit the quiz.'
-            );
-          } else {
-            // Invited but not started: there is no question "above" to answer,
-            // so pointing at answer buttons is simply wrong.
-            await WhatsAppService.sendMessage(from,
-              '❓ Reply *Start Quiz* when you are ready to begin.\n\nType STOP if you would rather not.'
-            );
-          }
-          typingController.stop();
-          return;
+        if (!quizState || messageBody.trim().startsWith('/')) return false;
+        const trimmedQ = messageBody.trim();
+        const lowerQ = trimmedQ.toLowerCase();
+        if (/^(start quiz|start_quiz|کوئز شروع کریں)$/i.test(trimmedQ)) {
+          await QuizSessionService.startQuizFromInvite(from);
+        } else if (lowerQ === 'stop' || trimmedQ === 'روکیں') {
+          await QuizSessionService.endSession(from, quizState, 'incomplete');
+        } else if (/^[abc]$/i.test(trimmedQ) && quizState.currentQuestionId) {
+          await QuizSessionService.handleAnswer(from, trimmedQ, quizState);
+        } else if (quizState.currentQuestionId) {
+          await WhatsAppService.sendMessage(from,
+            '❓ Tap one of the answer buttons above, or type A, B, or C.\n\nType STOP to exit the quiz.'
+          );
+        } else {
+          // Invited but not started: there is no question "above" to answer,
+          // so pointing at answer buttons is simply wrong.
+          await WhatsAppService.sendMessage(from,
+            '❓ Reply *Start Quiz* when you are ready to begin.\n\nType STOP if you would rather not.'
+          );
         }
-      } catch (qErr) {
-        logToFile('⚠️ Quiz state intercept error (non-fatal)', { error: qErr.message });
-      }
+        return true;
+      });
+      if (activeQuizHandled) { typingController.stop(); return; }
     }
 
     // ============================================================
@@ -308,25 +432,18 @@ async function handleTextMessage(message, from, messageBody, user = null) {
   // ============================================================
   const trimmedMessage = messageBody.trim().toLowerCase();
 
-  // Video-quiz share links.
+  // Video-quiz share links: the join replies.
   //
   // Deliberately BEFORE every other consumer: a child arriving from a
-  // forwarded wa.me link may have no users row at all, and their first
-  // message is the auto-filled "QUIZ-ABC123". Routing that through normal
-  // onboarding would answer a code with a menu.
-  //
-  // Two steps, both short-circuiting:
-  //   1. the code itself -> greet, naming the teacher and the topic
-  //   2. the join replies -> the child's name and class
+  // forwarded link may have no users row at all. The code itself
+  // ("QUIZ-ABC123") is taken at the very top of this handler
+  // (tryShareCodeJoin), ahead of the quiz-state intercepts; this block only
+  // claims the next free-text messages as the child's name, then their class.
   if (messageBody) {
     try {
       const VideoQuizShare = require('../services/quiz/video-quiz-share.service');
-      const code = VideoQuizShare.parseShareCode(messageBody);
-      if (code) {
-        if (await VideoQuizShare.beginFromCode(from, code)) return;
-      }
       if (await VideoQuizShare.consumeJoinReply(from, messageBody)) {
-        logToFile('Text consumed as video-quiz join detail — short-circuit', { from });
+        logToFile('Text consumed as video-quiz join detail — short-circuit', { phoneTail: String(from).slice(-4) });
         return;
       }
     } catch (vqErr) {
@@ -609,18 +726,75 @@ async function handleTextMessage(message, from, messageBody, user = null) {
   }
 
   // ============================================================
-  // QUIZ COMMAND: /quiz [topic] — generate + send a quiz to the class.
-  // Direct path (QuizOrchestrator). A Quiz Manager Flow can be layered later
-  // via QUIZ_FLOW_ID, but the direct path needs no Meta-flow registration.
+  // LESSON QUIZ TOPIC REPLY: the teacher picked "Quiz on any topic" in the
+  // /quiz menu and was asked to type the topic. This reply is that topic.
+  // Only with the lesson quiz on; a slash command is never a topic.
   // ============================================================
-  if (trimmedMessage === '/quiz' || trimmedMessage.startsWith('/quiz ')) {
-    logToFile('📝 /quiz command detected', { userId: user?.id, phoneNumber: from });
+  const lessonQuizOn = lessonQuizEnabled();
+  if (lessonQuizOn && user?.id && messageBody && !messageBody.trim().startsWith('/')) {
+    try {
+      const TranscriptQuizList = require('../services/quiz/transcript-quiz-list.service');
+      if (typeof TranscriptQuizList.consumeTopicReply === 'function'
+          && await TranscriptQuizList.consumeTopicReply(from, messageBody.trim(), user)) {
+        typingController.stop();
+        return;
+      }
+    } catch (error) {
+      logToFile('❌ lesson quiz: topic reply check failed', { userId: user.id, error: error.message }, 'error');
+    }
+  }
+
+  // ============================================================
+  // QUIZ COMMAND: /quiz [topic] — generate + send a quiz to the class.
+  //
+  // With the lesson quiz on (TRANSCRIPT_QUIZ_ENABLED=true), /quiz — and a bare
+  // "quiz" (TranscriptQuizList.isQuizCommand) — opens the teacher's quiz menu:
+  // their recorded lessons and lesson plans, the quizzes made from them, a quiz
+  // on any topic, and the classic quiz to parents' phones. WHICH menu, for
+  // whoever holds this phone, is decided in one place: quiz-menu-entry.service.
+  // `/quiz <topic>` skips the menu and starts a topic quiz.
+  //
+  // Flag off: the direct path (QuizOrchestrator), exactly as before. A Quiz
+  // Manager Flow can be layered later via QUIZ_FLOW_ID, but the direct path
+  // needs no Meta-flow registration.
+  // ============================================================
+  const isQuizCommand = lessonQuizOn
+    ? require('../services/quiz/transcript-quiz-list.service').isQuizCommand(messageBody)
+    : (trimmedMessage === '/quiz' || trimmedMessage.startsWith('/quiz '));
+  if (isQuizCommand) {
+    logToFile('📝 /quiz command detected', { userId: user?.id, phoneTail: String(from).slice(-4), lessonQuiz: lessonQuizOn });
     if (!user) {
       typingController.stop();
       await WhatsAppService.sendMessage(
         from,
         'Sorry, I could not find your account. Please send me a message first to register.\n\nمعذرت، میں آپ کا اکاؤنٹ نہیں مل سکا۔'
       );
+      return;
+    }
+    if (lessonQuizOn) {
+      typingController.stop();
+      const rawBody = messageBody.trim();
+      const topic = /^\/quiz(\s|$)/i.test(rawBody)
+        ? rawBody.replace(/^\/quiz[\s,:;\-]*/i, '').trim() || null
+        : null;
+      try {
+        const language = await getUserLanguage(user.id) || null;
+        if (topic) {
+          const TopicQuiz = require('../services/quiz/providers/topic.provider');
+          await TopicQuiz.startTopicQuiz(user, from, topic, language);
+        } else {
+          const QuizMenuEntry = require('../services/quiz/quiz-menu-entry.service');
+          await QuizMenuEntry.openQuizMenu({
+            user, from, language, sessionId, trigger: 'text',
+          });
+        }
+      } catch (error) {
+        logToFile('❌ lesson quiz: /quiz failed', { userId: user.id, topic, error: error.message }, 'error');
+        await WhatsAppService.sendMessage(
+          from,
+          'Sorry, something went wrong starting the quiz. Please try again.\n\nمعذرت، کوئز شروع کرنے میں کچھ غلط ہو گیا۔'
+        );
+      }
       return;
     }
     try {
@@ -666,7 +840,8 @@ async function handleTextMessage(message, from, messageBody, user = null) {
     // library and went to the generator, which then needs its own API keys.
     const STUDENT_VIDEOS_FLOW_ID = process.env.STUDENT_VIDEOS_FLOW_ID || '';
     typingController.stop();
-    const videoFlowToken = `${user?.id || 'anon'}:student-videos:${Date.now()}`;
+    // The chat rides on the token so the video reaches a teacher on any channel.
+    const videoFlowToken = `${user?.id || 'anon'}:student-videos:${Date.now()}:${from}`;
     const pickerSent = await WhatsAppService.sendFlow(from, {
       flowId: STUDENT_VIDEOS_FLOW_ID,
       flowKind: 'student-videos',

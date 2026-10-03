@@ -310,50 +310,129 @@ class ReportGeneratorService {
 
       logToFile('✅ Report generation complete', { coachingSessionId });
 
-      // Trigger 3: Offer quiz to teacher's students after coaching report
-      try {
-        const language = session.users?.preferred_language || session.transcript_language || 'en';
-        const quizTopic = enhancedAnalysis?.topic;
-        if (quizTopic) {
-          // Find the most recent lesson plan for this teacher to anchor the quiz
-          const { data: recentLP } = await supabase
-            .from('lesson_plans')
-            .select('id, topic')
-            .eq('user_id', session.user_id)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .single();
-
-          if (recentLP) {
-            await this.offerQuizAfterReport(
-              { id: session.user_id },
-              from,
-              recentLP.id,
-              recentLP.topic || quizTopic,
-              language
-            );
-          }
-        }
-      } catch (error) {
-        logToFile('⚠️ Trigger 3: Error offering quiz after coaching', { error: error.message });
-      }
-
-      // Suggest next feature after coaching completion
-      try {
-        const language = session.users?.preferred_language || session.transcript_language || 'en';
-        await FeatureLinkerService.suggestNext(
-          'coaching',
-          session.user_id,
-          from,
-          language,
-          { coachingSessionId }
-        );
-      } catch (error) {
-        logToFile('⚠️ Error in feature linker after coaching', { error: error.message });
-      }
+      await this.afterReportOffers(session, coachingSessionId, from, enhancedAnalysis);
     } catch (error) {
       await this.handleReportError(coachingSessionId, error, payload?.from);
       throw error;
+    }
+  }
+
+  /**
+   * The asks that follow a delivered coaching report: the lesson-quiz offer
+   * (a quiz written from this lesson's transcript), Trigger 3 (a quiz to the
+   * teacher's students' parents) and the next-feature suggestion. Each is
+   * non-fatal — the report is already sent.
+   *
+   * One ask at a time: when the lesson-quiz offer is on its way, Trigger 3
+   * and the suggestion stay quiet (both asks are about a quiz) — and if the
+   * offer job later decides not to offer, it runs them itself
+   * (transcript-quiz-offer runReportFollowUps). With TRANSCRIPT_QUIZ_ENABLED
+   * unset the offer answers false without a read or a write, so the two
+   * follow-ups run here exactly as they did before.
+   *
+   * @param {object} session            coaching_sessions row (with users join)
+   * @param {string} coachingSessionId
+   * @param {string} from               teacher recipient id
+   * @param {object} enhancedAnalysis
+   */
+  static async afterReportOffers(session, coachingSessionId, from, enhancedAnalysis) {
+    const reportLanguage = session.users?.preferred_language || session.transcript_language || 'en';
+    const quizOfferScheduled = await this.scheduleTranscriptQuiz(
+      session, coachingSessionId, from, reportLanguage, enhancedAnalysis?.topic
+    );
+    if (!quizOfferScheduled) {
+      await this.reportFollowUps(session, coachingSessionId, from, enhancedAnalysis?.topic);
+    }
+  }
+
+  /**
+   * Trigger 3 and the next-feature suggestion, exactly as the report has
+   * always sent them. Called by afterReportOffers, and by the lesson-quiz
+   * offer job when it held them back and then made no offer — which is why
+   * it needs only the teacher's id, their language and the lesson's topic.
+   *
+   * @param {object} session            { user_id, users?: { preferred_language }, transcript_language? }
+   * @param {string} coachingSessionId
+   * @param {string} from               teacher recipient id
+   * @param {string} [quizTopic]        the analysed lesson's topic
+   */
+  static async reportFollowUps(session, coachingSessionId, from, quizTopic) {
+    // Trigger 3: Offer quiz to teacher's students after coaching report
+    try {
+      const language = session.users?.preferred_language || session.transcript_language || 'en';
+      if (quizTopic) {
+        // Find the most recent lesson plan for this teacher to anchor the quiz
+        const { data: recentLP } = await supabase
+          .from('lesson_plans')
+          .select('id, topic')
+          .eq('user_id', session.user_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (recentLP) {
+          await this.offerQuizAfterReport(
+            { id: session.user_id },
+            from,
+            recentLP.id,
+            recentLP.topic || quizTopic,
+            language
+          );
+        }
+      }
+    } catch (error) {
+      logToFile('⚠️ Trigger 3: Error offering quiz after coaching', { error: error.message });
+    }
+
+    // Suggest next feature after coaching completion
+    try {
+      const language = session.users?.preferred_language || session.transcript_language || 'en';
+      await FeatureLinkerService.suggestNext(
+        'coaching',
+        session.user_id,
+        from,
+        language,
+        { coachingSessionId }
+      );
+    } catch (error) {
+      logToFile('⚠️ Error in feature linker after coaching', { error: error.message });
+    }
+  }
+
+  /**
+   * Schedule the lesson-quiz offer for this coaching session. It is sent
+   * after the report's reply window by the `quiz_offer` job; the offer
+   * service owns every word of it (nothing is sent from here).
+   *
+   * Never throws into the report: a quiz offer is not worth failing a
+   * session over. With TRANSCRIPT_QUIZ_ENABLED unset the offer service
+   * answers false immediately, which is what makes this call inert.
+   *
+   * @param {object} session            coaching_sessions row (with users join)
+   * @param {string} coachingSessionId
+   * @param {string} from               teacher recipient id
+   * @param {string} outputLanguage     the report's language
+   * @param {string} [reportTopic]      the analysed topic, for the follow-ups the job may run
+   * @returns {Promise<boolean>} true when the offer is scheduled
+   */
+  static async scheduleTranscriptQuiz(session, coachingSessionId, from, outputLanguage, reportTopic) {
+    try {
+      const TranscriptQuizOffer = require('../quiz/transcript-quiz-offer.service');
+      const scheduled = await TranscriptQuizOffer.scheduleOffer({
+        coachingSessionId,
+        userId: session.user_id,
+        phone: from || session?.users?.phone_number,
+        language: outputLanguage,
+        transcriptChars: String(session.transcript_text || '').length,
+        source: 'self',
+        reportTopic,
+      });
+      return Boolean(scheduled);
+    } catch (error) {
+      logToFile('⚠️ lesson quiz: offer scheduling failed (non-fatal)', {
+        coachingSessionId, error: error.message,
+      });
+      return false;
     }
   }
 

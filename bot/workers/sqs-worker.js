@@ -145,7 +145,11 @@ class SQSCoachingWorker {
     try {
       // Poll main + (optional) video + (optional) quiz queues in parallel.
       const hasVideoQueue = !!process.env.SQS_VIDEO_QUEUE_URL;
-      const hasQuizQueue = !!process.env.SQS_QUIZ_QUEUE_URL;
+      // BullMQ always routes quiz_* jobs to its own quiz queue (see
+      // bullmq-queue.service queueJob), so it is polled with or without
+      // SQS_QUIZ_QUEUE_URL; on SQS they ride the main queue unless it is set.
+      const hasQuizQueue = !!process.env.SQS_QUIZ_QUEUE_URL
+        || String(process.env.QUEUE_DRIVER || '').toLowerCase() === 'bullmq';
 
       // Reserve 1 slot for each dedicated queue that's configured.
       const dedicated = (hasVideoQueue ? 1 : 0) + (hasQuizQueue ? 1 : 0);
@@ -444,6 +448,85 @@ class SQSCoachingWorker {
           ...payload,
           action: jobType === 'testpaper_revise' ? 'revise' : 'generate',
         });
+        break;
+      }
+
+      // Lesson quiz (a quiz written from the lesson a teacher taught or
+      // planned). Same v2 envelope: the producer's fields live under
+      // body.payload; the envelope groupId is the fallback id.
+      case 'quiz_offer': {
+        // Reads the coaching session, digests it, sends the offer. The lease
+        // is never shortened below the queue's own receive lease (quiz 600 s,
+        // main 900 s): a shorter one hands a slow digest to a second worker.
+        if (sourceQueue === 'quiz') {
+          await SQSQueueService.extendQuizJobTimeout(receiptHandle, 600);
+        } else {
+          await SQSQueueService.extendJobTimeout(receiptHandle, 900);
+        }
+        const TranscriptQuizOffer = require('../shared/services/quiz/transcript-quiz-offer.service');
+        const p = (body && body.payload) ? body.payload : (payload || {});
+        const coachingSessionId = p.coachingSessionId || (body && body.groupId);
+        const offered = await TranscriptQuizOffer.processOffer(coachingSessionId, p);
+        // No offer after all: the report's Trigger 3 and next-feature
+        // suggestion, which it held back for this offer, run now (once).
+        if (offered && offered.skipped) {
+          const ReportGenerator = require('../shared/services/coaching/report-generator.service');
+          await TranscriptQuizOffer.runReportFollowUps(coachingSessionId, p, ReportGenerator);
+        }
+        break;
+      }
+      case 'quiz_generate': {
+        // Up to TRANSCRIPT_QUIZ_MAX_ATTEMPTS rounds of authoring, a blind
+        // solve, figures, a PDF and three sends. 30 minutes, the same window
+        // after which the step's run claim counts as dead
+        // (TRANSCRIPT_QUIZ_STALE_MINUTES): a redelivery inside it exits.
+        if (sourceQueue === 'quiz') {
+          await SQSQueueService.extendQuizJobTimeout(receiptHandle, 1800);
+        } else {
+          await SQSQueueService.extendJobTimeout(receiptHandle, 1800);
+        }
+        const TranscriptQuizGenerate = require('../shared/services/quiz/transcript-quiz-generate.service');
+        const p = (body && body.payload) ? body.payload : (payload || {});
+        await TranscriptQuizGenerate.process(p.quizId || (body && body.groupId), p);
+        break;
+      }
+      // The videos offer for a child who never answered the friend invite.
+      // The handler re-reads the invite key and is a no-op when the invite was
+      // answered meanwhile, so redelivery is harmless.
+      case 'quiz_child_videos_offer': {
+        const Invite = require('../shared/services/quiz/video-quiz-invite.service');
+        const p = (body && body.payload) ? body.payload : (payload || {});
+        if (p.phone) await Invite.offerVideosIfUnanswered(p.phone);
+        break;
+      }
+      case 'quiz_nudge_teacher': {
+        const p = (body && body.payload) ? body.payload : (payload || {});
+        const quizId = p.quizId || (body && body.groupId);
+        const TranscriptQuizNudge = require('../shared/services/quiz/transcript-quiz-nudge.service');
+        // Two reasons to wait: the target has not arrived, or it has but the
+        // hour is one we do not message teachers in (quiet hours). SQS caps
+        // DelaySeconds at 900, so a long hold is a chain of short hops.
+        const decision = TranscriptQuizNudge.nudgeDispatch({ targetAt: p.targetAt });
+        // A FIFO queue (the main queue, when SQS_QUIZ_QUEUE_URL is unset) drops
+        // DelaySeconds: every hop would come straight back, a tight loop until
+        // the target. Never hop there; the nudge is dropped, said in the log.
+        // (The BullMQ driver honours delays and has no honoursDelay.)
+        if (decision.action === 'requeue' && typeof SQSQueueService.honoursDelay === 'function'
+          && !SQSQueueService.honoursDelay('quiz_nudge_teacher')) {
+          logToFile('⚠️ lesson quiz: nudge dropped, the queue cannot delay it (set SQS_QUIZ_QUEUE_URL)', {
+            quizId, targetAt: decision.targetAt,
+          }, 'warn');
+          break;
+        }
+        if (decision.action === 'requeue') {
+          await SQSQueueService.queueJob(quizId, 'quiz_nudge_teacher',
+            { quizId, targetAt: decision.targetAt }, {
+              delaySeconds: decision.delaySeconds,
+              deduplicationId: `${quizId}-quiz_nudge_teacher-${Date.now()}`,
+            });
+          break;
+        }
+        await TranscriptQuizNudge.process(quizId);
         break;
       }
 

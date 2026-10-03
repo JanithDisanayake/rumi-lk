@@ -535,8 +535,12 @@ async function sendInteractiveMessage(to, listData) {
           type: 'static_select',
           action_id: 'list_select',
           placeholder: { type: 'plain_text', text: action?.button || 'Choose an option' },
+          // A row's description is part of what the person chooses between, not
+          // decoration: a video quiz whose options outgrow the row title sends
+          // "A".."D" as titles and the option itself as the description.
           options: options.slice(0, 100).map((opt) => ({
             text: { type: 'plain_text', text: String(opt.title).slice(0, 75) },
+            ...(opt.description ? { description: { type: 'plain_text', text: String(opt.description).slice(0, 75) } } : {}),
             value: opt.id,
           })),
         }],

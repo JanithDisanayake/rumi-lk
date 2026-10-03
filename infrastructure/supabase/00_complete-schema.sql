@@ -3673,17 +3673,52 @@ CREATE TABLE IF NOT EXISTS quizzes (
     grade                    TEXT,
     subject                  TEXT,
     source_content           TEXT,
+    -- Lesson quiz offer lifecycle: 'offered' = the yes/no was sent; 'declined' =
+    -- the teacher said no; 'skipped' = the lesson could not carry a quiz
+    -- (reason in meta.skip_reason).
     status                   TEXT NOT NULL DEFAULT 'generating'
-                             CHECK (status = ANY (ARRAY['generating','ready','sent','report_sent','failed','cancelled'])),
+                             CHECK (status = ANY (ARRAY['generating','ready','sent','report_sent','failed','cancelled',
+                                                        'offered','declined','skipped'])),
     total_students_sent      INTEGER DEFAULT 0,
     total_students_completed INTEGER,
     report_scheduled_at      TIMESTAMPTZ,
     report_sent_at           TIMESTAMPTZ,
     report_pdf_url           TEXT,
+    -- Lesson quiz (quiz_source transcript | lp_generated | topic): the coaching
+    -- session a transcript quiz was written from, the language its questions are
+    -- written in, and everything else the pipeline carries (digest, model, cost,
+    -- PDF key, share code, student message, lesson date, error) in meta.
+    coaching_session_id      UUID REFERENCES coaching_sessions(id) ON DELETE SET NULL,
+    language                 TEXT,
+    meta                     JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at               TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_quizzes_teacher_id ON quizzes(teacher_id);
+-- The lesson-quiz columns again, for a database whose quizzes table predates
+-- them (CREATE TABLE IF NOT EXISTS above leaves it as it was): the indexes
+-- below need coaching_session_id. Same columns as V2.9.0.
+ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS coaching_session_id UUID REFERENCES coaching_sessions(id) ON DELETE SET NULL;
+ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS language TEXT;
+ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS meta JSONB NOT NULL DEFAULT '{}'::jsonb;
+-- Re-running this file over a database built before 2.9.0 skips the inline CHECK above (CREATE TABLE IF NOT
+-- EXISTS), so the full status list is re-applied here, as V2.9.0 does.
+ALTER TABLE quizzes DROP CONSTRAINT IF EXISTS quizzes_status_check;
+ALTER TABLE quizzes ADD CONSTRAINT quizzes_status_check CHECK (
+    status = ANY (ARRAY[
+      'generating', 'ready', 'sent', 'report_sent', 'failed', 'cancelled',
+      'offered', 'declined', 'skipped'
+    ])
+);
+-- /quiz lists a teacher's recent quizzes newest-first.
+CREATE INDEX IF NOT EXISTS quizzes_teacher_recent ON quizzes(teacher_id, created_at DESC);
+-- One transcript quiz per coaching session, one lesson-plan quiz per plan: the
+-- idempotency anchors. The offer job, an early trigger and a /quiz tap all
+-- INSERT, and exactly one wins (23505 for the others).
+CREATE UNIQUE INDEX IF NOT EXISTS quizzes_one_transcript_quiz_per_session
+    ON quizzes(coaching_session_id) WHERE quiz_source = 'transcript';
+CREATE UNIQUE INDEX IF NOT EXISTS quizzes_one_lesson_plan_quiz
+    ON quizzes(lesson_plan_id) WHERE quiz_source = 'lp_generated';
 CREATE INDEX IF NOT EXISTS idx_quizzes_status ON quizzes(status);
 -- One bank quiz per video. Partial-unique so ordinary /quiz rows (video_id
 -- NULL) are unaffected.
@@ -3764,7 +3799,12 @@ CREATE TABLE IF NOT EXISTS quiz_share_codes (
     invited_by_student_id UUID REFERENCES students(id),
     parent_share_code_id  UUID REFERENCES quiz_share_codes(id),
     expires_at      TIMESTAMPTZ,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- The chat the class link was sent to (a phone on WhatsApp, a prefixed id on
+    -- Matrix/Slack/Discord), where the class report goes. Per CODE, not per quiz:
+    -- a video quiz row is shared by every teacher who is sent that video.
+    -- NULL = minted before this was recorded: users.phone_number of the teacher.
+    teacher_to      TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_quiz_share_codes_teacher ON quiz_share_codes(teacher_user_id);
@@ -3963,6 +4003,10 @@ ALTER TABLE quiz_sessions ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 
 -- A solo run by a teacher, and a child arriving via a share link, have no
 -- roster row. The original table made student_id mandatory.
 ALTER TABLE quiz_sessions ALTER COLUMN student_id DROP NOT NULL;
+
+-- quiz_share_codes: the chat the class link was sent to (see the table above),
+-- for the same upgraded-database reason. Lesson quiz, V2.9.0.
+ALTER TABLE quiz_share_codes ADD COLUMN IF NOT EXISTS teacher_to TEXT;
 
 -- The two CHECKs that ship inline in the CREATE TABLE, added here for the same
 -- upgraded-database reason. Guarded by name: ADD CONSTRAINT has no IF NOT EXISTS.

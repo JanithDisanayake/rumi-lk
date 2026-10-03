@@ -66,10 +66,15 @@ function planContentForPrompt(content) {
   return rest;
 }
 
+// A plan PDF is a few hundred KB; anything far bigger is not a plan, and is not read into memory.
+const MAX_PDF_BYTES = 25 * 1024 * 1024;
+
 async function defaultFetchPdfText(url) {
   const axios = require('axios');
   const pdf = require('pdf-parse');
-  const res = await axios.get(url, { responseType: 'arraybuffer', timeout: 30000 });
+  const res = await axios.get(url, {
+    responseType: 'arraybuffer', timeout: 30000, maxContentLength: MAX_PDF_BYTES, maxBodyLength: MAX_PDF_BYTES,
+  });
   const parsed = await pdf(Buffer.from(res.data));
   return (parsed.text || '').trim();
 }

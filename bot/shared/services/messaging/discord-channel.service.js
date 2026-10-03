@@ -548,8 +548,12 @@ async function sendInteractiveMessage(to, listData) {
     const menu = new StringSelectMenuBuilder()
       .setCustomId('list_select')
       .setPlaceholder((action?.button || 'Choose an option').slice(0, 150))
+      // Carry each row's description (Discord allows 100 chars): a video quiz
+      // whose options outgrow the row title sends "A".."D" as labels and the
+      // option itself as the description, the same as Slack's driver.
       .addOptions(options.slice(0, 25).map((opt) => ({
         label: String(opt.title).slice(0, 100),
+        ...(opt.description ? { description: String(opt.description).slice(0, 100) } : {}),
         value: String(opt.id),
       })));
     const row = new ActionRowBuilder().addComponents(menu);

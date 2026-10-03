@@ -155,15 +155,19 @@ class MigrationRunner {
     // Record the applied migration. Only version, description and applied_at exist in every
     // schema_versions (00_complete-schema.sql has no filename or checksum column, and the REST
     // API rejects an unknown column), so the filename and checksum go in the description.
+    // Some migrations record their own version (ON CONFLICT DO NOTHING); recording it again is not a failure.
     const { error: insertError } = await this.supabase
       .from('schema_versions')
-      .insert([
-        {
-          version,
-          description: `${filename} (sha256 ${checksum})`,
-          applied_at: new Date().toISOString(),
-        },
-      ]);
+      .upsert(
+        [
+          {
+            version,
+            description: `${filename} (sha256 ${checksum})`,
+            applied_at: new Date().toISOString(),
+          },
+        ],
+        { onConflict: 'version', ignoreDuplicates: true }
+      );
 
     if (insertError) {
       throw new Error(
