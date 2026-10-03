@@ -367,6 +367,19 @@ describe('MigrationRunner', () => {
 describe('migration files', () => {
   const dir = path.resolve(__dirname, '../../infrastructure/supabase/migrations');
 
+  // Two files with one version: after the first applies, migrate.js skips the second as already applied,
+  // so its tables are never created on an upgraded database.
+  it('no two migrations share a version', () => {
+    const seen = {};
+    const dupes = [];
+    for (const file of fs.readdirSync(dir).filter((f) => /^V\d+\.\d+\.\d+__.*\.sql$/.test(f))) {
+      const version = file.match(/^V(\d+\.\d+\.\d+)__/)[1];
+      if (seen[version]) dupes.push(`${seen[version]} and ${file}`);
+      else seen[version] = file;
+    }
+    expect(dupes).toEqual([]);
+  });
+
   it('each migration records only its own version in schema_versions', () => {
     const wrong = [];
     for (const file of fs.readdirSync(dir).filter((f) => /^V\d+\.\d+\.\d+__.*\.sql$/.test(f))) {
