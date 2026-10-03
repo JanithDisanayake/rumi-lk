@@ -92,6 +92,12 @@ const consoleMount = (() => {
   }
 })();
 
+// Browser page for scanning the WhatsApp QR code (hosts with no terminal). Off unless
+// PAIRING_TOKEN is set; see shared/services/messaging/pairing-routes.js.
+if (process.env.PAIRING_TOKEN) {
+  app.use('/pairing', require('./shared/services/messaging/pairing-routes').build());
+}
+
 // Feature switches an operator set from the console (or by hand in .env). Loaded
 // once here so the gate is warm before the first message arrives; the console
 // updates the same cache in-process when a switch is flipped.
@@ -2001,6 +2007,12 @@ const PERSISTENT_CONNECTION_DRIVERS = {
       const connection = require('./shared/services/messaging/baileys-connection');
       connection.events.on('close', ({ loggedOut }) => {
         if (!loggedOut) return;
+        if (connection.useRedisStore()) {
+          // Hosted: exiting just restarts into the same dead session, in a loop, and takes
+          // the /pairing page (where the reset button is) down with it. Stay up instead.
+          logToFile('🔒 WhatsApp session is logged out — open /pairing to reset it and scan a new code', {});
+          return;
+        }
         logToFile('🔒 WhatsApp session is logged out — re-pairing is required, exiting', {
           remedy: `delete ${connection.authDir()} and run: npm run pair:baileys`,
           exitCode: EXIT_CODE_CHANNEL_LOGGED_OUT,
@@ -2134,6 +2146,30 @@ function registerChannelShutdownHandlers() {
 }
 
 /**
+ * Run the background-job worker (lesson plans, coaching reports, quizzes, ...) inside
+ * this process, for hosts that run one process per app. Two reasons it must be the same
+ * process: there is nothing else to run `workers/sqs-worker.js`, and with the WhatsApp
+ * Web channel a second process would open a second socket on the same session, which
+ * makes WhatsApp invalidate it. Enabled with EMBED_WORKER=true.
+ */
+function startEmbeddedWorker() {
+  const termBefore = new Set(process.listeners('SIGTERM'));
+  const intBefore = new Set(process.listeners('SIGINT'));
+  const sqsWorker = require('./workers/sqs-worker');
+  // The worker file installs SIGTERM/SIGINT handlers that exit the process right after the
+  // worker stops. Here the channel shutdown (which flushes the WhatsApp session) has to
+  // finish first, so drop those and just stop the worker alongside it.
+  for (const [signal, before] of [['SIGTERM', termBefore], ['SIGINT', intBefore]]) {
+    for (const handler of process.listeners(signal)) {
+      if (!before.has(handler)) process.removeListener(signal, handler);
+    }
+    process.on(signal, () => { sqsWorker.worker.shutdown().catch(() => {}); });
+  }
+  sqsWorker.startWorker();
+  logToFile('Background-job worker started inside the bot process (EMBED_WORKER=true)', {});
+}
+
+/**
  * Start server. Gated behind `require.main === module` so requiring this
  * file as a library (e.g. from a test harness or a downstream that wants the
  * Express `app` without its listener) does NOT bind to a port.
@@ -2145,6 +2181,7 @@ function startServer() {
   wireBaileysInboundIfSelected();
   registerChannelShutdownHandlers();
   exitOnChannelLogout();
+  if (String(process.env.EMBED_WORKER || '').toLowerCase() === 'true') startEmbeddedWorker();
   return app.listen(constants.PORT, () => {
   const version = require('./shared/utils/version').rumiVersion();
   // Only a Meta deployment has a Meta webhook to configure (see the module).

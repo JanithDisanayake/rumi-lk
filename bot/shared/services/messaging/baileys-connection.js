@@ -39,6 +39,28 @@ const { logToFile } = require('../../utils/logger');
 
 const AUTH_SUBDIR = 'baileys';
 
+/**
+ * BAILEYS_AUTH_STORE=redis keeps the session in Redis (see baileys-redis-auth.js)
+ * instead of a folder — for hosts whose disk does not survive a redeploy.
+ */
+function useRedisStore() {
+  return String(process.env.BAILEYS_AUTH_STORE || '').toLowerCase() === 'redis';
+}
+
+/**
+ * What the pairing page shows. Updated from the connection events below.
+ * status: connecting | waiting_for_scan | connected | invalidated | logged_out | stopped
+ */
+const pairing = { status: 'connecting', qr: null, updatedAt: new Date().toISOString() };
+function setPairing(status, qr = null) {
+  pairing.status = status;
+  pairing.qr = qr;
+  pairing.updatedAt = new Date().toISOString();
+}
+function getPairingState() {
+  return { ...pairing, store: useRedisStore() ? 'redis' : 'file' };
+}
+
 // The repo root, four levels up from bot/shared/services/messaging.
 const REPO_ROOT = path.resolve(__dirname, '../../../..');
 
@@ -295,25 +317,47 @@ function trackSentMessages(sock) {
  * @returns {Promise<import('baileys').WASocket>}
  */
 async function connect(opts = {}) {
+  const baileysLib = await require('./baileys-lib').loadBaileys();
   const {
     makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, DisconnectReason,
-  } = await require('./baileys-lib').loadBaileys();
+  } = baileysLib;
   const qrcodeTerminal = require('qrcode-terminal');
+  const redisStore = useRedisStore();
+  const redisAuth = redisStore ? require('./baileys-redis-auth') : null;
 
-  // Claim the auth folder BEFORE touching it. Throws (rather than corrupting a
-  // live session) if another instance already holds it.
-  acquireInstanceLock();
+  setPairing('connecting');
+
+  // Claim the session BEFORE touching it. Throws (rather than corrupting a
+  // live session) if another instance already holds it. With the Redis store a
+  // new instance waits for the old one to let go (a rolling deploy overlaps).
+  if (redisStore) {
+    await redisAuth.acquireLock({
+      log: (msg, meta) => logToFile(msg, meta),
+      onLost: () => {
+        // Someone else took the session: stop using it rather than fight over it.
+        logToFile('🔒 Baileys: session lock lost — closing this socket', {});
+        setPairing('stopped');
+        close().catch(() => {});
+      },
+    });
+  } else {
+    acquireInstanceLock();
+  }
 
   // Whether this process STARTED with credentials. Load-bearing below: a QR is
   // normal and wanted when there are none (first-time pairing), but a QR when
   // creds existed means the session was invalidated server-side, and re-pairing
   // needs a human with the phone. Captured before useMultiFileAuthState(), which
   // creates the directory.
-  const hadCredentials = fs.existsSync(path.join(authDir(), 'creds.json'));
+  const hadCredentials = redisStore
+    ? await redisAuth.hasCredentials()
+    : fs.existsSync(path.join(authDir(), 'creds.json'));
 
-  const { state, saveCreds } = await useMultiFileAuthState(authDir());
+  const { state, saveCreds } = redisStore
+    ? await redisAuth.useRedisAuthState(baileysLib)
+    : await useMultiFileAuthState(authDir());
   const { version, isLatest } = await fetchLatestBaileysVersion();
-  logToFile('Baileys: connecting', { version, isLatest, authDir: authDir() });
+  logToFile('Baileys: connecting', { version, isLatest, store: redisStore ? 'redis' : 'file', authDir: redisStore ? null : authDir() });
 
   const socketConfig = {
     auth: state,
@@ -385,6 +429,7 @@ async function connect(opts = {}) {
             authDir: authDir(),
             remedy: `delete ${authDir()} and run: npm run pair:baileys`,
           });
+          setPairing('invalidated');
           events.emit('close', { statusCode: DisconnectReason.loggedOut, loggedOut: true });
           // Don't render or re-request. Ending the socket stops the QR cycle.
           try { sock.end(new Error('session invalidated — re-pairing required')); } catch { /* already closing */ }
@@ -392,7 +437,8 @@ async function connect(opts = {}) {
           return;
         }
 
-        qrcodeTerminal.generate(qr, { small: true });
+        setPairing('waiting_for_scan', qr);
+        if (!redisStore) qrcodeTerminal.generate(qr, { small: true });
         logToFile('📱 Baileys: scan this QR code with WhatsApp (Linked Devices) to pair', {});
         if (opts.onQr) opts.onQr(qr);
         events.emit('qr', qr);
@@ -400,6 +446,7 @@ async function connect(opts = {}) {
 
       if (connection === 'open') {
         connectionState.connected = true;
+        setPairing('connected');
         logToFile('✅ Baileys: connected', {});
         events.emit('open');
         if (!settled) { settled = true; resolve(sock); }
@@ -410,6 +457,7 @@ async function connect(opts = {}) {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         const loggedOut = statusCode === DisconnectReason.loggedOut;
         logToFile('⚠️  Baileys: connection closed', { statusCode, loggedOut });
+        if (loggedOut) setPairing('logged_out'); else if (pairing.status === 'connected') setPairing('connecting');
         events.emit('close', { statusCode, loggedOut });
 
         if (shuttingDown) {
@@ -503,6 +551,30 @@ async function close({ flushMs = 500, pendingTimeoutMs = 2000 } = {}) {
   // instant this resolves cannot begin writing the auth folder while our final
   // Signal-state writes are still landing.
   releaseInstanceLock();
+  if (useRedisStore()) await require('./baileys-redis-auth').releaseLock();
+}
+
+/**
+ * Forget the stored WhatsApp session and start a fresh pairing (Redis store only).
+ * For when the session was invalidated or logged out: the next QR is a new login.
+ */
+async function resetSession() {
+  if (!useRedisStore()) throw new Error('resetSession is only available with BAILEYS_AUTH_STORE=redis');
+  const redisAuth = require('./baileys-redis-auth');
+  const pending = socketPromise;
+  socketPromise = null;
+  if (pending) {
+    try {
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1500));
+      const sock = await Promise.race([pending, timeout]);
+      sock.end(undefined);
+    } catch { /* never opened — nothing to close */ }
+  }
+  await redisAuth.clearSession();
+  connectionState.connected = false;
+  setPairing('connecting');
+  logToFile('Baileys: session cleared — starting a fresh pairing', {});
+  getSocket({ allowRepair: true }).catch((err) => logToFile('❌ Baileys: pairing did not start', { error: err.message }));
 }
 
 /** Test-only: forces the next getSocket() call to reconnect from scratch. */
@@ -520,6 +592,9 @@ module.exports = {
   isConnected,
   close,
   authDir,
+  useRedisStore,
+  getPairingState,
+  resetSession,
   events,
   lockPath,
   acquireInstanceLock,
