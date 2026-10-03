@@ -6,6 +6,27 @@
 > message to the class, each child answers in their own chat and gets a reason after every answer, and the
 > next morning the teacher gets a class report saying what to reteach.
 
+## In programme terms
+
+**A quick check on the lesson just taught, with what to reteach tomorrow.**
+
+Assessment is formative when its evidence is used to adapt teaching [Black-Wiliam98]. RTI recommends that guides "embed in each lesson checks for understanding" [Piper-RTI18]. This release turns the lesson just taught into a short quiz. The quiz can come from the coaching recording, from the teacher's lesson plan, or from any topic. A second model checks the answer key without seeing it first. The teacher receives a one-page explanation of each question and one message to forward to the class. Each child answers in their own chat and gets a reason after every answer, plus a score card. If few children have started, there is one reminder, never in quiet hours. Next morning the teacher gets a class report with a "For tomorrow" box that says what to reteach. This closes the loop that matters most in formative assessment: the evidence returns to the teacher in time to act on it.
+
+**Where it sits in a structured-pedagogy programme:** teacher guide → delivery → coaching → **assessment (formative)** → back into the next lesson.
+
+### Honest limits
+
+- **Tested end to end on the owned messenger** with real models: 11 of 12 scenarios pass. The one failure: in 8 real quizzes the default model never wrote a "select all that apply" question (typed multi-select answers do score correctly).
+- **A second model checks the answer key, but fails open.** If that check cannot run, the quiz is still sent and is recorded as unverified.
+- **Children's accounts.** On the owned messenger, each child needs an account; on WhatsApp a link is enough.
+- **Not a standardised measure.** The class report is a classroom signal for tomorrow's lesson, not M&E data.
+- **Typing rules.** During a lesson quiz only letters count as answers; any other text gets an ordinary chat reply.
+
+### Sources
+
+- [Black-Wiliam98] Black, P., & Wiliam, D., 1998, "Inside the black box: Raising standards through classroom assessment", *Phi Delta Kappan* 80(2):139–148.
+- [Piper-RTI18] Piper, B., Sitabkhan, Y., Mejía, J., & Betts, K., 2018, *Effectiveness of Teachers' Guides in the Global South: Scripting, Learning Outcomes, and Classroom Utilization*, RTI Press OP-0053-1805. https://doi.org/10.3768/rtipress.2018.op.0053.1805
+
 ## What it is
 
 A few minutes after a coaching report arrives, Rumi asks once: *"Want a quiz on the lesson you just taught?"*.
