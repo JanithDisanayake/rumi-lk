@@ -16,6 +16,8 @@
  * feature linker are mocked at their boundaries.
  */
 
+const { mockBotDependency } = require('../_helpers/mock-bot-dependency');
+
 const CSID = '55555555-5555-4555-8555-555555555555';
 const LPID = '66666666-6666-4666-8666-666666666666';
 const UID = '77777777-7777-4777-8777-777777777777';
@@ -42,7 +44,7 @@ const DIGEST = (over = {}) => ({
 function load({ quizzes = [] } = {}) {
   jest.resetModules();
   jest.doMock('jsonrepair', () => ({ jsonrepair: (s) => s }), { virtual: true });
-  jest.doMock('aws-sdk', () => ({ config: { update: () => {} }, SQS: function SQS() {} }), { virtual: true });
+  mockBotDependency('aws-sdk', () => ({ config: { update: () => {} }, SQS: function SQS() {} }));
   jest.doMock('pdfkit', () => ({}), { virtual: true });
   const { makeSchemaDb } = require('./helpers/schema-db');
   db = makeSchemaDb({

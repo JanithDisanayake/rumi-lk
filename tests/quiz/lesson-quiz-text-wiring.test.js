@@ -20,7 +20,8 @@
 // gpt5-mini.service (reached through the real route) needs jsonrepair, a bot-only
 // dependency the root suite runs without.
 jest.mock('jsonrepair', () => ({ jsonrepair: (s) => s }), { virtual: true });
-jest.mock('aws-sdk', () => ({ config: { update: () => {} }, SQS: function SQS() {} }), { virtual: true });
+const { mockBotDependency } = require('../_helpers/mock-bot-dependency');
+mockBotDependency('aws-sdk', () => ({ config: { update: () => {} }, SQS: function SQS() {} }));
 jest.mock('pdfkit', () => ({}), { virtual: true });
 jest.mock('uuid', () => ({ v4: () => 'stub-uuid' }), { virtual: true });
 

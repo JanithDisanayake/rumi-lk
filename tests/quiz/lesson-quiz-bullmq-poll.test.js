@@ -12,6 +12,8 @@
  * pulls (the Redis boundary) are stubbed.
  */
 
+const { mockBotDependency } = require('../_helpers/mock-bot-dependency');
+
 let logToFile;
 
 function load({ driver = 'bullmq', quizUrl = null } = {}) {
@@ -21,7 +23,7 @@ function load({ driver = 'bullmq', quizUrl = null } = {}) {
   if (quizUrl) process.env.SQS_QUIZ_QUEUE_URL = quizUrl; else delete process.env.SQS_QUIZ_QUEUE_URL;
   delete process.env.SQS_VIDEO_QUEUE_URL;
   logToFile = jest.fn();
-  jest.doMock('aws-sdk', () => ({ config: { update: jest.fn() }, SQS: jest.fn(() => ({})) }), { virtual: true });
+  mockBotDependency('aws-sdk', () => ({ config: { update: jest.fn() }, SQS: jest.fn(() => ({})) }));
   jest.doMock('../../bot/shared/utils/logger', () => ({ logToFile, logError: jest.fn() }));
   jest.doMock('../../bot/shared/services/cache/railway-redis.service', () => ({}));
   jest.doMock('../../bot/shared/utils/structured-logger', () => ({

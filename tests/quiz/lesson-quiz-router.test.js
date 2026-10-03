@@ -7,6 +7,8 @@
  * what. The quiz services themselves are mocked at the module boundary (they
  * have their own suites).
  */
+
+const { mockBotDependency } = require('../_helpers/mock-bot-dependency');
 const http = require('http');
 
 const QID = '22222222-2222-4222-8222-222222222222';
@@ -72,7 +74,7 @@ function mockBoundary() {
   // gpt5-mini.service (reached through the real route) needs jsonrepair, a bot-only
   // dependency the root suite runs without.
   jest.doMock('jsonrepair', () => ({ jsonrepair: (s) => s }), { virtual: true });
-  jest.doMock('aws-sdk', () => ({ config: { update: () => {} }, SQS: function SQS() {} }), { virtual: true });
+  mockBotDependency('aws-sdk', () => ({ config: { update: () => {} }, SQS: function SQS() {} }));
   jest.doMock('pdfkit', () => ({}), { virtual: true });
   jest.doMock('uuid', () => ({ v4: () => 'stub-uuid' }), { virtual: true });
   jest.doMock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn(), logError: jest.fn(), LOGS_DIR: '/tmp' }));

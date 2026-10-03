@@ -11,6 +11,8 @@
  * the real nudge dispatch run here; only the nudge's database work is stubbed.
  */
 
+const { mockBotDependency } = require('../_helpers/mock-bot-dependency');
+
 const QID = '33333333-3333-4333-8333-333333333333';
 const CSID = '44444444-4444-4444-8444-444444444444';
 
@@ -23,13 +25,13 @@ function load({ main = 'https://sqs.example/123/main.fifo', quiz = null } = {}) 
   if (quiz) process.env.SQS_QUIZ_QUEUE_URL = quiz; else delete process.env.SQS_QUIZ_QUEUE_URL;
   delete process.env.QUEUE_DRIVER;
   sendMessageMock = jest.fn(() => ({ promise: () => Promise.resolve({ MessageId: 'm1' }) }));
-  jest.doMock('aws-sdk', () => ({
+  mockBotDependency('aws-sdk', () => ({
     config: { update: jest.fn() },
     SQS: jest.fn(() => ({
       sendMessage: sendMessageMock,
       changeMessageVisibility: jest.fn(() => ({ promise: () => Promise.resolve({}) })),
     })),
-  }), { virtual: true });
+  }));
   logToFile = jest.fn();
   jest.doMock('../../bot/shared/utils/logger', () => ({ logToFile, logError: jest.fn() }));
   jest.doMock('../../bot/shared/services/cache/railway-redis.service', () => ({}));

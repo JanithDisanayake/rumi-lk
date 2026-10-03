@@ -14,6 +14,8 @@
  * offer service, the feature linker) is mocked.
  */
 
+const { mockBotDependency } = require('../_helpers/mock-bot-dependency');
+
 const CSID = '55555555-5555-4555-8555-555555555555';
 const LPID = '66666666-6666-4666-8666-666666666666';
 const PHONE = '15550003333';
@@ -44,7 +46,7 @@ function load({ scheduleOffer } = {}) {
   // gpt5-mini.service (reached through the real route) needs jsonrepair, a bot-only
   // dependency the root suite runs without.
   jest.doMock('jsonrepair', () => ({ jsonrepair: (s) => s }), { virtual: true });
-  jest.doMock('aws-sdk', () => ({ config: { update: () => {} }, SQS: function SQS() {} }), { virtual: true });
+  mockBotDependency('aws-sdk', () => ({ config: { update: () => {} }, SQS: function SQS() {} }));
   jest.doMock('pdfkit', () => ({}), { virtual: true });
   jest.doMock('../../bot/shared/config/supabase', () => makeSupabase());
   jest.doMock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn(), logError: jest.fn() }));
