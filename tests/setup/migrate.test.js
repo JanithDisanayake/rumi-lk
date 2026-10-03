@@ -192,17 +192,18 @@ describe('MigrationRunner', () => {
         json: async () => ({}),
       });
 
-      // Mock from('schema_versions').insert()
-      const mockInsert = jest.fn().mockResolvedValue({ error: null });
-      mockFrom.mockReturnValue({ insert: mockInsert });
+      // Mock from('schema_versions').upsert()
+      const mockUpsert = jest.fn().mockResolvedValue({ error: null });
+      mockFrom.mockReturnValue({ upsert: mockUpsert });
 
       await runner.applyMigration(filePath);
 
       // Verify the checksum was recorded (in the description: see the next test)
-      expect(mockInsert).toHaveBeenCalledWith(
+      expect(mockUpsert).toHaveBeenCalledWith(
         expect.arrayContaining([
           expect.objectContaining({ description: expect.stringContaining(expectedChecksum) }),
-        ])
+        ]),
+        expect.objectContaining({ ignoreDuplicates: true })
       );
     });
 
@@ -214,8 +215,8 @@ describe('MigrationRunner', () => {
         json: async () => ({}),
       });
 
-      const mockInsert = jest.fn().mockResolvedValue({ error: null });
-      mockFrom.mockReturnValue({ insert: mockInsert });
+      const mockUpsert = jest.fn().mockResolvedValue({ error: null });
+      mockFrom.mockReturnValue({ upsert: mockUpsert });
 
       await runner.applyMigration(filePath);
 
@@ -238,18 +239,19 @@ describe('MigrationRunner', () => {
         json: async () => ({}),
       });
 
-      const mockInsert = jest.fn().mockResolvedValue({ error: null });
-      mockFrom.mockReturnValue({ insert: mockInsert });
+      const mockUpsert = jest.fn().mockResolvedValue({ error: null });
+      mockFrom.mockReturnValue({ upsert: mockUpsert });
 
       await runner.applyMigration(filePath);
 
       expect(mockFrom).toHaveBeenCalledWith('schema_versions');
-      expect(mockInsert).toHaveBeenCalledWith(
+      expect(mockUpsert).toHaveBeenCalledWith(
         expect.arrayContaining([
           expect.objectContaining({
             version: '1.0.0',
           }),
-        ])
+        ]),
+        expect.objectContaining({ ignoreDuplicates: true })
       );
     });
 
@@ -272,14 +274,30 @@ describe('MigrationRunner', () => {
       expect(shared).toEqual(expect.arrayContaining(['version', 'description', 'applied_at']));
 
       global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
-      const mockInsert = jest.fn().mockResolvedValue({ error: null });
-      mockFrom.mockReturnValue({ insert: mockInsert });
+      const mockUpsert = jest.fn().mockResolvedValue({ error: null });
+      mockFrom.mockReturnValue({ upsert: mockUpsert });
 
       await runner.applyMigration(path.join(tmpDir, 'V1.1.0__add_sessions.sql'));
 
-      const [[rows]] = mockInsert.mock.calls;
+      const [[rows]] = mockUpsert.mock.calls;
       for (const key of Object.keys(rows[0])) expect(shared).toContain(key);
       expect(rows[0].description).toContain('V1.1.0__add_sessions.sql');
+    });
+
+    // V1.0.0, V2.4.0 and V2.9.0 insert their own schema_versions row (ON CONFLICT DO NOTHING). Recording that
+    // version again must not turn an applied migration into a reported failure.
+    it('a migration that records its own version still counts as applied', async () => {
+      global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+      const duplicate = { message: 'duplicate key value violates unique constraint "schema_versions_pkey"' };
+      const mockInsert = jest.fn().mockResolvedValue({ error: duplicate });
+      const mockUpsert = jest.fn().mockResolvedValue({ error: null });
+      mockFrom.mockReturnValue({ insert: mockInsert, upsert: mockUpsert });
+
+      await expect(runner.applyMigration(path.join(tmpDir, 'V1.1.0__add_sessions.sql'))).resolves.toBeUndefined();
+      expect(mockUpsert).toHaveBeenCalledWith(
+        [expect.objectContaining({ version: '1.1.0' })],
+        expect.objectContaining({ onConflict: 'version', ignoreDuplicates: true })
+      );
     });
 
     it('throws when SQL execution fails', async () => {
