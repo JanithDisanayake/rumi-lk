@@ -109,11 +109,19 @@ async function getBrowser() {
  * or about:. Markup that slipped past escaping can then neither run nor make
  * the server's browser fetch an internal URL. Without the option the context
  * is exactly what it always was.
+ *
+ * The route alone is not enough: it sees what the page's renderer asks for,
+ * but Chromium's prefetch and preconnect, and the frames an iframe or object
+ * opens, go out from the browser's own network service. `offline` and a proxy
+ * that nothing listens on (port 9, discard) close that path as well.
  */
 const LOCAL_URL = /^(data|about):/i;
+const DEAD_PROXY = { server: 'http://127.0.0.1:9' };
 async function newRenderContext(browser, contextOptions, untrusted) {
   if (!untrusted) return contextOptions ? browser.newContext(contextOptions) : browser.newContext();
-  const ctx = await browser.newContext({ ...(contextOptions || {}), javaScriptEnabled: false });
+  const ctx = await browser.newContext({
+    ...(contextOptions || {}), javaScriptEnabled: false, offline: true, proxy: DEAD_PROXY,
+  });
   try {
     await ctx.route('**/*', (route) => (LOCAL_URL.test(route.request().url()) ? route.continue() : route.abort()));
   } catch (error) {

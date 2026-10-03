@@ -77,6 +77,18 @@ describe.each([
     expect(browser.newContext.mock.calls[0][0]).toEqual(expect.objectContaining({ javaScriptEnabled: false }));
   });
 
+  // The route sees only what the page's renderer asks for. Chromium's
+  // prefetch, preconnect and the frames of iframe/object go out from the
+  // browser's own network service, past it; offline plus a proxy that
+  // nothing listens on closes that path too.
+  it('opens the context offline, behind a proxy nothing listens on', async () => {
+    const m = load();
+    await call(m, { untrusted: true });
+    const opts = browser.newContext.mock.calls[0][0];
+    expect(opts.offline).toBe(true);
+    expect(opts.proxy).toEqual({ server: 'http://127.0.0.1:9' });
+  });
+
   it('routes before the content is set', async () => {
     const m = load();
     await call(m, { untrusted: true });
