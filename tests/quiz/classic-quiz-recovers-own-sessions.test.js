@@ -29,6 +29,10 @@ jest.mock('../../bot/shared/services/whatsapp.service', () => ({ sendMessage: je
 jest.mock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn() }));
 jest.mock('../../bot/shared/utils/constants', () => ({ OPENAI_API_KEY: 'sk-test' }));
 jest.mock('openai', () => jest.fn().mockImplementation(() => ({ chat: { completions: { create: jest.fn() } } })), { virtual: true });
+// The queue service is loaded on the way in; aws-sdk is a bot-only dependency
+// (absent where CI runs the root suite before bot deps install).
+const { mockBotDependency } = require('../_helpers/mock-bot-dependency');
+mockBotDependency('aws-sdk', () => ({ config: { update: () => {} }, SQS: function SQS() {} }));
 
 const CHILD = 'mtx:15550100031';
 const PARENT = '15550100042';
